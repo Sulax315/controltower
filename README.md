@@ -21,6 +21,9 @@ This repo is intentionally additive. It does not replace ScheduleLab or ProfitIn
   - project dossier preview
   - latest export run status
 - CLI for build, preview, validate, export, serve, and acceptance
+- Approval-gated orchestration loop with exactly-once trigger emission, review audit trail, and continuity writeback
+- Deterministic selective-autonomy policy engine with low-risk auto-approval and high-risk escalation
+- n8n-ready downstream execution events, deterministic pack selection, result ingest, and closeout visibility
 - Operational entrypoints for daily, weekly, preflight, smoke, diagnostics, and release gate runs
 - Runtime artifact index, latest pointers, diagnostics snapshots, and safe retention pruning
 - Windows Task Scheduler and Linux cron/systemd wrapper packs
@@ -116,6 +119,21 @@ python .\run_controltower_ui.py
 - `python .\run_controltower.py build-project --project <CANONICAL_CODE>`
 - `python .\run_controltower.py build-portfolio --write`
 - `python .\run_controltower.py acceptance`
+- `python .\run_controltower.py review-simulate --profile low`
+- `python .\run_controltower.py review-simulate --profile medium`
+- `python .\run_controltower.py review-simulate --profile high`
+- `python .\run_controltower.py review-list`
+- `python .\run_controltower.py review-show --run-id <REVIEW_RUN_ID>`
+- `python .\run_controltower.py review-approve --run-id <REVIEW_RUN_ID> --provider file`
+- `python .\run_controltower.py review-reject --run-id <REVIEW_RUN_ID> --note "<reason>"`
+- `python .\run_controltower.py review-emit-file --run-id <REVIEW_RUN_ID>`
+- `python .\run_controltower.py execution-simulate --profile medium --provider file`
+- `python .\run_controltower.py execution-queue-list`
+- `python .\run_controltower.py execution-event-show --run-id <REVIEW_RUN_ID>`
+- `python .\run_controltower.py execution-closeout-show --run-id <REVIEW_RUN_ID>`
+- `python .\run_controltower.py execution-dead-letter-list`
+- `python .\run_controltower.py execution-dispatch-retry --run-id <REVIEW_RUN_ID>`
+- `python .\run_controltower.py execution-result-ingest --run-id <REVIEW_RUN_ID> --status succeeded --summary "Completed"`
 - `python .\scripts\preflight_controltower.py`
 - `python .\scripts\run_daily_controltower.py`
 - `python .\scripts\run_weekly_controltower.py`
@@ -123,6 +141,30 @@ python .\run_controltower_ui.py
 - `python .\scripts\diagnostics_snapshot_controltower.py`
 - `python .\scripts\release_readiness_controltower.py`
 - `python .\run_controltower.py serve`
+
+## Review Auth Modes
+
+- `CODEX_REVIEW_MODE=dev` keeps the local review surface friction-light for Cursor demos. Review detail, approve, and reject stay directly usable in the browser UI and CLI.
+- `CODEX_REVIEW_MODE=prod` turns the browser review plane into read-mostly mode until an operator signs in with the configured review session credentials.
+- Production browser mutation auth now uses a signed session backed by `CODEX_REVIEW_SESSION_SECRET`, `CODEX_REVIEW_OPERATOR_USERNAME`, and `CODEX_REVIEW_OPERATOR_PASSWORD`.
+- Legacy `CODEX_REVIEW_SHARED_TOKEN` is still accepted in config for compatibility, but production HTTP approve/reject no longer rely on shared-token-only mutation.
+
+## Selective Autonomy
+
+- Completed review runs are classified deterministically into `low`, `medium`, `high`, or `critical` risk.
+- Decision modes are `auto_approve`, `manual_review`, or `escalate`.
+- Low-risk runs can auto-approve through the same audited approval path when `CODEX_AUTONOMY_ENABLED=true` and `CODEX_AUTO_APPROVE_LOW_RISK=true`.
+- High/critical runs can be marked escalated when `CODEX_ESCALATE_HIGH_RISK=true`.
+- Policy metadata is persisted on the review run JSON, exposed in the UI/API/CLI, and mirrored into the continuity markdown artifacts.
+
+## Downstream Execution Packs
+
+- Approved or auto-approved runs emit a normalized `codex_run.approved` event contract with stable `event_id` and `trigger_id`.
+- Control Tower selects one of `deploy_pack`, `smoke_pack`, `release_readiness_pack`, `report_pack`, `continuity_pack`, or `noop_pack` using deterministic keyword/rule matching across the run title, summary, prompt, artifacts, and decision reasons.
+- File, webhook, and stub providers preserve the explicit contract instead of hiding downstream work behind custom glue.
+- Dispatch now persists bounded retry state, pack validation, pack guard posture, dead-letter payloads, and closeout artifacts under the review run.
+- Guarded packs are blocked in production unless `CODEX_EXECUTION_ALLOW_GUARDED_IN_PROD=true`.
+- Downstream automation can POST closeout data back to `POST /api/execution/results`, which updates the review record, UI, closeout artifacts, and continuity artifacts.
 
 ## Core Architecture
 
@@ -149,6 +191,8 @@ python .\run_controltower_ui.py
 - [Configuration Guide](./docs/CONFIGURATION.md)
 - [Config Reference](./docs/CONFIG_REFERENCE.md)
 - [Operations Runbook](./docs/OPERATIONS_RUNBOOK.md)
+- [Review Approval Runbook](./docs/REVIEW_APPROVAL_RUNBOOK.md)
+- [n8n Execution Integration](./docs/N8N_EXECUTION_INTEGRATION.md)
 - [Production Deployment Pack](./infra/deploy/controltower/README.md)
 - [Vault Structure](./docs/VAULT_STRUCTURE.md)
 - [Source Artifact Expectations](./docs/SOURCE_ARTIFACTS.md)

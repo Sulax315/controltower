@@ -35,3 +35,38 @@ runtime:
 ui:
   host: 127.0.0.1
   port: 8787
+
+notifications:
+  provider: runtime_log
+
+execution:
+  provider: file
+  webhook_url:
+  file_dir: ./.controltower_runtime/orchestration/execution_queue
+  webhook_timeout_ms: 5000
+  dead_letter_dir: ./.controltower_runtime/orchestration/dead_letter
+  max_attempts: 3
+  retry_backoff_ms: 1000
+  retry_backoff_multiplier: 2
+  guarded_packs:
+    - deploy_pack
+    - release_readiness_pack
+  allow_guarded_in_prod: false
+  result_ingest_enabled: true
+  event_version: v1
+
+review:
+  mode: dev
+  shared_token:
+  token_header: X-ControlTower-Review-Token
+  session_secret:
+  operator_username:
+  operator_password:
+  session_cookie_name: controltower_review_session
+
+autonomy:
+  enabled: true
+  auto_approve_low_risk: true
+  escalate_high_risk: true
+  policy_version: v1
+  notify_on_auto_approve: false

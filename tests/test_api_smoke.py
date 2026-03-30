@@ -9,6 +9,7 @@ from controltower.config import load_config
 from controltower.obsidian.exporter import write_export_bundle
 from controltower.services.controltower import ControlTowerService
 from controltower.services.meeting_readiness import verify_meeting_readiness
+from controltower.services.orchestration import OrchestrationService
 
 
 def test_api_and_pages_render(sample_config_path):
@@ -279,6 +280,115 @@ def test_api_and_pages_render(sample_config_path):
     assert client.get("/publish?print=1").status_code == 200
     assert client.get("/publish/present?print=1").status_code == 200
     assert client.get("/exports/latest").status_code == 200
+
+    state_root = config.runtime.state_root
+    release_root = state_root / "release"
+    release_root.mkdir(parents=True, exist_ok=True)
+    review_artifact_a = release_root / "release_readiness_2026-03-30T17-32-56Z.json"
+    review_artifact_b = release_root / "release_readiness_2026-03-30T17-36-32Z.json"
+    review_artifact_a.write_text('{"status":"not_ready"}', encoding="utf-8")
+    review_artifact_b.write_text('{"status":"ready"}', encoding="utf-8")
+    review = OrchestrationService(config).ingest_release_readiness_pass(
+        title="Control Tower Release Readiness Passed",
+        workspace="controltower",
+        summary="Release readiness passed after correcting HTML entity comparison in finish-driver verifier. Prior failure was a false negative caused by '&' vs '&amp;' mismatch.",
+        raw_output_excerpt=[
+            "Prior failure: verifier compared raw HTML and produced a false negative on '&' vs '&amp;'.",
+            "Fix: verifier now compares unescaped visible text instead of raw HTML.",
+            "Confirmation: release_readiness_controltower completed with exit code 0.",
+        ],
+        proposed_next_prompt=(
+            "Checkpoint fix, push to repo, and run full production validation:\n"
+            "1. pytest -q\n"
+            "2. acceptance harness\n"
+            "3. verify publish surface rendering\n"
+            "4. confirm execution brief output is stable\n"
+            "5. generate final operator brief artifact"
+        ),
+        artifact_paths=[review_artifact_a, review_artifact_b],
+        source_operation_id="release_readiness_2026-03-30T17-35-54Z",
+        release_generated_at="2026-03-30T17:36:32Z",
+    )
+    review_runs = client.get("/runs")
+    assert review_runs.status_code == 200
+    assert 'id="review-queue"' in review_runs.text
+    assert review.run_id in review_runs.text
+    assert "Control Tower Release Readiness Passed" in review_runs.text
+    assert "review-risk-medium" in review_runs.text
+    assert "review-decision-manual_review" in review_runs.text
+    assert "noop_pack" in review_runs.text or "release_readiness_pack" in review_runs.text
+    review_detail = client.get(review.detail_path)
+    assert review_detail.status_code == 200
+    assert "Approval-gated orchestration review surface" in review_detail.text
+    assert "Control Tower Release Readiness Passed" in review_detail.text
+    assert "Policy Decision" in review_detail.text
+    assert "Execution Pack" in review_detail.text
+    assert "Execution Event" in review_detail.text
+    assert "Execution Dispatch" in review_detail.text
+    assert "Decision Reasons" in review_detail.text
+    assert "release-readiness handling defaults to manual review" in review_detail.text.lower()
+    assert "false negative caused" in review_detail.text
+    assert "Checkpoint fix, push to repo, and run full production validation:" in review_detail.text
+    assert "Open artifact" in review_detail.text
+    assert ">Approve</button>" in review_detail.text
+    assert ">Reject</button>" in review_detail.text
+    assert client.get(f"/reviews/{review.run_id}/artifacts/{review.artifacts[0].file_name}").status_code == 200
+    review_api = client.get(f"/api/reviews/{review.run_id}")
+    assert review_api.status_code == 200
+    review_payload = review_api.json()
+    assert review_payload["state"] == "pending_review"
+    assert review_payload["risk_level"] == "medium"
+    assert review_payload["decision_mode"] == "manual_review"
+    assert review_payload["decision_reasons"]
+    assert review_payload["notification"]["status"] == "sent"
+    assert "execution_pack" in review_payload
+    assert "execution_result" in review_payload
+    assert "execution_event" in review_payload
+
+    low_review = OrchestrationService(config).simulate_completed_run(profile="low")
+    low_detail = client.get(low_review.detail_path)
+    assert low_detail.status_code == 200
+    assert "Auto-approved: yes" in low_detail.text
+    assert "review-risk-low" in low_detail.text
+    assert "review-decision-auto_approve" in low_detail.text
+
+    high_review = OrchestrationService(config).simulate_completed_run(profile="high")
+    high_detail = client.get(high_review.detail_path)
+    assert high_detail.status_code == 200
+    assert "Escalated: yes" in high_detail.text
+    assert "review-state-escalated" in high_detail.text
+    assert "review-decision-escalate" in high_detail.text
+
+    emitted_review = OrchestrationService(config).simulate_execution_event(profile="medium", provider_override="file")
+    result_ingest = client.post(
+        "/api/execution/results",
+        json={
+            "event_id": emitted_review.execution_event.event_id,
+            "run_id": emitted_review.run_id,
+            "pack_id": emitted_review.execution_pack.pack_id,
+            "status": "failed",
+            "summary": "Smoke checks found a regression in the publish surface.",
+            "output_artifacts": [{"label": "log", "path": "C:/tmp/smoke.log"}],
+            "started_at": "2026-03-30T17:40:00Z",
+            "completed_at": "2026-03-30T17:41:00Z",
+            "external_reference": "n8n-77",
+            "logs_excerpt": "publish smoke failed",
+        },
+    )
+    assert result_ingest.status_code == 200
+    result_payload = result_ingest.json()
+    assert result_payload["status"] == "accepted"
+    updated_detail = client.get(emitted_review.detail_path)
+    assert updated_detail.status_code == 200
+    assert "Downstream Result" in updated_detail.text
+    assert "Smoke checks found a regression" in updated_detail.text
+    assert "Closeout status: failed" in updated_detail.text
+    assert "Closeout recorded at:" in updated_detail.text
+    assert "External reference: n8n-77" in updated_detail.text
+    updated_runs = client.get("/runs")
+    assert updated_runs.status_code == 200
+    assert "closeout_status: failed" in updated_runs.text
+    assert "closeout_recorded_at:" in updated_runs.text
 
 
 def publish_markers_present(text: str) -> bool:

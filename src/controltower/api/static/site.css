@@ -1375,6 +1375,16 @@ a {
   white-space: nowrap;
 }
 
+.count-pill-ready {
+  background: var(--healthy-soft);
+  color: var(--healthy);
+}
+
+.count-pill-watch {
+  background: var(--watch-soft);
+  color: var(--watch);
+}
+
 .scan-card h3 {
   margin: 0;
   font-size: 1.04rem;
@@ -4855,5 +4865,170 @@ body.publish .text-link:hover {
     color: #111111;
     box-shadow: none;
     border-color: #cfd6dd;
+  }
+}
+
+.review-shell,
+.review-form,
+.review-form-field,
+.review-summary-meta,
+.review-summary-head {
+  display: grid;
+  gap: 14px;
+}
+
+.review-summary-head {
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  align-items: start;
+}
+
+.review-summary-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-summary-meta div,
+.review-note-block {
+  display: grid;
+  gap: 6px;
+}
+
+.review-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(23, 94, 166, 0.14);
+  background: rgba(23, 94, 166, 0.08);
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.review-banner-danger {
+  border-color: rgba(157, 47, 47, 0.18);
+  background: rgba(157, 47, 47, 0.08);
+  color: var(--critical);
+}
+
+.review-state-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.review-state-pending_review {
+  background: var(--watch-soft);
+  color: var(--watch);
+}
+
+.review-state-approved {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.review-state-triggered {
+  background: var(--healthy-soft);
+  color: var(--healthy);
+}
+
+.review-state-escalated,
+.review-state-rejected,
+.review-state-failed {
+  background: var(--critical-soft);
+  color: var(--critical);
+}
+
+.review-risk-pill,
+.review-decision-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.review-risk-low,
+.review-decision-auto_approve {
+  background: var(--healthy-soft);
+  color: var(--healthy);
+}
+
+.review-risk-medium,
+.review-decision-manual_review {
+  background: var(--watch-soft);
+  color: var(--watch);
+}
+
+.review-risk-high {
+  background: rgba(179, 112, 28, 0.12);
+  color: #9d5b12;
+}
+
+.review-risk-critical,
+.review-decision-escalate {
+  background: var(--critical-soft);
+  color: var(--critical);
+}
+
+.review-form textarea,
+.review-form input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel-strong);
+}
+
+.review-form textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.review-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-inline-form {
+  display: inline-flex;
+}
+
+.review-audit-list li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.review-audit-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.review-audit-event {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 900px) {
+  .review-summary-head,
+  .review-summary-meta {
+    grid-template-columns: 1fr;
   }
 }

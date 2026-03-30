@@ -1,0 +1,393 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="tower-shell review-shell">
+  <article class="card review-summary-card">
+    <div class="review-summary-head">
+      <div>
+        <div class="headline-kicker">
+          <span class="label">Review Run</span>
+          <span class="count-pill">{{ review_mode|upper }} MODE</span>
+          <span class="review-state-pill review-state-{{ review.state }}">{{ review.state|replace('_', ' ') }}</span>
+          <span class="review-risk-pill review-risk-{{ review.risk_level }}">{{ review.risk_level }}</span>
+          <span class="review-decision-pill review-decision-{{ review.decision_mode }}">{{ review.decision_mode|replace('_', ' ') }}</span>
+          {% if review_auth.required %}
+          <span class="count-pill {% if review_auth.authenticated %}count-pill-ready{% else %}count-pill-watch{% endif %}">
+            {% if review_auth.authenticated %}AUTHENTICATED{% else %}AUTH REQUIRED{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <h2>{{ review.title }}</h2>
+        <p class="lede">{{ review.summary }}</p>
+      </div>
+      <div class="review-summary-meta">
+        <div><span class="label">Run ID</span><strong>{{ review.run_id }}</strong></div>
+        <div><span class="label">Workspace</span><strong>{{ review.workspace }}</strong></div>
+        <div><span class="label">Created</span><strong>{{ review.created_at }}</strong></div>
+        <div><span class="label">Reviewed</span><strong>{{ review.reviewer.reviewed_at or "Not reviewed" }}</strong></div>
+        <div><span class="label">Policy</span><strong>{{ review.policy_version }}</strong></div>
+        <div><span class="label">Evaluated</span><strong>{{ review.policy_evaluated_at }}</strong></div>
+      </div>
+    </div>
+    {% if action_status == "login_success" %}
+    <p class="review-banner">Operator session established for {{ review_auth.identity }}.</p>
+    {% elif action_status == "login_failed" %}
+    <p class="review-banner review-banner-danger">Operator sign-in failed. Check the configured production review credentials.</p>
+    {% elif action_status == "logged_out" %}
+    <p class="review-banner">Operator session cleared.</p>
+    {% elif action_status %}
+    <p class="review-banner">Last action: {{ action_status|replace('_', ' ') }}</p>
+    {% endif %}
+    {% if review_auth.required %}
+      {% if review_auth.configuration_error %}
+      <p class="utility-note">Production mutation protection is enabled, but the operator session gate is misconfigured. {{ review_auth.configuration_error }}</p>
+      {% elif review_auth.authenticated %}
+      <p class="utility-note">Production mutation controls are active. Signed in as <strong>{{ review_auth.identity }}</strong> using <code>{{ review_auth.auth_mode }}</code>.</p>
+      {% else %}
+      <p class="utility-note">Production mode allows read-only review access to anonymous viewers, but approval and rejection require an authenticated operator session.</p>
+      {% endif %}
+    {% else %}
+    <p class="utility-note">Dev mode keeps local approval flows friction-light for Cursor demos. Approve and reject are intentionally open in this mode.</p>
+    {% endif %}
+  </article>
+
+  <section class="grid two">
+    <article class="card">
+      <h3>Policy Decision</h3>
+      <ul class="flat-list">
+        <li>Risk level: {{ review.risk_level }}</li>
+        <li>Decision mode: {{ review.decision_mode }}</li>
+        <li>Policy version: {{ review.policy_version }}</li>
+        <li>Policy evaluated at: {{ review.policy_evaluated_at }}</li>
+        <li>Auto-approved: {{ "yes" if review.auto_approved_at else "no" }}</li>
+        <li>Auto-approved at: {{ review.auto_approved_at or "not auto-approved" }}</li>
+        <li>Escalated: {{ "yes" if review.escalated_at else "no" }}</li>
+        <li>Escalated at: {{ review.escalated_at or "not escalated" }}</li>
+      </ul>
+      <div class="review-note-block">
+        <span class="label">Decision Reasons</span>
+        <ul class="flat-list">
+          {% for reason in review.decision_reasons %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </article>
+    <article class="card">
+      <h3>Decision Payload</h3>
+      <ul class="flat-list">
+        <li>Reviewer action: {{ review.reviewer.reviewer_action or "pending" }}</li>
+        <li>Reviewer identity: {{ review.reviewer.reviewer_identity or "not recorded" }}</li>
+        <li>Auth mode: {{ review.reviewer.auth_mode or "not recorded" }}</li>
+        <li>Request ID: {{ review.reviewer.request_id or "not provided" }}</li>
+        <li>Correlation ID: {{ review.reviewer.correlation_id or "not provided" }}</li>
+        <li>Source IP: {{ review.reviewer.source_ip or "not recorded" }}</li>
+        <li>Forwarded For: {{ review.reviewer.forwarded_for or "not recorded" }}</li>
+        <li>User Agent: {{ review.reviewer.user_agent or "not recorded" }}</li>
+        <li>Notification: {{ review.notification.status }} / {{ review.notification.signal_level }}</li>
+        <li>Review URL: <a class="text-link" href="{{ review.detail_path }}">{{ review.review_url }}</a></li>
+      </ul>
+      {% if review.reviewer.rejection_note %}
+      <div class="review-note-block">
+        <span class="label">Rejection Note</span>
+        <pre class="note-preview">{{ review.reviewer.rejection_note }}</pre>
+      </div>
+      {% endif %}
+      {% if review.last_error %}
+      <div class="review-note-block">
+        <span class="label">Last Error</span>
+        <pre class="note-preview">{{ review.last_error.message }}</pre>
+      </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h3>Execution Pack</h3>
+      <ul class="flat-list">
+        <li>Pack ID: {{ review.execution_pack.pack_id }}</li>
+        <li>Pack type: {{ review.execution_pack.pack_type }}</li>
+        <li>Selected at: {{ review.execution_pack.selected_at or "not selected" }}</li>
+        <li>Execution mode: {{ review.execution_pack.execution_mode }}</li>
+        <li>Downstream target: {{ review.execution_pack.downstream_target }}</li>
+        <li>Timeout seconds: {{ review.execution_pack.timeout_seconds }}</li>
+        <li>Retry limit: {{ review.execution_pack.retry_limit }}</li>
+        <li>Pack guard: {{ review.execution_pack.pack_guard }}</li>
+        <li>Validation: {{ review.execution_pack.validation_status }}</li>
+      </ul>
+      <div class="review-note-block">
+        <span class="label">Selection Reason</span>
+        <pre class="note-preview">{{ review.execution_pack.selection_reason }}</pre>
+      </div>
+      {% if review.execution_pack.guard_reasons %}
+      <div class="review-note-block">
+        <span class="label">Guard Reasons</span>
+        <pre class="note-preview">{{ review.execution_pack.guard_reasons|join("\n") }}</pre>
+      </div>
+      {% endif %}
+      {% if review.execution_pack.validation_errors %}
+      <div class="review-note-block">
+        <span class="label">Validation Errors</span>
+        <pre class="note-preview">{{ review.execution_pack.validation_errors|join("\n") }}</pre>
+      </div>
+      {% endif %}
+      {% if review.execution_pack.matched_keywords %}
+      <p class="utility-note">Matched keywords: {{ review.execution_pack.matched_keywords|join(", ") }}</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h3>Execution Event</h3>
+      <ul class="flat-list">
+        <li>Event type: {{ review.execution_event.event_type }}</li>
+        <li>Event version: {{ review.execution_event.event_version }}</li>
+        <li>Event ID: {{ review.execution_event.event_id or "not assigned" }}</li>
+        <li>Trigger ID: {{ review.trigger.trigger_id or "not assigned" }}</li>
+        <li>Approved by: {{ review.execution_event.approved_by or "not recorded" }}</li>
+        <li>Approved at: {{ review.execution_event.approved_at or "not recorded" }}</li>
+        <li>Pack hint: {{ review.execution_event.pack_hint or "not selected" }}</li>
+      </ul>
+      <div class="review-note-block">
+        <span class="label">Approved Next Prompt</span>
+        <pre class="note-preview">{{ review.execution_event.approved_next_prompt or review.proposed_next_prompt }}</pre>
+      </div>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h3>Execution Dispatch</h3>
+      <ul class="flat-list">
+        <li>Provider: {{ review.trigger.provider }}</li>
+        <li>Status: {{ review.trigger.status }}</li>
+        <li>Delivery status: {{ review.trigger.delivery_status or "not started" }}</li>
+        <li>Event ID: {{ review.trigger.event_id or "not assigned" }}</li>
+        <li>Trigger ID: {{ review.trigger.trigger_id or "not assigned" }}</li>
+        <li>Target: {{ review.trigger.target or "not configured" }}</li>
+        <li>Attempt count: {{ review.trigger.attempt_count }}</li>
+        <li>First attempted at: {{ review.trigger.first_attempted_at or "not attempted" }}</li>
+        <li>Last attempted at: {{ review.trigger.last_attempted_at or review.trigger.last_attempt_at or "not attempted" }}</li>
+        <li>Emitted At: {{ review.trigger.emitted_at or "not emitted" }}</li>
+        <li>Response Status: {{ review.trigger.response_status or "not available" }}</li>
+        <li>Last error: {{ review.trigger.last_error or "not recorded" }}</li>
+        <li>Dead letter path: {{ review.trigger.dead_letter_path or "not recorded" }}</li>
+      </ul>
+      {% if review.trigger.response_excerpt %}
+      <pre class="note-preview">{{ review.trigger.response_excerpt }}</pre>
+      {% endif %}
+      {% if review.trigger.result_path %}
+      <p class="utility-note">Trigger result record: <code>{{ review.trigger.result_path }}</code></p>
+      {% endif %}
+      {% if review.trigger.last_error %}
+      <div class="review-note-block">
+        <span class="label">Last Error</span>
+        <pre class="note-preview">{{ review.trigger.last_error }}</pre>
+      </div>
+      {% endif %}
+      {% if review.trigger.dead_letter_path %}
+      <p class="utility-note">Dead letter path: <code>{{ review.trigger.dead_letter_path }}</code></p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h3>Downstream Result</h3>
+      <ul class="flat-list">
+        <li>Status: {{ review.execution_result.status }}</li>
+        <li>Started at: {{ review.execution_result.started_at or "not reported" }}</li>
+        <li>Completed at: {{ review.execution_result.completed_at or "not reported" }}</li>
+        <li>External reference: {{ review.execution_result.external_reference or "not reported" }}</li>
+        <li>Result path: {{ review.execution_result.result_path or "not recorded" }}</li>
+        <li>Closeout status: {{ review.execution_result.closeout_status }}</li>
+        <li>Closeout recorded at: {{ review.execution_result.closeout_recorded_at or "not recorded" }}</li>
+      </ul>
+      {% if review.execution_result.summary %}
+      <div class="review-note-block">
+        <span class="label">Summary</span>
+        <pre class="note-preview">{{ review.execution_result.summary }}</pre>
+      </div>
+      {% endif %}
+      {% if review.execution_result.closeout_summary %}
+      <div class="review-note-block">
+        <span class="label">Closeout Summary</span>
+        <pre class="note-preview">{{ review.execution_result.closeout_summary }}</pre>
+      </div>
+      {% endif %}
+      {% if review.execution_result.logs_excerpt %}
+      <div class="review-note-block">
+        <span class="label">Logs Excerpt</span>
+        <pre class="note-preview">{{ review.execution_result.logs_excerpt }}</pre>
+      </div>
+      {% endif %}
+      {% if review.execution_result.output_artifacts %}
+      <div class="review-note-block">
+        <span class="label">Downstream Artifacts</span>
+        <ul class="flat-list">
+          {% for artifact in review.execution_result.output_artifacts %}
+          <li>{{ artifact.label }}: {{ artifact.path }}{% if artifact.external_url %} ({{ artifact.external_url }}){% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if review.execution_result.closeout_json_path %}
+      <p class="utility-note">Closeout JSON: <code>{{ review.execution_result.closeout_json_path }}</code></p>
+      {% endif %}
+      {% if review.execution_result.closeout_markdown_path %}
+      <p class="utility-note">Closeout Markdown: <code>{{ review.execution_result.closeout_markdown_path }}</code></p>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if review_auth.required and not review_auth.can_mutate %}
+  <section class="grid two">
+    <article class="card">
+      <h3>Operator Sign-In</h3>
+      {% if review_auth.configuration_error %}
+      <p class="utility-note">Production auth is fail-closed until the required session configuration is present.</p>
+      {% else %}
+      <form method="post" action="{{ review_auth.login_path }}" class="review-form">
+        <input type="hidden" name="next_path" value="{{ review.detail_path }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="review-form-field">
+          <span class="label">Username</span>
+          <input type="text" name="operator_username" autocomplete="username">
+        </label>
+        <label class="review-form-field">
+          <span class="label">Password</span>
+          <input type="password" name="operator_password" autocomplete="current-password">
+        </label>
+        <div class="card-actions">
+          <button type="submit" class="button primary">Sign In To Review</button>
+        </div>
+      </form>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h3>Mutation Controls</h3>
+      <p class="utility-note">Approve and Reject stay hidden until an authenticated operator session is established.</p>
+      <div class="card-actions">
+        <button type="button" class="button primary" disabled>Approve</button>
+        <button type="button" class="button secondary" disabled>Reject</button>
+      </div>
+    </article>
+  </section>
+  {% else %}
+  <section class="grid two">
+    <article class="card">
+      <div class="review-card-head">
+        <h3>Approve</h3>
+        {% if review_auth.required and review_auth.authenticated %}
+        <form method="post" action="{{ review_auth.logout_path }}" class="review-inline-form">
+          <input type="hidden" name="next_path" value="{{ review.detail_path }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="button secondary">Sign Out</button>
+        </form>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ review.approve_path }}" class="review-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="review-form-field">
+          <span class="label">Editable Next Prompt</span>
+          <textarea name="approved_next_prompt" rows="12">{{ review.reviewer.approved_next_prompt or review.proposed_next_prompt }}</textarea>
+        </label>
+        <div class="card-actions">
+          <button type="submit" class="button primary" {% if review.state in ["triggered", "rejected"] %}disabled{% endif %}>Approve</button>
+        </div>
+      </form>
+    </article>
+    <article class="card">
+      <h3>Reject</h3>
+      <form method="post" action="{{ review.reject_path }}" class="review-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="review-form-field">
+          <span class="label">Optional Rejection Note</span>
+          <textarea name="rejection_note" rows="8" placeholder="Document why this run should not advance."></textarea>
+        </label>
+        <div class="card-actions">
+          <button type="submit" class="button secondary" {% if review.state in ["triggered", "rejected"] %}disabled{% endif %}>Reject</button>
+        </div>
+      </form>
+    </article>
+  </section>
+  {% endif %}
+
+  <section class="grid two">
+    <article class="card">
+      <h3>Attached Artifacts</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Artifact</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for artifact in review.artifacts %}
+          <tr>
+            <td>{{ artifact.label }}</td>
+            <td>{{ artifact.content_type }}</td>
+            <td>{{ artifact.size_bytes or 0 }}</td>
+            <td><a class="text-link" href="{{ artifact.download_path }}">Open artifact</a></td>
+          </tr>
+          {% endfor %}
+          {% if not review.artifacts %}
+          <tr>
+            <td colspan="4">No upstream artifacts were attached to this review run.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </article>
+    <article class="card">
+      <h3>Generated Decision Artifacts</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Artifact</th>
+            <th>Type</th>
+            <th>Source Path</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for artifact in review.decision_artifacts %}
+          <tr>
+            <td>{{ artifact.label }}</td>
+            <td>{{ artifact.content_type }}</td>
+            <td>{{ artifact.source_path or artifact.path }}</td>
+            <td><a class="text-link" href="{{ artifact.download_path }}">Open artifact</a></td>
+          </tr>
+          {% endfor %}
+          {% if not review.decision_artifacts %}
+          <tr>
+            <td colspan="4">Decision artifacts will appear here after approval or rejection.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h3>Raw Output Excerpt</h3>
+      <ul class="flat-list">
+        {% for line in review.raw_output_excerpt %}
+        <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+    <article class="card">
+      <h3>Audit Trail</h3>
+      <ul class="flat-list review-audit-list">
+        {% for entry in review.audit_trail|reverse %}
+        <li>
+          <strong>{{ entry.recorded_at }}</strong>
+          <span class="review-audit-event">{{ entry.event_type }}</span>
+          <div>{{ entry.message }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+    </article>
+  </section>
+</section>
+{% endblock %}

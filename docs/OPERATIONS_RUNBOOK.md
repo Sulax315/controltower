@@ -74,6 +74,19 @@ curl -fsS https://controltower.bratek.io/diagnostics > /tmp/controltower-diagnos
 curl -fsS https://controltower.bratek.io/api/diagnostics | python3 -m json.tool
 ```
 
+## Local Access Triage
+
+If a Windows workstation says `https://controltower.bratek.io` is down or shows the parked-domain certificate, do not restart the VM first. Prove whether the browser is resolving the wrong IP before treating this as a production outage.
+
+Operator checks:
+
+- Run `powershell -ExecutionPolicy Bypass -File .\ops\windows\Test-ControlTowerDns.ps1`.
+- Treat `208.91.112.55` or `2620:101:9000:53::55` as a local-DNS failure, not a Control Tower VM failure.
+- Prove the production edge directly with `curl.exe -sS -D - -o NUL --resolve controltower.bratek.io:443:161.35.177.158 https://controltower.bratek.io/`.
+- If public resolvers return `161.35.177.158` but the workstation does not, switch the active interface DNS temporarily or use a proof-only hosts override.
+
+Detailed DNS/TLS commands and remediation steps live in [`infra/deploy/controltower/DNS_TLS_RUNBOOK.md`](/C:/Dev/ControlTower/infra/deploy/controltower/DNS_TLS_RUNBOOK.md).
+
 Verify release readiness using persisted evidence:
 
 ```bash

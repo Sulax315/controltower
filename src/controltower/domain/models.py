@@ -19,6 +19,38 @@ DriverComparisonState = Literal["same", "changed", "unavailable"]
 DeterministicComparisonState = Literal["changed", "unchanged", "unavailable"]
 ActionContinuityState = Literal["new_this_run", "carry_forward", "comparison_unavailable"]
 ContinuityResolvedType = Literal["issue", "action"]
+ReviewRunState = Literal["pending_review", "approved", "triggered", "rejected", "failed", "escalated"]
+NotificationDeliveryStatus = Literal["sent", "failed", "not_configured", "suppressed"]
+ReviewDecision = Literal["approved", "rejected"]
+ReviewTriggerProvider = Literal["file", "webhook", "stub", "none"]
+ReviewTriggerStatus = Literal[
+    "not_started",
+    "pending",
+    "emitted",
+    "skipped",
+    "failed",
+    "retryable",
+    "blocked",
+    "validation_failed",
+]
+ReviewPolicyRiskLevel = Literal["low", "medium", "high", "critical"]
+ReviewDecisionMode = Literal["auto_approve", "manual_review", "escalate"]
+NotificationSignalLevel = Literal["quiet", "normal", "high"]
+ExecutionPackType = Literal[
+    "deploy_pack",
+    "smoke_pack",
+    "release_readiness_pack",
+    "report_pack",
+    "continuity_pack",
+    "noop_pack",
+]
+ExecutionAttemptStatus = Literal["succeeded", "failed"]
+ExecutionAttemptFailureClass = Literal["retryable", "permanent"]
+ExecutionLifecycleStatus = Literal["not_started", "queued", "succeeded", "failed", "partial"]
+ExecutionDeliveryStatus = Literal["queued", "dispatching", "dispatched", "acknowledged", "failed", "dead_lettered"]
+ExecutionCloseoutStatus = Literal["pending", "succeeded", "failed", "partial"]
+ExecutionPackGuard = Literal["open", "guarded", "blocked"]
+ExecutionPackValidationStatus = Literal["valid", "invalid"]
 
 
 class SourceArtifactRef(BaseModel):
@@ -829,6 +861,228 @@ class PublishView(BaseModel):
     artifacts: list[PublishArtifactView] = Field(default_factory=list)
     project_switches: list[PublishProjectOption] = Field(default_factory=list)
     history: list[PublishHistoryItem] = Field(default_factory=list)
+
+
+class ReviewArtifactRef(BaseModel):
+    label: str
+    file_name: str
+    path: str
+    source_path: str | None = None
+    content_type: str = "application/octet-stream"
+    size_bytes: int | None = None
+    download_path: str = ""
+
+
+class ReviewNotification(BaseModel):
+    provider: str = "runtime_log"
+    status: NotificationDeliveryStatus = "not_configured"
+    signal_level: NotificationSignalLevel = "normal"
+    title: str = ""
+    body: str = ""
+    notification_id: str | None = None
+    sent_at: str | None = None
+    record_path: str | None = None
+
+
+class ReviewDecisionMetadata(BaseModel):
+    reviewed_at: str | None = None
+    reviewer_action: ReviewDecision | None = None
+    approved_next_prompt: str | None = None
+    rejection_note: str | None = None
+    reviewer_identity: str | None = None
+    auth_mode: str | None = None
+    source_ip: str | None = None
+    forwarded_for: str | None = None
+    user_agent: str | None = None
+    request_id: str | None = None
+    correlation_id: str | None = None
+
+
+class ReviewAuditEntry(BaseModel):
+    event_id: str
+    recorded_at: str
+    event_type: str
+    state: ReviewRunState
+    message: str
+    request_id: str | None = None
+    correlation_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    record_path: str | None = None
+
+
+class ReviewFailure(BaseModel):
+    recorded_at: str
+    phase: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionPackRecord(BaseModel):
+    pack_id: str = "pack_noop_v1"
+    pack_type: ExecutionPackType = "noop_pack"
+    selected_at: str | None = None
+    selected_by: str = "deterministic_rules_v1"
+    selection_reason: str = "No execution pack has been selected yet."
+    matched_keywords: list[str] = Field(default_factory=list)
+    trigger_conditions: list[str] = Field(default_factory=list)
+    required_inputs: list[str] = Field(default_factory=list)
+    execution_mode: str = "operator_visible_noop"
+    downstream_target: str = "operator_visibility_only"
+    expected_outputs: list[str] = Field(default_factory=list)
+    timeout_seconds: int = 300
+    retry_limit: int = 0
+    retry_posture: str = "No downstream retries are configured for this pack."
+    pack_guard: ExecutionPackGuard = "open"
+    guard_reasons: list[str] = Field(default_factory=list)
+    guard_evaluated_at: str | None = None
+    validation_status: ExecutionPackValidationStatus = "valid"
+    validation_errors: list[str] = Field(default_factory=list)
+    validated_at: str | None = None
+
+
+class ExecutionEventArtifact(BaseModel):
+    label: str
+    file_name: str
+    path: str
+    source_path: str | None = None
+    download_path: str | None = None
+
+
+class ExecutionEventRecord(BaseModel):
+    event_type: str = "codex_run.approved"
+    event_version: str = "v1"
+    event_id: str | None = None
+    trigger_id: str | None = None
+    run_id: str | None = None
+    workspace: str | None = None
+    title: str | None = None
+    risk_level: ReviewPolicyRiskLevel | None = None
+    decision_mode: ReviewDecisionMode | None = None
+    decision_reasons: list[str] = Field(default_factory=list)
+    approved_at: str | None = None
+    approved_by: str | None = None
+    approved_next_prompt: str | None = None
+    review_url: str | None = None
+    artifacts: list[ExecutionEventArtifact] = Field(default_factory=list)
+    source: str = "controltower_orchestration"
+    pack_hint: str | None = None
+    correlation_id: str | None = None
+    request_id: str | None = None
+
+
+class ExecutionEmissionAttempt(BaseModel):
+    attempt_number: int
+    attempted_at: str
+    provider: ReviewTriggerProvider
+    target: str | None = None
+    status: ExecutionAttemptStatus
+    failure_class: ExecutionAttemptFailureClass | None = None
+    retryable: bool = False
+    backoff_ms: int | None = None
+    response_status: int | None = None
+    response_excerpt: str | None = None
+    error_message: str | None = None
+    result_path: str | None = None
+    dead_letter_path: str | None = None
+
+
+class ExecutionResultArtifact(BaseModel):
+    label: str
+    path: str
+    content_type: str | None = None
+    external_url: str | None = None
+
+
+class ExecutionResultRecord(BaseModel):
+    event_id: str | None = None
+    run_id: str | None = None
+    pack_id: str | None = None
+    pack_type: ExecutionPackType | None = None
+    status: ExecutionLifecycleStatus = "not_started"
+    summary: str | None = None
+    output_artifacts: list[ExecutionResultArtifact] = Field(default_factory=list)
+    started_at: str | None = None
+    completed_at: str | None = None
+    external_reference: str | None = None
+    logs_excerpt: str | None = None
+    result_path: str | None = None
+    recorded_at: str | None = None
+    closeout_status: ExecutionCloseoutStatus = "pending"
+    closeout_recorded_at: str | None = None
+    closeout_json_path: str | None = None
+    closeout_markdown_path: str | None = None
+    closeout_summary: str | None = None
+
+
+class ReviewTriggerRecord(BaseModel):
+    provider: ReviewTriggerProvider = "none"
+    execution_event_id: str | None = None
+    trigger_id: str | None = None
+    event_id: str | None = None
+    pack_id: str | None = None
+    pack_type: ExecutionPackType | None = None
+    event_version: str | None = None
+    status: ReviewTriggerStatus = "not_started"
+    delivery_status: ExecutionDeliveryStatus | None = None
+    requested_at: str | None = None
+    first_attempted_at: str | None = None
+    last_attempt_at: str | None = None
+    last_attempted_at: str | None = None
+    emitted_at: str | None = None
+    attempt_count: int = 0
+    target: str | None = None
+    payload_path: str | None = None
+    result_path: str | None = None
+    response_status: int | None = None
+    response_excerpt: str | None = None
+    error_message: str | None = None
+    last_error: str | None = None
+    dead_letter_path: str | None = None
+    downstream_reference: str | None = None
+    closeout_status: ExecutionCloseoutStatus = "pending"
+    closeout_recorded_at: str | None = None
+    attempts: list[ExecutionEmissionAttempt] = Field(default_factory=list)
+
+
+class ReviewContinuityRecord(BaseModel):
+    written_at: str | None = None
+    runtime_markdown_path: str | None = None
+    vault_markdown_path: str | None = None
+
+
+class ReviewRun(BaseModel):
+    run_id: str
+    title: str
+    workspace: str
+    summary: str
+    raw_output_excerpt: list[str] = Field(default_factory=list)
+    proposed_next_prompt: str
+    state: ReviewRunState = "pending_review"
+    created_at: str
+    review_url: str
+    detail_path: str
+    approve_path: str
+    reject_path: str
+    source_operation_id: str | None = None
+    release_generated_at: str | None = None
+    artifacts: list[ReviewArtifactRef] = Field(default_factory=list)
+    decision_artifacts: list[ReviewArtifactRef] = Field(default_factory=list)
+    risk_level: ReviewPolicyRiskLevel = "medium"
+    decision_mode: ReviewDecisionMode = "manual_review"
+    decision_reasons: list[str] = Field(default_factory=lambda: ["Policy metadata unavailable for this persisted run."])
+    policy_version: str = "legacy"
+    auto_approved_at: str | None = None
+    escalated_at: str | None = None
+    policy_evaluated_at: str = Field(default_factory=lambda: utc_now_iso())
+    notification: ReviewNotification = Field(default_factory=ReviewNotification)
+    reviewer: ReviewDecisionMetadata = Field(default_factory=ReviewDecisionMetadata)
+    audit_trail: list[ReviewAuditEntry] = Field(default_factory=list)
+    trigger: ReviewTriggerRecord = Field(default_factory=ReviewTriggerRecord)
+    execution_pack: ExecutionPackRecord = Field(default_factory=ExecutionPackRecord)
+    execution_event: ExecutionEventRecord = Field(default_factory=ExecutionEventRecord)
+    execution_result: ExecutionResultRecord = Field(default_factory=ExecutionResultRecord)
+    continuity: ReviewContinuityRecord = Field(default_factory=ReviewContinuityRecord)
+    last_error: ReviewFailure | None = None
 
 
 def utc_now_iso() -> str:

@@ -1,5 +1,74 @@
 {% extends "layout.html" %}
 {% block content %}
+<section class="card" id="review-queue">
+  <h2>Runs Ready For Review</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Review Run</th>
+        <th>Title</th>
+        <th>Workspace</th>
+        <th>State</th>
+        <th>Risk</th>
+        <th>Decision</th>
+        <th>Pack</th>
+        <th>Trigger</th>
+        <th>Execution</th>
+        <th>Created</th>
+        <th>Notification</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for review in review_runs %}
+      <tr>
+        <td><a href="{{ review.detail_path }}">{{ review.run_id }}</a></td>
+        <td>{{ review.title }}</td>
+        <td>{{ review.workspace }}</td>
+        <td><span class="review-state-pill review-state-{{ review.state }}">{{ review.state|replace('_', ' ') }}</span></td>
+        <td><span class="review-risk-pill review-risk-{{ review.risk_level }}">{{ review.risk_level }}</span></td>
+        <td>
+          <span class="review-decision-pill review-decision-{{ review.decision_mode }}">{{ review.decision_mode|replace('_', ' ') }}</span>
+          {% if review.auto_approved_at %}
+          <div class="utility-note">auto-approved</div>
+          {% elif review.escalated_at %}
+          <div class="utility-note">escalated</div>
+          {% endif %}
+        </td>
+        <td>
+          <strong>{{ review.execution_pack.pack_type }}</strong>
+          <div class="utility-note">{{ review.execution_pack.selection_reason }}</div>
+          <div class="utility-note">guard: {{ review.execution_pack.pack_guard }}</div>
+          <div class="utility-note">guard reasons: {{ review.execution_pack.guard_reasons|join("; ") or "not recorded" }}</div>
+          <div class="utility-note">validation: {{ review.execution_pack.validation_status }}</div>
+        </td>
+        <td>
+          <strong>{{ review.trigger.delivery_status or review.trigger.status }}</strong>
+          <div class="utility-note">delivery_status: {{ review.trigger.delivery_status or review.trigger.status }}</div>
+          <div class="utility-note">attempt_count: {{ review.trigger.attempt_count }}</div>
+          <div class="utility-note">last_error: {{ review.trigger.last_error or "not recorded" }}</div>
+          <div class="utility-note">dead_letter_path: {{ review.trigger.dead_letter_path or "not recorded" }}</div>
+        </td>
+        <td>
+          <strong>{{ review.execution_result.status }}</strong>
+          <div class="utility-note">closeout_status: {{ review.execution_result.closeout_status }}</div>
+          <div class="utility-note">closeout_recorded_at: {{ review.execution_result.closeout_recorded_at or "not recorded" }}</div>
+          {% if review.execution_result.closeout_summary %}
+          <div class="utility-note">{{ review.execution_result.closeout_summary }}</div>
+          {% endif %}
+        </td>
+        <td>{{ review.created_at }}</td>
+        <td>{{ review.notification.status }}{% if review.notification.signal_level %} / {{ review.notification.signal_level }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% if not review_runs %}
+      <tr>
+        <td colspan="11">No approval-gated review runs are pending yet.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
 <section class="card">
   <h2>Historical Runs</h2>
   <table class="data-table">
