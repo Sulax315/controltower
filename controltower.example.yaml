@@ -1,6 +1,7 @@
 app:
   product_name: Control Tower
   environment: local
+  public_base_url:
 
 sources:
   schedulelab:
@@ -63,6 +64,13 @@ review:
   operator_username:
   operator_password:
   session_cookie_name: controltower_review_session
+
+auth:
+  mode: dev
+  session_secret:
+  username:
+  password:
+  session_cookie_name: controltower_app_session
 
 autonomy:
   enabled: true

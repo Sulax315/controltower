@@ -15,6 +15,7 @@ Control Tower stays a single FastAPI process behind host nginx. The same Python 
 
 - Web process: `controltower-web.service` running `python /srv/controltower/app/run_controltower.py --config /etc/controltower/controltower.yaml serve --host 127.0.0.1 --port 8787`
 - Reverse proxy: nginx terminates TLS for `controltower.bratek.io` and proxies to `127.0.0.1:8787`
+- Public access posture: nginx serves the public hostname and Control Tower presents an application login before any protected UI or API content is available
 - Scheduler: cron runs the canonical `daily` and `weekly` jobs through the Linux wrappers
 - Runtime persistence: the YAML config sets `runtime.state_root` to `/srv/controltower/shared/.controltower_runtime`, so restarts and code deploys do not discard logs, latest pointers, release evidence, or history
 
@@ -67,11 +68,10 @@ Run smoke:
 CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/smoke_controltower.sh --config /etc/controltower/controltower.yaml
 ```
 
-Verify diagnostics through nginx:
+Verify the public login screen through nginx:
 
 ```bash
-curl -fsS https://controltower.bratek.io/diagnostics > /tmp/controltower-diagnostics.html
-curl -fsS https://controltower.bratek.io/api/diagnostics | python3 -m json.tool
+curl -fsS https://controltower.bratek.io/login > /tmp/controltower-login.html
 ```
 
 ## Local Access Triage
@@ -103,7 +103,7 @@ sudo cat /etc/cron.d/controltower
 Run the one-command production verification flow:
 
 ```bash
-CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml
+CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml --auth-username "$CODEX_AUTH_USERNAME" --auth-password "$CODEX_AUTH_PASSWORD"
 ```
 
 ## Daily vs Weekly

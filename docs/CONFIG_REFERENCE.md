@@ -6,6 +6,7 @@ Example file: [`controltower.example.yaml`](../controltower.example.yaml)
 
 - `app.product_name`: UI and report label
 - `app.environment`: descriptive environment label
+- `app.public_base_url`: public HTTPS base URL used for emitted review links and external operator references
 - `sources.schedulelab.published_root`: published ScheduleLab root
 - `sources.profitintel.database_path`: primary ProfitIntel DB
 - `sources.profitintel.validation_search_roots`: fallback roots scanned for populated `validation.db` files
@@ -37,6 +38,10 @@ Example file: [`controltower.example.yaml`](../controltower.example.yaml)
 - `review.session_secret`: signing key for operator review sessions in prod
 - `review.operator_username`: interim operator username for prod review mutations
 - `review.operator_password`: interim operator password for prod review mutations
+- `auth.mode`: browser application auth mode, `dev` or `prod`
+- `auth.session_secret`: signing key for the public app session in prod
+- `auth.username`: username for the public login screen
+- `auth.password`: password for the public login screen
 - `autonomy.enabled`: master switch for selective autonomy
 - `autonomy.auto_approve_low_risk`: allow deterministic low-risk auto-approval
 - `autonomy.escalate_high_risk`: allow deterministic escalation for high/critical runs

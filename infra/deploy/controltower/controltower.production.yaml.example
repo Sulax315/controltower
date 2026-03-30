@@ -1,6 +1,7 @@
 app:
   product_name: Control Tower
   environment: production
+  public_base_url: https://controltower.bratek.io
 
 sources:
   schedulelab:
@@ -36,3 +37,6 @@ runtime:
 ui:
   host: 127.0.0.1
   port: 8787
+
+auth:
+  mode: prod

@@ -4,6 +4,7 @@ This pack finishes the Linux droplet deployment for Control Tower using the repo
 
 - one loopback-only FastAPI process on `127.0.0.1:8787`
 - host nginx terminating TLS for `controltower.bratek.io`
+- application-layer username/password auth on the public HTTPS hostname
 - systemd supervising the always-on web process
 - cron running the canonical daily and weekly operations
 - persistent runtime state under a shared `.controltower_runtime/`
@@ -24,6 +25,7 @@ Adjust the example env and YAML files only where your droplet's existing Schedul
 
 - Backend process: `python /srv/controltower/app/run_controltower.py --config /etc/controltower/controltower.yaml serve --host 127.0.0.1 --port 8787`
 - Public route: `https://controltower.bratek.io` proxied by nginx to `http://127.0.0.1:8787`
+- Public entry point: `https://controltower.bratek.io/login`
 - Runtime evidence: `/srv/controltower/shared/.controltower_runtime`
 - Scheduler: cron for `daily` and `weekly`, because the repo already has stable scheduler-oriented wrapper scripts and file-backed operation logs
 

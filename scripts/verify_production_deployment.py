@@ -512,18 +512,22 @@ def _verify_route_set(
     backend_base_url: str,
     public_base_url: str,
     timeout_seconds: int,
+    backend_opener=None,
+    public_opener=None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for path, expectation in route_expectations.items():
         backend_result = _http_check(
             f"{backend_base_url}{path}",
             timeout_seconds=timeout_seconds,
+            opener=backend_opener,
             expected_content_type_prefix=expectation["expected_content_type_prefix"],
-            expected_markers=expectation["markers"],
+            expected_markers=expectation.get("markers"),
             expected_headers=expectation.get("expected_headers"),
             visible_prefix_anchor=expectation.get("visible_prefix_anchor"),
             expected_visible_markers=expectation.get("expected_visible_markers"),
             forbidden_markers=expectation.get("forbidden_markers"),
+            forbidden_visible_markers=expectation.get("forbidden_visible_markers"),
         )
         backend_result["name"] = f"backend_{expectation['name']}"
         results.append(backend_result)
@@ -531,12 +535,14 @@ def _verify_route_set(
         public_result = _http_check(
             f"{public_base_url}{path}",
             timeout_seconds=timeout_seconds,
+            opener=public_opener,
             expected_content_type_prefix=expectation["expected_content_type_prefix"],
-            expected_markers=expectation["markers"],
+            expected_markers=expectation.get("markers"),
             expected_headers=expectation.get("expected_headers"),
             visible_prefix_anchor=expectation.get("visible_prefix_anchor"),
             expected_visible_markers=expectation.get("expected_visible_markers"),
             forbidden_markers=expectation.get("forbidden_markers"),
+            forbidden_visible_markers=expectation.get("forbidden_visible_markers"),
         )
         public_result["name"] = f"public_{expectation['name']}"
         results.append(public_result)
@@ -564,6 +570,7 @@ def _http_check(
     url: str,
     *,
     timeout_seconds: int,
+    opener=None,
     follow_redirects: bool = True,
     expected_statuses: set[int] | None = None,
     expected_content_type_prefix: str | None = None,
@@ -575,7 +582,7 @@ def _http_check(
     forbidden_visible_markers: list[str] | None = None,
 ) -> dict[str, Any]:
     request = Request(url, headers={"User-Agent": "controltower-production-verifier/1.0"})
-    opener = build_opener() if follow_redirects else build_opener(_NoRedirectHandler())
+    opener = opener or _build_http_opener(follow_redirects=follow_redirects)
     allowed_statuses = expected_statuses or {200}
     try:
         with opener.open(request, timeout=timeout_seconds) as response:
@@ -631,19 +638,95 @@ def _http_check(
     }
 
 
-def _json_check(url: str, *, timeout_seconds: int) -> dict[str, Any]:
-    result = _http_check(url, timeout_seconds=timeout_seconds)
+def _json_check(url: str, *, timeout_seconds: int, opener=None) -> dict[str, Any]:
+    result = _http_check(url, timeout_seconds=timeout_seconds, opener=opener)
     if result["status"] != "pass":
         return result
     try:
         request = Request(url, headers={"User-Agent": "controltower-production-verifier/1.0"})
-        with urlopen(request, timeout=timeout_seconds) as response:
+        active_opener = opener or _build_http_opener()
+        with active_opener.open(request, timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (URLError, HTTPError, json.JSONDecodeError) as exc:
         return {"status": "fail", "url": url, "error": str(exc)}
     if payload.get("config", {}).get("status") != "loaded":
         return {"status": "fail", "url": url, "payload": payload, "error": "Diagnostics config status was not loaded."}
     return {"status": "pass", "url": url, "payload": payload}
+
+
+def _build_http_opener(*, cookie_jar: CookieJar | None = None, follow_redirects: bool = True):
+    handlers: list[object] = []
+    if not follow_redirects:
+        handlers.append(_NoRedirectHandler())
+    if cookie_jar is not None:
+        handlers.append(HTTPCookieProcessor(cookie_jar))
+    return build_opener(*handlers)
+
+
+def _login_session(base_url: str, *, username: str, password: str, timeout_seconds: int):
+    cookies = CookieJar()
+    opener = _build_http_opener(cookie_jar=cookies, follow_redirects=False)
+    login_url = f"{base_url.rstrip('/')}/login?next_path=/publish"
+    request = Request(login_url, headers={"User-Agent": "controltower-production-verifier/1.0"})
+    try:
+        with opener.open(request, timeout=timeout_seconds) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            status_code = response.status
+    except (HTTPError, URLError) as exc:
+        return None, {"status": "fail", "url": login_url, "error": str(exc)}
+    if status_code != 200:
+        return None, {"status": "fail", "url": login_url, "http_status": status_code, "error": "Login page did not return HTTP 200."}
+
+    csrf_token = _extract_csrf_token(body)
+    if not csrf_token:
+        return None, {"status": "fail", "url": login_url, "error": "Login page did not expose a CSRF token."}
+
+    payload = urlencode(
+        {
+            "username": username,
+            "password": password,
+            "next_path": "/publish",
+            "csrf_token": csrf_token,
+        }
+    ).encode("utf-8")
+    post_request = Request(
+        f"{base_url.rstrip('/')}/login",
+        data=payload,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "controltower-production-verifier/1.0",
+        },
+    )
+    try:
+        with opener.open(post_request, timeout=timeout_seconds) as response:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            status_code = response.status
+    except HTTPError as exc:
+        headers = {key.lower(): value for key, value in exc.headers.items()}
+        status_code = exc.code
+    except URLError as exc:
+        return None, {"status": "fail", "url": f"{base_url.rstrip('/')}/login", "error": str(exc.reason)}
+
+    location = headers.get("location", "")
+    if status_code not in {302, 303} or not location.startswith("/publish"):
+        return None, {
+            "status": "fail",
+            "url": f"{base_url.rstrip('/')}/login",
+            "http_status": status_code,
+            "location": location,
+            "error": "Login POST did not redirect to the protected publish route.",
+        }
+    return opener, {
+        "status": "pass",
+        "url": f"{base_url.rstrip('/')}/login",
+        "http_status": status_code,
+        "location": location,
+    }
+
+
+def _extract_csrf_token(body: str) -> str | None:
+    match = re.search(r'name="csrf_token" value="([^"]+)"', body)
+    return match.group(1) if match else None
 
 
 def _run_subprocess(command: list[str], *, cwd: Path) -> dict[str, Any]:

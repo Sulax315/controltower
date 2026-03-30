@@ -16,6 +16,7 @@ Control Tower loads configuration from a YAML file passed with `--config`, or fr
 - `identity.registry_path` must exist and be valid YAML. Startup fails fast if the registry is missing or contains ambiguous aliases.
 - `obsidian.vault_root` must be writable. Daily and weekly runs write live notes here.
 - `runtime.state_root` must be writable. Control Tower stores run manifests, diagnostics snapshots, release artifacts, logs, operation summaries, and the artifact index here.
+- `app.public_base_url` should be set to the real public hostname, for example `https://controltower.bratek.io`, so emitted review URLs and operator links resolve correctly outside the loopback listener.
 - `execution.provider` controls how approved review runs emit the downstream execution event: `file`, `webhook`, `stub`, or `none`.
 - `execution.file_dir` is the durable file-queue target for n8n or watcher-based consumers.
 - `execution.dead_letter_dir` stores failed downstream payloads for replay and operator inspection.
@@ -24,7 +25,9 @@ Control Tower loads configuration from a YAML file passed with `--config`, or fr
 - `execution.result_ingest_enabled` controls whether downstream closeout can be POSTed back into Control Tower.
 - `execution.event_version` pins the normalized event contract version carried in emitted payloads.
 - `review.mode` controls whether approval/rejection endpoints run in local dev mode or production session-authenticated mode.
+- `auth.mode` controls whether the main UI/API surface stays open for local development or requires username/password application auth in production.
 - `autonomy.*` controls deterministic selective-autonomy classification, low-risk auto-approval, high-risk escalation, policy versioning, and auto-approval notification behavior.
+- Application auth uses a signed session backed by `auth.session_secret`, `auth.username`, and `auth.password`.
 - Production mutation auth uses a signed review session backed by `review.session_secret`, `review.operator_username`, and `review.operator_password`.
 - Markdown templates under `src/controltower/render/templates/` and UI templates under `src/controltower/api/templates/` must exist. Startup and preflight fail immediately if they do not.
 
@@ -43,7 +46,13 @@ Latest pointer files are never deleted, and pruning also preserves the most rece
 ## Environment Variables
 
 - `CONTROLTOWER_CONFIG`: optional alternate path to the YAML config for UI launches or wrappers that rely on environment-based discovery.
+- `CONTROLTOWER_PUBLIC_BASE_URL`: optional override for `app.public_base_url`.
 - `GIT_COMMIT`: optional build metadata override. If unset, Control Tower attempts `git rev-parse HEAD`; if git metadata is unavailable, diagnostics report `unavailable`.
+- `CODEX_AUTH_MODE`: optional override for `auth.mode`.
+- `CODEX_AUTH_SESSION_SECRET`: required in production to sign the public app session.
+- `CODEX_AUTH_USERNAME`: required in production for the public login screen.
+- `CODEX_AUTH_PASSWORD`: required in production for the public login screen.
+- `CODEX_AUTH_SESSION_COOKIE_NAME`: optional override for the app session cookie name.
 - `CODEX_EXECUTION_PROVIDER`: optional override for `execution.provider`.
 - `CODEX_EXECUTION_FILE_DIR`: optional override for `execution.file_dir`.
 - `CODEX_EXECUTION_WEBHOOK_URL`: optional override for `execution.webhook_url`.

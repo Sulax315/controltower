@@ -81,7 +81,7 @@ Example emitted payload:
   "approved_at": "2026-03-30T17:40:00Z",
   "approved_by": "operator",
   "approved_next_prompt": "Checkpoint fix, push to repo, and run full production validation.",
-  "review_url": "http://127.0.0.1:8787/reviews/review_2026-03-30T17-36-32Z",
+  "review_url": "https://controltower.bratek.io/reviews/review_2026-03-30T17-36-32Z",
   "artifacts": [
     {
       "label": "release_readiness_2026-03-30T17-36-32Z.json",

@@ -144,6 +144,8 @@ python .\run_controltower_ui.py
 
 ## Review Auth Modes
 
+- `auth.mode=prod` turns the full browser surface into a public-HTTPS, application-authenticated site. Anonymous users can reach `/login`, but protected UI and API routes require the configured app session credentials.
+- App login now uses `app.public_base_url` plus `CODEX_AUTH_SESSION_SECRET`, `CODEX_AUTH_USERNAME`, and `CODEX_AUTH_PASSWORD` for the public session gate.
 - `CODEX_REVIEW_MODE=dev` keeps the local review surface friction-light for Cursor demos. Review detail, approve, and reject stay directly usable in the browser UI and CLI.
 - `CODEX_REVIEW_MODE=prod` turns the browser review plane into read-mostly mode until an operator signs in with the configured review session credentials.
 - Production browser mutation auth now uses a signed session backed by `CODEX_REVIEW_SESSION_SECRET`, `CODEX_REVIEW_OPERATOR_USERNAME`, and `CODEX_REVIEW_OPERATOR_PASSWORD`.
