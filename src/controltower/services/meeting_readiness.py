@@ -410,14 +410,17 @@ def _artifact_preserves_meeting_packet_contract(arena, artifact_text: str) -> bo
 def _cross_surface_finish_semantics_align(root_answer, arena_primary, root_html: str, arena_html: str, artifact_text: str) -> bool:
     if root_answer is None:
         return False
-    if root_answer.projected_finish_label not in root_html:
+    root_text = html.unescape(root_html)
+    arena_text = html.unescape(arena_html)
+    artifact_text = html.unescape(artifact_text)
+    if root_answer.projected_finish_label not in root_text:
         return False
-    if root_answer.movement_label not in root_html and not root_answer.movement_reason:
+    if root_answer.movement_label not in root_text and not root_answer.movement_reason:
         return False
     if arena_primary is not None:
-        if arena_primary.projected_finish_label not in arena_html:
+        if arena_primary.projected_finish_label not in arena_text:
             return False
-        if arena_primary.required_action not in arena_html:
+        if arena_primary.required_action not in arena_text:
             return False
     return (
         f"Projected finish: {root_answer.projected_finish_label}" in artifact_text
@@ -429,18 +432,22 @@ def _cross_surface_finish_semantics_align(root_answer, arena_primary, root_html:
 def _cross_surface_finish_driver_semantics_align(root_answer, arena_primary, root_html: str, arena_html: str, detail_html: str, artifact_text: str) -> bool:
     if root_answer is None:
         return False
-    if root_answer.finish_driver.controlling_driver not in root_html:
+    root_text = html.unescape(root_html)
+    arena_text = html.unescape(arena_html)
+    detail_text = html.unescape(detail_html)
+    artifact_text = html.unescape(artifact_text)
+    if root_answer.finish_driver.controlling_driver not in root_text:
         return False
-    if root_answer.change_intelligence.finish.detail not in root_html:
+    if root_answer.change_intelligence.finish.detail not in root_text:
         return False
-    if root_answer.finish_driver.controlling_driver not in detail_html:
+    if root_answer.finish_driver.controlling_driver not in detail_text:
         return False
-    if root_answer.change_intelligence.driver.detail not in detail_html:
+    if root_answer.change_intelligence.driver.detail not in detail_text:
         return False
     if arena_primary is not None:
-        if arena_primary.finish_driver.controlling_driver not in arena_html:
+        if arena_primary.finish_driver.controlling_driver not in arena_text:
             return False
-        if arena_primary.change_intelligence.finish.detail not in arena_html:
+        if arena_primary.change_intelligence.finish.detail not in arena_text:
             return False
     return (
         root_answer.finish_driver.controlling_driver in artifact_text
