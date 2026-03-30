@@ -252,11 +252,11 @@ def main() -> int:
             print(json.dumps(summary, indent=2))
             return EXIT_PROXY_ERROR
 
-        backend_opener, backend_login = _login_session(
-            backend_base_url,
-            username=auth_username,
-            password=auth_password,
+        backend_publish = _http_check(
+            f"{backend_base_url}/publish",
             timeout_seconds=args.timeout_seconds,
+            follow_redirects=False,
+            expected_statuses={303},
         )
         public_opener, public_login = _login_session(
             public_base_url,
@@ -264,10 +264,19 @@ def main() -> int:
             password=auth_password,
             timeout_seconds=args.timeout_seconds,
         )
-        summary["checks"].append({"name": "backend_login", **backend_login})
+        backend_publish["expected_location_prefix"] = "/login?next_path=/publish"
+        backend_publish["location_matches_login"] = str(backend_publish.get("headers", {}).get("location", "")).startswith(
+            "/login?next_path=/publish"
+        )
+        backend_publish["status"] = (
+            "pass"
+            if backend_publish["status"] == "pass" and backend_publish["location_matches_login"]
+            else "fail"
+        )
+        summary["checks"].append({"name": "backend_publish_requires_login", **backend_publish})
         summary["checks"].append({"name": "public_login", **public_login})
-        if backend_login["status"] != "pass" or public_login["status"] != "pass":
-            summary["error"] = "Application login failed through the backend listener or public HTTPS route."
+        if backend_publish["status"] != "pass" or public_login["status"] != "pass":
+            summary["error"] = "Application auth gating or public login failed."
             print(json.dumps(summary, indent=2))
             return EXIT_PROXY_ERROR
 
@@ -411,7 +420,7 @@ def main() -> int:
 
     route_results = _verify_route_set(
         route_expectations=route_expectations,
-        backend_base_url=backend_base_url,
+        backend_base_url=None if auth_required else backend_base_url,
         public_base_url=public_base_url,
         timeout_seconds=args.timeout_seconds,
         backend_opener=backend_opener,
@@ -509,7 +518,7 @@ def main() -> int:
 def _verify_route_set(
     *,
     route_expectations: dict[str, dict[str, Any]],
-    backend_base_url: str,
+    backend_base_url: str | None,
     public_base_url: str,
     timeout_seconds: int,
     backend_opener=None,
@@ -517,20 +526,22 @@ def _verify_route_set(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for path, expectation in route_expectations.items():
-        backend_result = _http_check(
-            f"{backend_base_url}{path}",
-            timeout_seconds=timeout_seconds,
-            opener=backend_opener,
-            expected_content_type_prefix=expectation["expected_content_type_prefix"],
-            expected_markers=expectation.get("markers"),
-            expected_headers=expectation.get("expected_headers"),
-            visible_prefix_anchor=expectation.get("visible_prefix_anchor"),
-            expected_visible_markers=expectation.get("expected_visible_markers"),
-            forbidden_markers=expectation.get("forbidden_markers"),
-            forbidden_visible_markers=expectation.get("forbidden_visible_markers"),
-        )
-        backend_result["name"] = f"backend_{expectation['name']}"
-        results.append(backend_result)
+        backend_result = None
+        if backend_base_url:
+            backend_result = _http_check(
+                f"{backend_base_url}{path}",
+                timeout_seconds=timeout_seconds,
+                opener=backend_opener,
+                expected_content_type_prefix=expectation["expected_content_type_prefix"],
+                expected_markers=expectation.get("markers"),
+                expected_headers=expectation.get("expected_headers"),
+                visible_prefix_anchor=expectation.get("visible_prefix_anchor"),
+                expected_visible_markers=expectation.get("expected_visible_markers"),
+                forbidden_markers=expectation.get("forbidden_markers"),
+                forbidden_visible_markers=expectation.get("forbidden_visible_markers"),
+            )
+            backend_result["name"] = f"backend_{expectation['name']}"
+            results.append(backend_result)
 
         public_result = _http_check(
             f"{public_base_url}{path}",
@@ -547,22 +558,23 @@ def _verify_route_set(
         public_result["name"] = f"public_{expectation['name']}"
         results.append(public_result)
 
-        matched = {
-            "name": f"public_matches_backend_{expectation['name']}",
-            "status": "fail",
-            "path": path,
-            "backend_body_sha256": backend_result.get("body_sha256"),
-            "public_body_sha256": public_result.get("body_sha256"),
-            "backend_semantic_body_sha256": backend_result.get("semantic_body_sha256"),
-            "public_semantic_body_sha256": public_result.get("semantic_body_sha256"),
-        }
-        if backend_result["status"] == "pass" and public_result["status"] == "pass":
-            matched["status"] = (
-                "pass"
-                if backend_result.get("semantic_body_sha256") == public_result.get("semantic_body_sha256")
-                else "fail"
-            )
-        results.append(matched)
+        if backend_result is not None:
+            matched = {
+                "name": f"public_matches_backend_{expectation['name']}",
+                "status": "fail",
+                "path": path,
+                "backend_body_sha256": backend_result.get("body_sha256"),
+                "public_body_sha256": public_result.get("body_sha256"),
+                "backend_semantic_body_sha256": backend_result.get("semantic_body_sha256"),
+                "public_semantic_body_sha256": public_result.get("semantic_body_sha256"),
+            }
+            if backend_result["status"] == "pass" and public_result["status"] == "pass":
+                matched["status"] = (
+                    "pass"
+                    if backend_result.get("semantic_body_sha256") == public_result.get("semantic_body_sha256")
+                    else "fail"
+                )
+            results.append(matched)
     return results
 
 
