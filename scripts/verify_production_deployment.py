@@ -11,12 +11,13 @@ import ssl
 import subprocess
 import sys
 import tempfile
+from http.cookiejar import CookieJar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.parse import urlencode, urlparse
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener, urlopen
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +83,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="HTTP timeout for backend and nginx route checks.",
     )
     parser.add_argument(
+        "--auth-username",
+        default=os.getenv("CODEX_AUTH_USERNAME"),
+        help="Username used for application-layer authentication when prod auth is enabled.",
+    )
+    parser.add_argument(
+        "--auth-password",
+        default=os.getenv("CODEX_AUTH_PASSWORD"),
+        help="Password used for application-layer authentication when prod auth is enabled.",
+    )
+    parser.add_argument(
         "--skip-smoke",
         action="store_true",
         help="Skip the production smoke subprocess.",
@@ -135,6 +146,9 @@ def main() -> int:
     public_base_url = args.public_base_url.rstrip("/")
     public_http_base_url = (args.public_http_base_url or _to_http_url(public_base_url)).rstrip("/")
     selected_codes = _selected_codes(service)
+    auth_required = (config.auth.mode or "dev").strip().lower() == "prod"
+    auth_username = args.auth_username or config.auth.username
+    auth_password = args.auth_password or config.auth.password
     base_arena = service.build_arena([])
     arena = service.build_arena(selected_codes)
     tower = service.build_control_tower(selected_codes)
@@ -142,6 +156,7 @@ def main() -> int:
 
     summary["backend_base_url"] = backend_base_url
     summary["public_http_base_url"] = public_http_base_url
+    summary["auth_required"] = auth_required
     summary["artifacts"] = {
         "runtime_root": str(runtime_root),
         "artifact_index": str(runtime_root / ARTIFACT_INDEX_NAME),
@@ -185,109 +200,222 @@ def main() -> int:
         print(json.dumps(summary, indent=2))
         return EXIT_PROXY_ERROR
 
-    route_expectations = {
-        "/": {
-            "name": "root",
-            "expected_content_type_prefix": "text/html",
-            "markers": [
-                "Executive operating view",
-                'id="root-primary-answer"',
-                tower.comparison_trust.ranking_label,
-                tower.comparison_trust.baseline_label,
-            ],
-            "visible_prefix_anchor": 'id="root-executive-prelude"',
-            "expected_visible_markers": _root_visible_markers(tower),
-            "forbidden_markers": [
-                "Leading change items on this run.",
-                "Immediate owner-led actions in view.",
-                "Rising risks still above the fold.",
-                "projected finish not available",
-                "no finish-date delta was emitted",
-            ],
-            "forbidden_visible_markers": [
-                "Material Change",
-                "High Risk",
-                "Overall Posture",
-            ],
-        },
-        "/arena": {
-            "name": "arena",
-            "expected_content_type_prefix": "text/html",
-            "markers": [
-                'id="arena-project-answers"',
-                "Download Authoritative Markdown",
-                base_arena.comparison_trust.ranking_label,
-                base_arena.comparison_trust.baseline_label,
-            ],
-            "visible_prefix_anchor": 'id="arena-executive-prelude"',
-            "expected_visible_markers": _arena_visible_markers(base_arena),
-            "forbidden_markers": [
-                "projected finish not available",
-                "no finish-date delta was emitted",
-            ],
-            "forbidden_visible_markers": [
-                "Material Change",
-                "High Risk",
-                "Overall Posture",
-            ],
-        },
-        "/arena/export/artifact.md": {
-            "name": "artifact",
-            "expected_content_type_prefix": "text/markdown",
-            "markers": [
-                "## Scope / Timestamp",
-                "## Project Finish Answers",
-                "## Trust Posture / Baseline",
-                base_arena.selection_summary,
-                base_arena.comparison_trust.ranking_label,
-            ],
-            "expected_headers": {
-                "x-controltower-arena-selection": ",".join(base_arena.selected_arena_codes),
+    backend_opener = None
+    public_opener = None
+    if auth_required:
+        if not auth_username or not auth_password:
+            summary["error"] = "Application auth is enabled, but no auth username/password were provided to the verifier."
+            print(json.dumps(summary, indent=2))
+            return EXIT_CONFIG_ERROR
+
+        public_login_page = _http_check(
+            f"{public_base_url}/login?next_path=/publish",
+            timeout_seconds=args.timeout_seconds,
+            expected_content_type_prefix="text/html",
+            expected_markers=["Sign In", "AUTH REQUIRED"],
+        )
+        summary["checks"].append({"name": "public_login_page", **public_login_page})
+        if public_login_page["status"] != "pass":
+            summary["error"] = "The public login page was not reachable."
+            print(json.dumps(summary, indent=2))
+            return EXIT_PROXY_ERROR
+
+        anonymous_publish = _http_check(
+            f"{public_base_url}/publish",
+            timeout_seconds=args.timeout_seconds,
+            follow_redirects=False,
+            expected_statuses={303},
+        )
+        anonymous_publish["expected_location_prefix"] = "/login?next_path=/publish"
+        anonymous_publish["location_matches_login"] = str(anonymous_publish.get("headers", {}).get("location", "")).startswith(
+            "/login?next_path=/publish"
+        )
+        anonymous_publish["status"] = (
+            "pass"
+            if anonymous_publish["status"] == "pass" and anonymous_publish["location_matches_login"]
+            else "fail"
+        )
+        summary["checks"].append({"name": "public_publish_requires_login", **anonymous_publish})
+        if anonymous_publish["status"] != "pass":
+            summary["error"] = "Anonymous access to the public publish route was not redirected to login."
+            print(json.dumps(summary, indent=2))
+            return EXIT_PROXY_ERROR
+
+        anonymous_api = _http_check(
+            f"{public_base_url}/api/diagnostics",
+            timeout_seconds=args.timeout_seconds,
+            expected_statuses={401},
+        )
+        summary["checks"].append({"name": "public_api_requires_auth", **anonymous_api})
+        if anonymous_api["status"] != "pass":
+            summary["error"] = "Anonymous access to the public diagnostics API was not denied."
+            print(json.dumps(summary, indent=2))
+            return EXIT_PROXY_ERROR
+
+        backend_opener, backend_login = _login_session(
+            backend_base_url,
+            username=auth_username,
+            password=auth_password,
+            timeout_seconds=args.timeout_seconds,
+        )
+        public_opener, public_login = _login_session(
+            public_base_url,
+            username=auth_username,
+            password=auth_password,
+            timeout_seconds=args.timeout_seconds,
+        )
+        summary["checks"].append({"name": "backend_login", **backend_login})
+        summary["checks"].append({"name": "public_login", **public_login})
+        if backend_login["status"] != "pass" or public_login["status"] != "pass":
+            summary["error"] = "Application login failed through the backend listener or public HTTPS route."
+            print(json.dumps(summary, indent=2))
+            return EXIT_PROXY_ERROR
+
+        route_expectations = {
+            "/publish": {
+                "name": "publish",
+                "expected_content_type_prefix": "text/html",
             },
-        },
-    }
+            "/arena": {
+                "name": "arena",
+                "expected_content_type_prefix": "text/html",
+                "markers": ['id="arena-project-answers"'],
+            },
+            "/arena/export/artifact.md": {
+                "name": "artifact",
+                "expected_content_type_prefix": "text/markdown",
+                "markers": ["## Scope / Timestamp"],
+                "expected_headers": {
+                    "x-controltower-arena-selection": ",".join(base_arena.selected_arena_codes),
+                },
+            },
+            "/diagnostics": {
+                "name": "diagnostics",
+                "expected_content_type_prefix": "text/html",
+            },
+        }
+    else:
+        route_expectations = {
+            "/": {
+                "name": "root",
+                "expected_content_type_prefix": "text/html",
+                "markers": [
+                    "Executive operating view",
+                    'id="root-primary-answer"',
+                    tower.comparison_trust.ranking_label,
+                    tower.comparison_trust.baseline_label,
+                ],
+                "visible_prefix_anchor": 'id="root-executive-prelude"',
+                "expected_visible_markers": _root_visible_markers(tower),
+                "forbidden_markers": [
+                    "Leading change items on this run.",
+                    "Immediate owner-led actions in view.",
+                    "Rising risks still above the fold.",
+                    "projected finish not available",
+                    "no finish-date delta was emitted",
+                ],
+                "forbidden_visible_markers": [
+                    "Material Change",
+                    "High Risk",
+                    "Overall Posture",
+                ],
+            },
+            "/arena": {
+                "name": "arena",
+                "expected_content_type_prefix": "text/html",
+                "markers": [
+                    'id="arena-project-answers"',
+                    "Download Authoritative Markdown",
+                    base_arena.comparison_trust.ranking_label,
+                    base_arena.comparison_trust.baseline_label,
+                ],
+                "visible_prefix_anchor": 'id="arena-executive-prelude"',
+                "expected_visible_markers": _arena_visible_markers(base_arena),
+                "forbidden_markers": [
+                    "projected finish not available",
+                    "no finish-date delta was emitted",
+                ],
+                "forbidden_visible_markers": [
+                    "Material Change",
+                    "High Risk",
+                    "Overall Posture",
+                ],
+            },
+            "/arena/export/artifact.md": {
+                "name": "artifact",
+                "expected_content_type_prefix": "text/markdown",
+                "markers": [
+                    "## Scope / Timestamp",
+                    "## Project Finish Answers",
+                    "## Trust Posture / Baseline",
+                    base_arena.selection_summary,
+                    base_arena.comparison_trust.ranking_label,
+                ],
+                "expected_headers": {
+                    "x-controltower-arena-selection": ",".join(base_arena.selected_arena_codes),
+                },
+            },
+        }
     if selected_codes:
         selected_query = "&".join(f"selected={code}" for code in selected_codes)
-        route_expectations[f"/arena?{selected_query}"] = {
-            "name": "arena_selected",
-            "expected_content_type_prefix": "text/html",
-            "markers": [
-                'id="arena-project-answers"',
-                "Download Authoritative Markdown",
-                arena.comparison_trust.ranking_label,
-                arena.comparison_trust.baseline_label,
-            ],
-            "visible_prefix_anchor": 'id="arena-executive-prelude"',
-            "expected_visible_markers": _arena_visible_markers(arena),
-            "forbidden_markers": [
-                "projected finish not available",
-                "no finish-date delta was emitted",
-            ],
-            "forbidden_visible_markers": [
-                "Material Change",
-                "High Risk",
-                "Overall Posture",
-            ],
-        }
-        route_expectations[f"/arena/export/artifact.md?{selected_query}"] = {
-            "name": "artifact_selected",
-            "expected_content_type_prefix": "text/markdown",
-            "markers": [
-                "## Scope / Timestamp",
-                "## Project Finish Answers",
-                "## Trust Posture / Baseline",
-                arena.selection_summary,
-                arena.comparison_trust.ranking_label,
-            ],
-            "expected_headers": {
-                "x-controltower-arena-selection": ",".join(arena.selected_arena_codes),
-            },
-        }
+        if auth_required:
+            route_expectations[f"/arena?{selected_query}"] = {
+                "name": "arena_selected",
+                "expected_content_type_prefix": "text/html",
+                "markers": ['id="arena-project-answers"'],
+            }
+            route_expectations[f"/arena/export/artifact.md?{selected_query}"] = {
+                "name": "artifact_selected",
+                "expected_content_type_prefix": "text/markdown",
+                "markers": ["## Scope / Timestamp"],
+                "expected_headers": {
+                    "x-controltower-arena-selection": ",".join(arena.selected_arena_codes),
+                },
+            }
+        else:
+            route_expectations[f"/arena?{selected_query}"] = {
+                "name": "arena_selected",
+                "expected_content_type_prefix": "text/html",
+                "markers": [
+                    'id="arena-project-answers"',
+                    "Download Authoritative Markdown",
+                    arena.comparison_trust.ranking_label,
+                    arena.comparison_trust.baseline_label,
+                ],
+                "visible_prefix_anchor": 'id="arena-executive-prelude"',
+                "expected_visible_markers": _arena_visible_markers(arena),
+                "forbidden_markers": [
+                    "projected finish not available",
+                    "no finish-date delta was emitted",
+                ],
+                "forbidden_visible_markers": [
+                    "Material Change",
+                    "High Risk",
+                    "Overall Posture",
+                ],
+            }
+            route_expectations[f"/arena/export/artifact.md?{selected_query}"] = {
+                "name": "artifact_selected",
+                "expected_content_type_prefix": "text/markdown",
+                "markers": [
+                    "## Scope / Timestamp",
+                    "## Project Finish Answers",
+                    "## Trust Posture / Baseline",
+                    arena.selection_summary,
+                    arena.comparison_trust.ranking_label,
+                ],
+                "expected_headers": {
+                    "x-controltower-arena-selection": ",".join(arena.selected_arena_codes),
+                },
+            }
+
     route_results = _verify_route_set(
         route_expectations=route_expectations,
         backend_base_url=backend_base_url,
         public_base_url=public_base_url,
         timeout_seconds=args.timeout_seconds,
+        backend_opener=backend_opener,
+        public_opener=public_opener,
     )
     summary["checks"].extend(route_results)
     if any(check["status"] != "pass" for check in route_results):
@@ -295,14 +423,22 @@ def main() -> int:
         print(json.dumps(summary, indent=2))
         return EXIT_PROXY_ERROR
 
-    diagnostics_page = _http_check(f"{public_base_url}/diagnostics", timeout_seconds=args.timeout_seconds)
+    diagnostics_page = _http_check(
+        f"{public_base_url}/diagnostics",
+        timeout_seconds=args.timeout_seconds,
+        opener=public_opener,
+    )
     summary["checks"].append({"name": "public_diagnostics", **diagnostics_page})
     if diagnostics_page["status"] != "pass":
         summary["error"] = "The public /diagnostics route did not answer successfully."
         print(json.dumps(summary, indent=2))
         return EXIT_DIAGNOSTICS_ERROR
 
-    diagnostics_api = _json_check(f"{public_base_url}/api/diagnostics", timeout_seconds=args.timeout_seconds)
+    diagnostics_api = _json_check(
+        f"{public_base_url}/api/diagnostics",
+        timeout_seconds=args.timeout_seconds,
+        opener=public_opener,
+    )
     diagnostics_check = {"name": "public_api_diagnostics", **diagnostics_api}
     if diagnostics_api["status"] == "pass":
         payload = diagnostics_api["payload"]
