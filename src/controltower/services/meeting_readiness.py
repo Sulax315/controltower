@@ -5,10 +5,9 @@ from pathlib import Path
 import re
 from typing import Any
 
-from fastapi.testclient import TestClient
-
 from controltower.config import ControlTowerConfig, load_config
 from controltower.services.controltower import ControlTowerService
+from controltower.services.test_auth import build_authenticated_test_client
 
 
 ARTIFACT_HEADINGS = (
@@ -66,7 +65,7 @@ def verify_meeting_readiness(config: ControlTowerConfig, selected_codes: list[st
 
     service = ControlTowerService(config)
     app = create_app_from_config(config)
-    client = TestClient(app)
+    client = build_authenticated_test_client(app, config, next_path="/control")
 
     portfolio = service.build_portfolio()
     selected = _selected_codes(portfolio.project_rankings, selected_codes)

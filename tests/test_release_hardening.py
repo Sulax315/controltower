@@ -161,3 +161,23 @@ def test_diagnostics_surface_exposes_version_and_release_status(sample_config_pa
     assert payload["artifacts"]["presence_checks"]["latest_release_json"] is True
     assert payload["comparison_runtime"]["comparison_run_matches_surface"] is True
     assert payload["comparison_runtime"]["contained_blocks_authoritative_delta"] is True
+
+
+def test_release_readiness_route_checks_pass_with_prod_app_auth(sample_config_path: Path):
+    config = load_config(sample_config_path)
+    config.auth.mode = "prod"
+    config.auth.session_secret = "prod-app-session-secret"
+    config.auth.username = "operator"
+    config.auth.password = "operator-pass"
+
+    artifact = build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+
+    assert artifact["route_checks"]["status"] == "pass"
+    assert artifact["route_checks"]["checks"]["/publish"] == 200
+    assert artifact["route_checks"]["checks"]["/api/diagnostics"] == 200
+    assert artifact["route_checks"]["auth_checks"]["publish_requires_login"] is True
+    assert artifact["route_checks"]["auth_checks"]["api_requires_auth"] is True

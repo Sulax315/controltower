@@ -29,6 +29,7 @@ from controltower.services.runtime_state import (
     refresh_artifact_index,
     write_diagnostics_snapshot,
 )
+from controltower.services.test_auth import app_auth_required, build_authenticated_test_client
 
 
 RELEASE_SCHEMA_VERSION = "2026-03-27"
@@ -323,7 +324,9 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
     from controltower.api.app import create_app_from_config
 
     app = create_app_from_config(config)
-    client = TestClient(app)
+    anonymous_client = TestClient(app)
+    client = build_authenticated_test_client(app, config)
+    auth_required = app_auth_required(config)
     project_code = export_record.project_snapshots[0].canonical_project_code if export_record.project_snapshots else None
     service = ControlTowerService(config)
     selected_codes = [project_code] if project_code else []
@@ -339,6 +342,15 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
         else client.get("/arena/export/artifact.md")
     )
     diagnostics_api_response = client.get("/api/diagnostics")
+    auth_checks: dict[str, bool] = {}
+    if auth_required:
+        anonymous_publish_response = anonymous_client.get("/publish", follow_redirects=False)
+        anonymous_diagnostics_response = anonymous_client.get("/api/diagnostics", follow_redirects=False)
+        auth_checks = {
+            "publish_requires_login": anonymous_publish_response.status_code == 303
+            and anonymous_publish_response.headers.get("location", "").startswith("/login?next_path=/publish"),
+            "api_requires_auth": anonymous_diagnostics_response.status_code == 401,
+        }
     checks = {
         "/": home_response.status_code,
         "/publish": publish_response.status_code,
@@ -405,10 +417,12 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
             "pass"
             if all(status_code == 200 for status_code in checks.values())
             and all(visibility_checks.values())
+            and all(auth_checks.values())
             and meeting_readiness["status"] == "pass"
             else "fail"
         ),
         "checks": checks,
+        "auth_checks": auth_checks,
         "visibility_checks": visibility_checks,
         "meeting_readiness": meeting_readiness,
     }
