@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="card">
+  <h2>Historical Runs</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th>Projects</th>
+        <th>Preview</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a href="/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
+        <td>{{ run.generated_at }}</td>
+        <td>{{ run.status }}</td>
+        <td>{{ run.project_snapshots|length }}</td>
+        <td>{{ run.preview_only }}</td>
+      </tr>
+      {% endfor %}
+      {% if not runs %}
+      <tr>
+        <td colspan="5">No historical runs have been recorded yet.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

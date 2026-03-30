@@ -1,0 +1,109 @@
+{% set movement_days = command_answer.movement_days %}
+{% if movement_days is none %}
+  {% set command_status_label = "DELTA UNAVAILABLE" %}
+  {% set command_status_class = "unknown" %}
+{% elif movement_days > 0 %}
+  {% set command_status_label = "SLIPPING" %}
+  {% set command_status_class = "slipping" %}
+{% elif movement_days < 0 %}
+  {% set command_status_label = "RECOVERING" %}
+  {% set command_status_class = "recovering" %}
+{% else %}
+  {% set command_status_label = "ON TRACK" %}
+  {% set command_status_class = "on-track" %}
+{% endif %}
+<section
+  class="command-investigation-shell"
+  data-investigation-shell
+  id="{{ command_block_id }}-investigation-shell">
+  <article
+    class="command-answer command-surface command-surface-{{ command_status_class }} {% if command_surface_variant %}{{ command_surface_variant }}{% endif %}"
+    data-command-surface="execution-brief"
+    id="{{ command_block_id }}">
+    <div class="command-answer-head command-surface-head">
+      <div class="command-heading-block">
+        <div class="command-heading-meta">
+          <span class="label">{{ command_heading }}</span>
+          <span class="status-chip status-{{ command_status_class }}">{{ command_status_label }}</span>
+        </div>
+        <h3>{{ command_answer.project_name }}</h3>
+        <p class="project-code">{{ command_answer.canonical_project_code }}</p>
+        <p class="command-meta-line">{{ command_answer.trust_label }} | {{ command_baseline_label }}</p>
+      </div>
+    </div>
+
+    {% set brief_sections = command_answer.execution_brief.sections %}
+    <div class="execution-brief" id="{{ command_block_id }}-brief">
+      {% for section in brief_sections %}
+      <section class="brief-section brief-section-{{ section.key }}" id="{{ command_block_id }}-{{ section.key }}">
+        <div class="brief-section-head">
+          <span class="label">{{ loop.index }}. {{ section.label }}</span>
+          {% if section.key == "finish" %}
+          <div class="brief-finish-meta">
+            <span class="status-chip status-{{ command_status_class }}">{{ command_status_label }}</span>
+            <span class="status-chip status-timing">{{ command_answer.risk_level }}</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="brief-lines">
+          {% for line in section.lines %}
+          <div class="brief-line" data-brief-line>{{ line }}</div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+  </article>
+
+  <div class="command-insight-grid command-brief-support">
+    <article class="answer-card command-insight-card" id="{{ command_driver_id }}">
+      <span class="label">Investigation</span>
+      <button
+        type="button"
+        class="investigation-trigger investigation-trigger-driver"
+        data-investigation-open="{{ command_block_id }}-driver-panel"
+        aria-controls="{{ command_block_id }}-driver-panel"
+        aria-expanded="false">
+        <span class="investigation-trigger-copy">
+          <strong>Open finish driver detail</strong>
+          <span class="investigation-trigger-hint">{{ command_answer.finish_driver.controlling_driver }}</span>
+        </span>
+      </button>
+      <p class="command-meta">{{ command_answer.finish_driver.driver_type.replace("_", " ") }}</p>
+    </article>
+
+    <article class="answer-card command-insight-card" id="{{ command_change_id }}">
+      <span class="label">Deterministic trace</span>
+      <div class="command-detail-list">
+        <div class="command-detail-row">
+          <span>Finish</span>
+          <strong>{{ command_answer.change_intelligence.finish.detail }}</strong>
+        </div>
+        <div class="command-detail-row">
+          <span>Driver</span>
+          {% if command_answer.driver_change_investigation.available %}
+          <button
+            type="button"
+            class="inline-investigation-trigger"
+            data-investigation-open="{{ command_block_id }}-change-panel"
+            aria-controls="{{ command_block_id }}-change-panel"
+            aria-expanded="false">
+            {{ command_answer.change_intelligence.driver.detail }}
+          </button>
+          {% else %}
+          <strong>{{ command_answer.change_intelligence.driver.detail }}</strong>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+
+    {% if command_answer.challenge_next %}
+    <article class="answer-card command-insight-card command-insight-card-challenge" id="{{ command_challenge_id }}">
+      <span class="label">Challenge Next</span>
+      <strong>{{ command_answer.challenge_next }}</strong>
+    </article>
+    {% endif %}
+  </div>
+
+  {% include "_project_investigation_panels.html" %}
+</section>

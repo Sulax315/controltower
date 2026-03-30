@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="tower-shell">
+  <section class="grid two">
+    <article class="card">
+      <span class="label">Run Snapshot</span>
+      <h2>{{ record.run_id }}</h2>
+      <ul class="flat-list">
+        <li>Generated: {{ record.generated_at }}</li>
+        <li>Status: {{ record.status }}</li>
+        <li>Preview only: {{ record.preview_only }}</li>
+        <li>Previous run: {{ record.previous_run_id or "n/a" }}</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h3>Portfolio Snapshot</h3>
+      {% if record.portfolio_snapshot %}
+      <ul class="flat-list">
+        <li>{{ record.portfolio_snapshot.overall_posture }}</li>
+        <li>Average health: {{ "%.1f"|format(record.portfolio_snapshot.average_health_score or 0) }}</li>
+        <li>Risk distribution: LOW {{ record.portfolio_snapshot.risk_distribution.get("LOW", 0) }} / MEDIUM {{ record.portfolio_snapshot.risk_distribution.get("MEDIUM", 0) }} / HIGH {{ record.portfolio_snapshot.risk_distribution.get("HIGH", 0) }}</li>
+      </ul>
+      {% else %}
+      <p>No portfolio snapshot was stored for this run.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="answer-list">
+    {% for answer in run_answers %}
+    <article class="command-answer {% if loop.first %}dominant-answer{% else %}secondary-answer{% endif %}">
+      <div class="command-answer-head">
+        <div>
+          <span class="label">Run answer {{ loop.index }}</span>
+          <h3>{{ answer.project_name }}</h3>
+          <p class="project-code">{{ answer.canonical_project_code }}</p>
+        </div>
+      </div>
+      <div class="finish-readout">
+        <span class="label">Projected finish</span>
+        <strong>{{ answer.projected_finish_label }}</strong>
+      </div>
+      {% if answer.projected_finish_reason %}
+      <p class="answer-reason">Reason: {{ answer.projected_finish_reason }}</p>
+      {% endif %}
+      <section class="answer-grid">
+        <article class="answer-card emphasis">
+          <span class="label">Movement Vs Prior Trusted Run</span>
+          <strong>{{ answer.movement_label }}</strong>
+          <p>{{ answer.movement_reason or answer.trust_detail }}</p>
+        </article>
+        <article class="answer-card">
+          <span class="label">Primary Issue / Driver</span>
+          <strong>{{ answer.primary_issue }}</strong>
+        </article>
+        <article class="answer-card">
+          <span class="label">Required Action</span>
+          <strong>{{ answer.required_action }}</strong>
+          <p>Timing: {{ answer.action_timing }}</p>
+        </article>
+        <article class="answer-card">
+          <span class="label">Finish Authority</span>
+          <strong>{{ answer.finish_authority_state }}</strong>
+          <p>{{ answer.finish_source_label }}</p>
+        </article>
+      </section>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h3>Project Ranking</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Projected Finish</th>
+          <th>Movement</th>
+          <th>Primary Issue</th>
+          <th>Required Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for answer in run_answers %}
+        <tr>
+          <td><a href="/projects/{{ answer.canonical_project_code }}">{{ answer.project_name }}</a></td>
+          <td>{{ answer.projected_finish_label }}</td>
+          <td>{{ answer.movement_label }}</td>
+          <td>{{ answer.primary_issue }}</td>
+          <td>{{ answer.required_action }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</section>
+{% endblock %}

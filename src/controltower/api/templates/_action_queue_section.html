@@ -1,0 +1,66 @@
+<details class="progressive-section" id="{{ section_id }}" data-progressive-section="{{ section_scope|default('shared') }}" {% if force_open|default(false) %}open{% endif %}>
+  <summary>
+    <div class="progressive-summary-copy">
+      <span class="label">Action queue</span>
+      <strong>{{ action_queue.title }}</strong>
+      <span class="summary-line">{{ action_queue.summary }}</span>
+    </div>
+    <div class="progressive-summary-meta">
+      <span class="count-pill">{{ action_queue.item_count if action_queue.item_count else "Stand by" }}</span>
+      <span class="summary-hint">Expand</span>
+      <span class="summary-toggle" aria-hidden="true"></span>
+    </div>
+  </summary>
+  <div class="progressive-body action-queue-stack">
+    {% for group in action_queue.groups %}
+    <article class="card subdued action-queue-group" id="{{ section_id }}-{{ group.key }}">
+      <div class="section-head action-queue-group-head">
+        <div>
+          <span class="label">{{ group.label }}</span>
+          <h3>{{ group.summary }}</h3>
+        </div>
+        <span class="count-pill">{{ group.item_count }}</span>
+      </div>
+      <div class="action-queue-grid">
+        {% for item in group.items %}
+        <article class="support-panel action-queue-item" id="{{ item.queue_id }}">
+          <div class="action-queue-item-head">
+            <div class="action-queue-title-block">
+              <div class="scan-card-head action-queue-kicker">
+                <span class="label">{{ item.canonical_project_code }}</span>
+                <div class="action-queue-badges">
+                  <span class="queue-state queue-state-{{ item.continuity_state.replace('_', '-') }}">{{ item.continuity_label }}</span>
+                  {% if item.priority %}
+                  <span class="priority-pill priority-{{ item.priority }}">{{ item.priority.upper() }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              <strong class="action-queue-command">{{ item.action_text }}</strong>
+            </div>
+          </div>
+          <div class="action-queue-meta-bar">
+            <span><strong>Owner</strong>{{ item.owner_role }}</span>
+            <span><strong>Timing</strong>{{ item.timing }}</span>
+            <span><strong>Project</strong>{{ item.project_name }}</span>
+          </div>
+          <p class="action-queue-reason">{{ item.reason_source_signal }}</p>
+          {% if item.priority_basis %}
+          <p class="meta action-queue-priority-basis">{{ item.priority_basis }}</p>
+          {% endif %}
+          <div class="action-queue-footer">
+            <span class="action-queue-continuity">{{ item.continuity_detail }}</span>
+            <div class="queue-links">
+              <a class="button subtle" href="{{ item.drilldown_path }}">Open driver</a>
+              <a class="button secondary" href="{{ item.compare_path }}">Compare runs</a>
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+    {% if not action_queue.groups %}
+    <article class="card subdued"><p>{{ action_queue.summary }}</p></article>
+    {% endif %}
+  </div>
+</details>

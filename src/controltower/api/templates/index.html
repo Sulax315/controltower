@@ -1,0 +1,366 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="tower-shell operating-workspace" data-surface-tier="workspace">
+  <section class="workspace-band band-command" id="root-primary-workspace" data-surface-tier="primary">
+    <article class="headline-panel executive-prelude" id="root-executive-prelude">
+      <div class="headline-copy">
+        <div class="headline-kicker">
+          <span class="label">Control Tower</span>
+          <span class="mode-tag">Meeting-ready operating surface</span>
+        </div>
+        <h2>Executive operating view</h2>
+        {% if tower.primary_project_answer %}
+        {% set command_answer = tower.primary_project_answer %}
+        {% set command_heading = "Lead project" %}
+        {% set command_block_id = "root-primary-answer" %}
+        {% set command_delta_id = "root-answer-delta" %}
+        {% set command_issue_id = "root-answer-issue" %}
+        {% set command_action_id = "root-answer-action" %}
+        {% set command_risk_id = "root-answer-risk" %}
+        {% set command_authority_id = "root-answer-authority" %}
+        {% set command_driver_id = "root-answer-finish-driver" %}
+        {% set command_change_id = "root-answer-what-changed" %}
+        {% set command_challenge_id = "root-answer-challenge-next" %}
+        {% set command_trust_id = "root-trust-posture" %}
+        {% set command_signal = tower.material_changes_section.items[0].what if tower.material_changes_section.items else tower.material_changes_section.summary %}
+        {% set command_baseline_label = tower.comparison_trust.baseline_label %}
+        {% set command_trust_status = tower.comparison_trust.status %}
+        {% set command_surface_variant = "dominant-answer" %}
+        {% include "_project_command_block.html" %}
+        {% else %}
+        <article class="card subdued">
+          <span class="label">Lead project</span>
+          <h3>No project is currently ranked</h3>
+          <p>No deterministic project answer is available because the current run did not resolve any project snapshots.</p>
+        </article>
+        {% endif %}
+      </div>
+      <aside class="headline-actions executive-rail">
+        <div class="rail-copy">
+          <span class="label">Meeting Controls</span>
+          <strong>Promote only what needs room time.</strong>
+          <p class="selection-note">
+            {% if tower.selected_arena_codes %}
+            {{ tower.selected_arena_codes|length }} item(s) currently selected for Arena.
+            {% else %}
+            No Arena slate yet. Promote from the ranked queue below.
+            {% endif %}
+          </p>
+        </div>
+        <a class="button primary" href="{{ tower.arena_path }}">Open Arena</a>
+        <a class="button secondary" href="{{ tower.arena_artifact_path }}">Authoritative Markdown Export</a>
+        <a class="text-link" href="{{ tower.arena_export_path }}">Open Print / PDF Preview</a>
+      </aside>
+    </article>
+  </section>
+
+  <section class="workspace-band band-secondary" id="root-secondary-workspace" data-surface-tier="secondary">
+    <article class="card subdued supporting-preview" id="root-supporting-preview">
+      <span class="label">Supporting detail</span>
+      <p>Packet, queue, continuity, and ranked evidence continue below.</p>
+    </article>
+
+    <section class="scan-grid supporting-scan" id="root-executive-scan">
+      {% for card in tower.executive_scan %}
+      <article
+        class="scan-card scan-card-{{ card.key }}"
+        id="root-scan-{{ card.key }}"
+        data-scan-order="{{ loop.index }}-{{ card.key }}">
+        <div class="scan-card-head">
+          <span class="label">{{ card.label }}</span>
+          <span class="count-pill">{{ card.project_code or "Current run" }}</span>
+        </div>
+        <h3>{{ card.summary }}</h3>
+        <p>{{ card.detail }}</p>
+      </article>
+      {% endfor %}
+    </section>
+  </section>
+
+  <section class="workspace-band band-supporting" id="root-support-workspace" data-surface-tier="support">
+  {% set packet = tower.meeting_packet %}
+  {% set action_queue = tower.action_queue %}
+  {% set continuity = tower.continuity %}
+  {% set section_scope = "root" %}
+  {% set section_id = "root-section-meeting-packet" %}
+  {% include "_meeting_packet_section.html" %}
+
+  {% set section_id = "root-section-action-queue" %}
+  {% include "_action_queue_section.html" %}
+
+  {% set section_id = "root-section-continuity" %}
+  {% include "_continuity_section.html" %}
+
+  <details class="progressive-section" id="root-section-material-changes" data-progressive-section="root" {% if tower.material_changes_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ tower.material_changes_section.label }}</span>
+        <strong>{{ tower.material_changes_section.title }}</strong>
+        <span class="summary-line">{{ tower.material_changes_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.material_changes_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in tower.material_changes_section.items %}
+      <article class="attention-card narrative-card">
+        <div class="attention-title-row">
+          <div>
+            <h4>{{ item.project_name }}</h4>
+            <p class="meta">{{ item.canonical_project_code }}</p>
+          </div>
+        </div>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why it matters:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not tower.material_changes_section.items %}
+      <article class="card subdued"><p>{{ tower.material_changes_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-required-actions" data-progressive-section="root" {% if tower.required_actions_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ tower.required_actions_section.label }}</span>
+        <strong>{{ tower.required_actions_section.title }}</strong>
+        <span class="summary-line">{{ tower.required_actions_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.required_actions_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in tower.required_actions_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why now:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not tower.required_actions_section.items %}
+      <article class="card subdued"><p>{{ tower.required_actions_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-rising-risks" data-progressive-section="root" {% if tower.rising_risks_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ tower.rising_risks_section.label }}</span>
+        <strong>{{ tower.rising_risks_section.title }}</strong>
+        <span class="summary-line">{{ tower.rising_risks_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.rising_risks_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in tower.rising_risks_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Risk signal:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not tower.rising_risks_section.items %}
+      <article class="card subdued"><p>{{ tower.rising_risks_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-watch-items" data-progressive-section="root" {% if tower.watch_items_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ tower.watch_items_section.label }}</span>
+        <strong>{{ tower.watch_items_section.title }}</strong>
+        <span class="summary-line">{{ tower.watch_items_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.watch_items_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in tower.watch_items_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Context:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not tower.watch_items_section.items %}
+      <article class="card subdued"><p>{{ tower.watch_items_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-ranked-queue" data-progressive-section="root">
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">Supporting queue</span>
+        <strong>Ranked Attention Queue</strong>
+        <span class="summary-line">{% if tower.top_attention %}{{ tower.top_attention[0].canonical_project_code }} leads the deterministic queue for follow-up and Arena promotion.{% else %}No project is currently ranked for follow-up.{% endif %}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.top_attention[0].canonical_project_code if tower.top_attention else "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body attention-stack">
+      {% for item in tower.top_attention %}
+      <article class="attention-card">
+        <div class="attention-title-row">
+          <div>
+            <h4>{{ item.project_name }}</h4>
+            <p class="meta">{{ item.canonical_project_code }} | {{ item.domain }} | {{ item.risk_level }} | score {{ "%.1f"|format(item.health_score) }}</p>
+          </div>
+          <div class="card-actions">
+            {% if item.arena_promoted %}
+            <a class="button subtle" href="{{ item.arena_remove_path }}">Remove From Arena</a>
+            {% else %}
+            <a class="button subtle" href="{{ item.arena_add_path }}">Promote To Arena</a>
+            {% endif %}
+            <a class="text-link" href="{{ item.drilldown_path }}">Drill Down</a>
+          </div>
+        </div>
+        <p><strong>Trust posture:</strong> {{ item.comparison_label }}</p>
+        <p class="meta">{{ item.comparison_detail }}</p>
+        <p><strong>Projected finish:</strong> {{ item.projected_finish_label }}</p>
+        <p><strong>Movement vs prior trusted run:</strong> {{ item.finish_delta_label }}</p>
+        <p><strong>Schedule signal:</strong> {{ item.schedule_signal }}</p>
+        <p><strong>What changed:</strong> {{ item.what_changed }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why it matters:</strong> {{ item.why_it_matters }}</p>
+        <p><strong>Required action:</strong> {{ item.action_owner }} - {{ item.required_action }}</p>
+        <p><strong>Timing:</strong> {{ item.action_timing }}</p>
+        <p class="meta">Ranking basis: {{ item.ranking_reason }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-arena-candidates" data-progressive-section="root">
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">Meeting curation</span>
+        <strong>Arena Candidates</strong>
+        <span class="summary-line">{% if tower.arena_candidates %}{{ tower.arena_candidates[0].canonical_project_code }} is currently the lead meeting candidate for promotion.{% else %}No project is currently staged for meeting promotion.{% endif %}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ tower.arena_candidates[0].canonical_project_code if tower.arena_candidates else "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body grid two">
+      <article class="card">
+        <div class="section-head">
+          <div>
+            <span class="label">Arena Candidates</span>
+            <h3>Promote for meeting mode</h3>
+          </div>
+          <a class="text-link" href="{{ tower.arena_path }}">Preview Arena</a>
+        </div>
+        <ul class="priority-list">
+          {% for item in tower.arena_candidates %}
+          <li>
+            <strong>{{ item.canonical_project_code }}</strong>
+            <span>{{ item.what_changed }}</span>
+            {% if item.arena_promoted %}
+            <a class="text-link" href="{{ item.arena_remove_path }}">Remove</a>
+            {% else %}
+            <a class="text-link" href="{{ item.arena_add_path }}">Promote</a>
+            {% endif %}
+          </li>
+          {% endfor %}
+          {% if not tower.arena_candidates %}
+          <li>No current candidates were emitted from the ranked attention queue.</li>
+          {% endif %}
+        </ul>
+      </article>
+
+      <article class="card">
+        <div class="section-head">
+          <div>
+            <span class="label">Domain Coverage</span>
+            <h3>Coverage and bounded fallbacks</h3>
+          </div>
+        </div>
+        <div class="domain-stack">
+          {% for domain in tower.domain_coverage %}
+          <article class="domain-card {{ 'available' if domain.available else 'fallback' }}">
+            <h4>{{ domain.label }}</h4>
+            <p class="meta">{{ domain.item_count }} item(s) in scope</p>
+            <p>{{ domain.detail }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <details class="progressive-section" id="root-section-support-surfaces" data-progressive-section="root">
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">Support surfaces</span>
+        <strong>Supporting Surfaces Only</strong>
+        <span class="summary-line">Project ledger, run history, export, and diagnostics stay below the executive layer.</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">Support</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body support-links">
+      {% for link in tower.secondary_links %}
+      <article class="support-link-card">
+        <a href="{{ link.path }}">{{ link.label }}</a>
+        <p>{{ link.detail }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+  </section>
+</section>
+{% endblock %}

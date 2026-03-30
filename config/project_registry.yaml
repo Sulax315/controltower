@@ -1,0 +1,37 @@
+manual_overrides:
+  schedulelab:
+    SU WAVERLY: SU_WAVERLY
+  profitintel:
+    "219128": SU_WAVERLY
+
+projects:
+  - canonical_project_id: SU_WAVERLY
+    canonical_project_code: SU_WAVERLY
+    project_name: Waverly Dorm
+    project_code_aliases:
+      - SU_WAVERLY
+      - SU WAVERLY
+      - Waverly Dorm
+      - "219128"
+    source_aliases:
+      schedulelab:
+        - SU_WAVERLY
+        - SU WAVERLY
+        - Waverly Dorm
+      profitintel:
+        - "219128"
+        - Waverly Dorm
+
+  - canonical_project_id: AURORA_HILLS
+    canonical_project_code: AURORA_HILLS
+    project_name: Aurora Hills
+    project_code_aliases:
+      - AURORA_HILLS
+      - Aurora Hills
+    source_aliases:
+      schedulelab:
+        - AURORA_HILLS
+        - Aurora Hills
+      profitintel:
+        - AURORA_HILLS
+        - Aurora Hills

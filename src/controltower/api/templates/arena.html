@@ -1,0 +1,333 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="arena-shell operating-workspace {% if export_mode %}print-mode{% endif %}" data-surface-tier="workspace">
+  <section class="workspace-band band-command" id="arena-primary-workspace" data-surface-tier="primary">
+    <article class="arena-hero executive-prelude" id="arena-executive-prelude">
+      <div class="headline-copy">
+        <div class="headline-kicker">
+          <span class="label">Arena</span>
+          <span class="mode-tag">Presentation surface</span>
+        </div>
+        <h2>{{ arena.title }}</h2>
+        <p class="lede">{{ arena.subtitle }}</p>
+        {% if arena.project_answers %}
+        <div class="project-answer-stack" id="arena-project-answers">
+          {% for answer in arena.project_answers %}
+          {% set command_answer = answer %}
+          {% set command_heading = "Promoted project " ~ loop.index %}
+          {% set command_block_id = "arena-primary-answer-" ~ answer.canonical_project_code %}
+          {% set command_delta_id = "arena-answer-delta-" ~ answer.canonical_project_code %}
+          {% set command_issue_id = "arena-answer-issue-" ~ answer.canonical_project_code %}
+          {% set command_action_id = "arena-answer-action-" ~ answer.canonical_project_code %}
+          {% set command_risk_id = "arena-answer-risk-" ~ answer.canonical_project_code %}
+          {% set command_authority_id = "arena-answer-authority-" ~ answer.canonical_project_code %}
+          {% set command_driver_id = "arena-answer-finish-driver-" ~ answer.canonical_project_code %}
+          {% set command_change_id = "arena-answer-what-changed-" ~ answer.canonical_project_code %}
+          {% set command_challenge_id = "arena-answer-challenge-next-" ~ answer.canonical_project_code %}
+          {% set command_trust_id = "arena-answer-trust-" ~ answer.canonical_project_code %}
+          {% set command_signal = arena.items[loop.index0].change_statement if arena.items|length > loop.index0 else arena.material_changes_section.summary %}
+          {% set command_baseline_label = arena.comparison_trust.baseline_label %}
+          {% set command_trust_status = arena.comparison_trust.status %}
+          {% set command_surface_variant = "dominant-answer" if loop.first else "secondary-answer" %}
+          {% include "_project_command_block.html" %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <article class="card subdued">
+          <span class="label">Promoted projects</span>
+          <h3>No promoted items yet</h3>
+          <p>{{ arena.empty_state }}</p>
+        </article>
+        {% endif %}
+      </div>
+      <aside class="arena-hero-actions executive-rail">
+        <div class="rail-copy">
+          <span class="label">Handoff Controls</span>
+          <strong>{{ arena.scope_summary }}</strong>
+          <p class="selection-note">{{ arena.selection_summary }}</p>
+        </div>
+        <a class="button secondary" href="/">Back To Control Tower</a>
+        <a class="button primary" href="{{ arena.artifact_path }}">Download Authoritative Markdown</a>
+        {% if not export_mode %}
+        <a class="button secondary" href="{{ arena.export_path }}">Open Print / PDF View</a>
+        {% endif %}
+      </aside>
+    </article>
+  </section>
+
+  {% if export_mode %}
+  <article class="print-note">{{ arena.export_title }}</article>
+  {% endif %}
+
+  <section class="workspace-band band-secondary" id="arena-secondary-workspace" data-surface-tier="secondary">
+    <article class="card subdued supporting-preview" id="arena-supporting-preview">
+      <span class="label">Supporting detail</span>
+      <p>Narrative, metrics, and evidence stay below the promoted command surfaces.</p>
+    </article>
+
+    <section class="scan-grid supporting-scan" id="arena-executive-scan">
+      {% for card in arena.executive_scan %}
+      <article
+        class="scan-card scan-card-{{ card.key }}"
+        id="arena-scan-{{ card.key }}"
+        data-scan-order="{{ loop.index }}-{{ card.key }}">
+        <div class="scan-card-head">
+          <span class="label">{{ card.label }}</span>
+          <span class="count-pill">{{ card.project_code or "Presenter cue" }}</span>
+        </div>
+        <h3>{{ card.summary }}</h3>
+        <p>{{ card.detail }}</p>
+      </article>
+      {% endfor %}
+    </section>
+  </section>
+
+  <section class="workspace-band band-supporting" id="arena-support-workspace" data-surface-tier="support">
+  {% set packet = arena.meeting_packet %}
+  {% set action_queue = arena.action_queue %}
+  {% set continuity = arena.continuity %}
+  {% set section_scope = "arena" %}
+  {% set force_open = export_mode %}
+  {% set section_id = "arena-section-meeting-packet" %}
+  {% include "_meeting_packet_section.html" %}
+
+  {% set section_id = "arena-section-action-queue" %}
+  {% include "_action_queue_section.html" %}
+
+  {% set section_id = "arena-section-continuity" %}
+  {% include "_continuity_section.html" %}
+
+  <details class="progressive-section" id="arena-section-material-changes" data-progressive-section="arena" {% if export_mode or arena.material_changes_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ arena.material_changes_section.label }}</span>
+        <strong>{{ arena.material_changes_section.title }}</strong>
+        <span class="summary-line">{{ arena.material_changes_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ arena.material_changes_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in arena.material_changes_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why it matters:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not arena.material_changes_section.items %}
+      <article class="card subdued"><p>{{ arena.material_changes_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="arena-section-why-it-matters" data-progressive-section="arena" {% if export_mode or arena.why_it_matters_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ arena.why_it_matters_section.label }}</span>
+        <strong>{{ arena.why_it_matters_section.title }}</strong>
+        <span class="summary-line">{{ arena.why_it_matters_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ arena.why_it_matters_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in arena.why_it_matters_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why it matters:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not arena.why_it_matters_section.items %}
+      <article class="card subdued"><p>{{ arena.why_it_matters_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="arena-section-required-actions" data-progressive-section="arena" {% if export_mode or arena.required_actions_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ arena.required_actions_section.label }}</span>
+        <strong>{{ arena.required_actions_section.title }}</strong>
+        <span class="summary-line">{{ arena.required_actions_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ arena.required_actions_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in arena.required_actions_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Why now:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not arena.required_actions_section.items %}
+      <article class="card subdued"><p>{{ arena.required_actions_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="progressive-section" id="arena-section-rising-risks" data-progressive-section="arena" {% if export_mode or arena.rising_risks_section.default_open %}open{% endif %}>
+    <summary>
+      <div class="progressive-summary-copy">
+        <span class="label">{{ arena.rising_risks_section.label }}</span>
+        <strong>{{ arena.rising_risks_section.title }}</strong>
+        <span class="summary-line">{{ arena.rising_risks_section.summary }}</span>
+      </div>
+      <div class="progressive-summary-meta">
+        <span class="count-pill">{{ arena.rising_risks_section.lead_project_code or "Stand by" }}</span>
+        <span class="summary-hint">Expand</span>
+        <span class="summary-toggle" aria-hidden="true"></span>
+      </div>
+    </summary>
+    <div class="progressive-body narrative-stack">
+      {% for item in arena.rising_risks_section.items %}
+      <article class="attention-card narrative-card">
+        <h4>{{ item.project_name }}</h4>
+        <p><strong>Project:</strong> {{ item.who }}</p>
+        <p><strong>Finish:</strong> {{ item.finish }}</p>
+        <p><strong>Delta:</strong> {{ item.delta }}</p>
+        <p><strong>What changed:</strong> {{ item.what }}</p>
+        <p><strong>Cause:</strong> {{ item.cause }}</p>
+        <p><strong>Impact:</strong> {{ item.impact }}</p>
+        <p><strong>Risk signal:</strong> {{ item.why }}</p>
+        <p><strong>Action:</strong> {{ item.action }}</p>
+        <p><strong>Timing:</strong> {{ item.timing }}</p>
+      </article>
+      {% endfor %}
+      {% if not arena.rising_risks_section.items %}
+      <article class="card subdued"><p>{{ arena.rising_risks_section.summary }}</p></article>
+      {% endif %}
+    </div>
+  </details>
+
+  {% if arena.items %}
+  <div class="arena-stack" id="arena-agenda">
+    {% for item in arena.items %}
+    <details class="arena-card agenda-item" id="arena-agenda-{{ item.canonical_project_code }}" data-progressive-section="arena-agenda" {% if export_mode or loop.first %}open{% endif %}>
+      <summary class="agenda-summary">
+        <div class="agenda-summary-copy">
+          <span class="label">{{ item.group }}</span>
+          <strong>{{ loop.index }}. {{ item.project_name }}</strong>
+          <span>{{ item.change_statement }}</span>
+        </div>
+        <div class="agenda-meta">
+          <span class="agenda-decision">{{ item.action_statement }}</span>
+          <span>{{ item.canonical_project_code }}</span>
+        </div>
+      </summary>
+      <div class="progressive-body">
+        <div class="arena-card-head">
+          <div>
+            <span class="label">{{ item.group }}</span>
+            <h3>{{ item.project_name }}</h3>
+            <p class="meta">{{ item.canonical_project_code }} | {{ item.domain }}</p>
+          </div>
+          {% if not export_mode %}
+          <div class="arena-ordering">
+            {% if item.move_up_path %}<a class="text-link" href="{{ item.move_up_path }}">Move Earlier</a>{% endif %}
+            {% if item.move_down_path %}<a class="text-link" href="{{ item.move_down_path }}">Move Later</a>{% endif %}
+            <a class="text-link" href="{{ item.remove_path }}">Remove</a>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="presenter-grid">
+          <article class="presenter-card emphasis">
+            <span class="label">Speak To This Now</span>
+            <h4>{{ item.headline }}</h4>
+            <p><strong>Finish:</strong> {{ item.finish_statement }}</p>
+            <p><strong>Delta:</strong> {{ item.delta_statement }}</p>
+            <p><strong>What changed:</strong> {{ item.change_statement }}</p>
+            <p><strong>Decision / action:</strong> {{ item.action_statement }}</p>
+            <p><strong>Timing:</strong> {{ item.action_timing }}</p>
+          </article>
+          <article class="presenter-card">
+            <span class="label">Why It Matters</span>
+            <p>{{ item.why_it_matters_statement }}</p>
+            <p class="meta">Cause: {{ item.cause_statement }}</p>
+            <p class="meta">Impact: {{ item.impact_statement }}</p>
+          </article>
+          <article class="presenter-card">
+            <span class="label">Trust / Authority</span>
+            <p>{{ item.finish_authority_state }}</p>
+            <p class="meta">{{ item.finish_source_detail }}</p>
+            <p class="meta">{{ item.comparison_detail }}</p>
+          </article>
+        </div>
+
+        <div class="arena-support-grid">
+          <article class="support-panel">
+            <span class="label">Key Metrics</span>
+            <div class="arena-metrics">
+              {% for metric in item.metrics %}
+              <article class="metric-chip">
+                <span>{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+              </article>
+              {% endfor %}
+            </div>
+          </article>
+
+          <article class="support-panel">
+            <span class="label">Supporting Evidence</span>
+            <ul class="evidence-list">
+              {% for evidence in item.evidence_points %}
+              <li>{{ evidence }}</li>
+              {% endfor %}
+            </ul>
+          </article>
+        </div>
+
+        {% if not export_mode %}
+        <div class="arena-links">
+          <a class="text-link" href="{{ item.drilldown_path }}">Project Detail</a>
+          <a class="text-link" href="{{ item.compare_path }}">Comparison View</a>
+        </div>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% else %}
+  <article class="card empty-state">
+    <h3>No promoted items yet</h3>
+    <p>{{ arena.empty_state }}</p>
+    <a class="button primary" href="/">Select Arena candidates from Control Tower</a>
+  </article>
+  {% endif %}
+  </section>
+</section>
+{% endblock %}

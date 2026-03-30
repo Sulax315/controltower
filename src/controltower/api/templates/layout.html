@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title or config.app.product_name }}</title>
+  <link rel="stylesheet" href="/static/site.css">
+  <script src="/static/investigation.js" defer></script>
+</head>
+<body class="{{ page_mode or 'support' }}">
+  {% set current_path = request.url.path %}
+  {% set surface_label = "Meeting-ready command center" if current_path.startswith("/publish") else "Legacy control workspace" if current_path.startswith("/control") else "Deep-dive presentation surface" if current_path.startswith("/arena") else "Support surface" %}
+  <div class="app-shell">
+    <header class="app-shell-header{% if page_mode == 'publish' %} app-shell-header-publish{% endif %}">
+      <div class="app-frame">
+        <div class="app-topbar{% if page_mode == 'publish' %} is-publish{% endif %}">
+          <div class="app-brand">
+            {% if page_mode != "publish" %}
+            <div class="eyebrow">Bratek Operations</div>
+            {% endif %}
+            <strong>{{ config.app.product_name }}</strong>
+          </div>
+          <nav class="workspace-nav" aria-label="Primary">
+            <a href="/publish" class="nav-primary {% if current_path.startswith('/publish') %}is-active{% endif %}" {% if current_path.startswith('/publish') %}aria-current="page"{% endif %}>Publish</a>
+            <a href="/arena" class="{% if current_path.startswith('/arena') %}is-active{% endif %}" {% if current_path.startswith('/arena') %}aria-current="page"{% endif %}>Arena Deep Dive</a>
+            <a href="/projects" class="{% if current_path.startswith('/projects') %}is-active{% endif %}" {% if current_path.startswith('/projects') %}aria-current="page"{% endif %}>Projects</a>
+            <a href="/runs" class="nav-support {% if current_path.startswith('/runs') %}is-active{% endif %}" {% if current_path.startswith('/runs') %}aria-current="page"{% endif %}>Run History</a>
+            <a href="/exports/latest" class="nav-support {% if current_path.startswith('/exports') %}is-active{% endif %}" {% if current_path.startswith('/exports') %}aria-current="page"{% endif %}>Debug Exports</a>
+            <a href="/diagnostics" class="nav-support {% if current_path.startswith('/diagnostics') %}is-active{% endif %}" {% if current_path.startswith('/diagnostics') %}aria-current="page"{% endif %}>Diagnostics</a>
+            <a href="/control" class="nav-support {% if current_path.startswith('/control') %}is-active{% endif %}" {% if current_path.startswith('/control') %}aria-current="page"{% endif %}>Legacy Control</a>
+          </nav>
+          {% if page_mode != "publish" %}
+          <div class="workspace-status">
+            <span class="label">Surface</span>
+            <strong>{{ surface_label }}</strong>
+          </div>
+          {% endif %}
+        </div>
+        {% if page_mode != "publish" %}
+        <div class="workspace-header">
+          <div class="workspace-title-block">
+            <div class="eyebrow">{{ config.app.product_name }}</div>
+            <h1>{{ page_title or config.app.product_name }}</h1>
+            <p class="deck">{{ page_kicker or "Meeting-ready command output with bounded supporting evidence" }}</p>
+          </div>
+          <aside class="utility-panel">
+            <span class="label">Operator posture</span>
+            <strong>{{ surface_label }}</strong>
+            <p class="utility-note">Run the meeting from the command brief first. Deep dives, history, and debug surfaces stay available without becoming the default experience.</p>
+          </aside>
+        </div>
+        {% endif %}
+      </div>
+    </header>
+    <main class="surface">
+      <div class="surface-frame">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+</body>
+</html>

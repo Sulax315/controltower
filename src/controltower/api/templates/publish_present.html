@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Presentation Mode | {{ page_title or config.app.product_name }}</title>
+  <link rel="stylesheet" href="/static/site.css">
+  <script src="/static/investigation.js" defer></script>
+</head>
+<body class="publish publish-present">
+  <main class="present-shell" id="publish-present-shell">
+    {% if publish.available and publish.command_brief %}
+    <header class="present-topbar" id="publish-present-topbar">
+      <div class="present-topbar-copy">
+        <span class="label">Presentation Mode</span>
+        <strong>{{ publish.command_brief.project_name }}</strong>
+        <p>Issued {{ publish.generated_at }} | Run {{ publish.run_id }}</p>
+      </div>
+      <div class="present-topbar-actions">
+        <a class="button subtle" href="/publish?run={{ publish.run_id }}{% if publish.command_brief %}&project={{ publish.command_brief.canonical_project_code }}{% endif %}">Back to Publish</a>
+        <button type="button" class="button primary" data-print-trigger>Print / PDF</button>
+      </div>
+    </header>
+
+    <article class="present-sheet" id="publish-present-brief">
+      <header class="present-sheet-head">
+        <span class="label">Meeting-ready command brief</span>
+        <h1>{{ publish.command_brief.project_name }}</h1>
+        <p class="present-sheet-summary">{{ publish.continuity.summary }}</p>
+        <div class="present-meta-ribbon" id="publish-present-meta">
+          <span class="present-meta-pill">{{ publish.continuity.status_label }}</span>
+          <span class="present-meta-pill">{{ publish.command_brief.finish_source_label }}</span>
+          <span class="present-meta-pill">Run {{ publish.run_id }}</span>
+        </div>
+      </header>
+
+      <div class="present-command-strip" id="publish-present-lines">
+        {% for section in publish.command_brief.execution_brief.sections %}
+        <div class="command-strip-row present-command-strip-row" data-brief-section="{{ section.key }}">
+          <div class="command-strip-spine-segment" aria-hidden="true"></div>
+          <div class="command-strip-label">
+            <span class="command-strip-chip">{{ section.key|upper }}</span>
+          </div>
+          <div class="command-strip-content">
+            {% for line in section.lines %}
+            <p class="command-strip-line{% if section.key == 'finish' and loop.first %} is-lead{% endif %}">{{ line }}</p>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <footer class="present-footer" id="publish-present-footer">
+        <div class="present-footer-block">
+          <span class="label">Issued Output Continuity</span>
+          <strong>{{ publish.continuity.status_label }}</strong>
+          {% if publish.continuity.prior_run_id %}
+          <p>{{ publish.continuity.compare_label }} | Issued {{ publish.continuity.prior_generated_at }}</p>
+          {% else %}
+          <p>Prior issued run unavailable.</p>
+          {% endif %}
+        </div>
+        <div class="present-footer-block">
+          <span class="label">Source / Provenance</span>
+          <strong>{{ publish.command_brief.finish_source_label }}</strong>
+          <p>{{ publish.command_brief.finish_authority_state }} | Run {{ publish.run_id }}</p>
+        </div>
+      </footer>
+    </article>
+    {% else %}
+    <article class="present-empty-state" id="publish-present-empty-state">
+      <span class="label">Presentation Mode</span>
+      <h1>No published brief is available</h1>
+      <p>Run an export to generate a meeting-ready command brief for this workspace.</p>
+      <a class="button primary" href="/publish">Back to Publish</a>
+    </article>
+    {% endif %}
+  </main>
+</body>
+</html>

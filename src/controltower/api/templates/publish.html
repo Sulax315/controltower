@@ -1,0 +1,495 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="publish-shell ct-publish-shell" {% if auto_print %}data-auto-print="true"{% endif %}>
+  {% if publish.available and publish.command_brief %}
+  <textarea id="publish-brief-copy" class="copy-buffer" aria-hidden="true">{{ publish.command_brief_copy_text }}</textarea>
+  {% if publish.selected_artifact %}
+  <textarea id="publish-copy-{{ publish.selected_artifact.artifact_id }}" class="copy-buffer" aria-hidden="true">{{ publish.selected_artifact.copy_text }}</textarea>
+  {% endif %}
+
+  <div class="ct-layout" id="publish-command-sheet">
+    <div class="ct-main">
+      <div class="ct-header" id="publish-home-header">
+        <div class="ct-project">
+          <div class="ct-block-label">Project</div>
+          <div class="ct-project-name">{{ publish.command_brief.project_name }}</div>
+          <div class="ct-meta">{{ publish.command_brief.canonical_project_code }} | Run {{ publish.run_id }}</div>
+        </div>
+
+        <div class="ct-header-metric ct-finish">
+          <div class="ct-block-label">Finish</div>
+          <div class="ct-finish-date">{{ publish.command_brief.projected_finish_label }}</div>
+          <div class="ct-finish-meta">{{ publish.command_brief.movement_label }}</div>
+        </div>
+
+        <div class="ct-header-metric">
+          <div class="ct-block-label">Posture</div>
+          <div class="ct-status-value ct-status-{{ publish.command_status_class }}">{{ publish.command_status_label }}</div>
+          <div class="ct-meta">{{ publish.command_brief.trust_label }}</div>
+        </div>
+      </div>
+
+      <article class="ct-command-strip command-strip" id="publish-latest-brief" aria-label="Meeting-ready command brief">
+        {% for section in publish.command_brief.execution_brief.sections %}
+        <div class="ct-row command-strip-row" data-brief-section="{{ section.key }}">
+          <div class="ct-label">{{ section.key|upper }}</div>
+          <div class="ct-value">
+            {% for line in section.lines %}
+            <p class="ct-line{% if section.key == 'finish' and loop.first %} is-lead{% endif %}">{{ line }}</p>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </article>
+
+      <section class="ct-section ct-section-tight" id="publish-support-table">
+        <div class="ct-section-header">
+          <div>
+            <div class="ct-section-kicker">Evidence Grid</div>
+            <h3>Operational support</h3>
+          </div>
+          <div class="ct-section-meta">
+            <span>Visible on first scan</span>
+            <span>{{ publish.continuity.compare_label }}</span>
+          </div>
+        </div>
+
+        <div class="ct-table ct-table-5 ct-evidence-table">
+          <div class="ct-table-header">
+            <div>Signal / Item</div>
+            <div>Current State</div>
+            <div>Impact / Significance</div>
+            <div>Source / Artifact</div>
+            <div>Action</div>
+          </div>
+
+          <div class="ct-table-row">
+            <div>
+              <strong>Finish Forecast</strong>
+              <span>{{ publish.command_brief.project_name }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_status_label }}</strong>
+              <span>{{ publish.command_brief.projected_finish_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.movement_label }}</strong>
+              <span>{{ publish.command_brief.trust_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.finish_source_label or publish.continuity.compare_label }}</strong>
+              <span>{{ publish.command_brief.finish_source_detail or "Issued command brief baseline" }}</span>
+            </div>
+            <div class="ct-table-actions">
+              <a class="text-link" href="{{ publish.present_path }}">Present brief</a>
+              <a class="text-link" href="{{ publish.print_path }}">Export PDF</a>
+            </div>
+          </div>
+
+          <div class="ct-table-row">
+            <div>
+              <strong>Controlling Driver</strong>
+              <span>{{ publish.command_brief.finish_driver.driver_type|replace("_", " ")|title }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.finish_driver.controlling_driver }}</strong>
+              <span>{{ publish.command_brief.finish_driver.comparison_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.finish_driver.why_it_matters }}</strong>
+              {% if publish.command_brief.finish_driver.previous_driver %}
+              <span>Prior driver: {{ publish.command_brief.finish_driver.previous_driver }}</span>
+              {% endif %}
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.finish_source_label or "Deterministic finish signal" }}</strong>
+              <span>{{ publish.command_brief.finish_source_detail or publish.command_brief.finish_driver.comparison_detail }}</span>
+            </div>
+            <div class="ct-table-actions">
+              <a class="text-link" href="{{ publish.arena_path }}">Open Arena</a>
+            </div>
+          </div>
+
+          <div class="ct-table-row">
+            <div>
+              <strong>Risk Posture</strong>
+              <span>Primary issue</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.risk_level }}</strong>
+              <span>{{ publish.command_brief.primary_issue }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.action_summary }}</strong>
+              <span>{{ publish.command_brief.required_action }}</span>
+            </div>
+            <div>
+              {% if publish.selected_artifact %}
+              <strong>{{ publish.selected_artifact.title }}</strong>
+              <span>{{ publish.selected_artifact.artifact_type_label }}</span>
+              {% else %}
+              <strong>Execution brief</strong>
+              <span>Current publish surface</span>
+              {% endif %}
+            </div>
+            <div class="ct-table-actions">
+              {% if publish.selected_artifact %}
+              <a class="text-link" href="{{ publish.selected_artifact.open_path }}">Open output</a>
+              <a class="text-link" href="{{ publish.selected_artifact.source_path }}">Source Markdown</a>
+              {% else %}
+              <a class="text-link" href="{{ publish.arena_path }}">Open Arena</a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="ct-table-row">
+            <div>
+              <strong>Required Action</strong>
+              <span>Owner and timing</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.action_owner }}</strong>
+              <span>{{ publish.command_brief.action_timing }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.command_brief.required_action }}</strong>
+              <span>{{ publish.command_brief.action_summary }}</span>
+            </div>
+            <div>
+              <strong>Meeting-ready command brief</strong>
+              <span>Deterministic 5-line brief</span>
+            </div>
+            <div class="ct-table-actions">
+              <button type="button" class="ct-inline-action" data-copy-source="publish-brief-copy">Copy brief</button>
+            </div>
+          </div>
+
+          <div class="ct-table-row">
+            <div>
+              <strong>Continuity</strong>
+              <span>Current vs prior issued run</span>
+            </div>
+            <div>
+              <strong>{{ publish.continuity.status_label }}</strong>
+              <span>{{ publish.continuity.compare_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.continuity.summary }}</strong>
+              {% for line in publish.comparison_summary_lines %}
+              <span>{{ line }}</span>
+              {% endfor %}
+            </div>
+            <div>
+              <strong>{{ publish.continuity.prior_run_id or "Prior issued baseline unavailable" }}</strong>
+              <span>{{ publish.continuity.prior_generated_at or "No prior issued output was retained for comparison." }}</span>
+            </div>
+            <div class="ct-table-actions">
+              {% if publish.history|length > 1 and publish.history[1].open_output_path %}
+              <a class="text-link" href="{{ publish.history[1].open_output_path }}">Open prior output</a>
+              {% else %}
+              <a class="text-link" href="/runs">Open run history</a>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if publish.selected_artifact %}
+          <div class="ct-table-row">
+            <div>
+              <strong>Issued Output</strong>
+              <span>{{ publish.selected_artifact.artifact_type_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.selected_artifact.issue_state_label }}</strong>
+              <span>{{ publish.selected_artifact.authority_label }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.selected_artifact.preview_summary }}</strong>
+              <span>{{ publish.selected_artifact.continuity.summary }}</span>
+            </div>
+            <div>
+              <strong>{{ publish.selected_artifact.source_run_id }}</strong>
+              <span>{{ publish.selected_artifact.generated_at }}</span>
+            </div>
+            <div class="ct-table-actions">
+              <a class="text-link" href="{{ publish.selected_artifact.open_path }}">Open output</a>
+              <a class="text-link" href="{{ publish.selected_artifact.source_path }}">Source Markdown</a>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if publish.selected_artifact %}
+      <section class="ct-section" id="publish-artifact-viewer">
+        <div class="ct-section-header">
+          <div>
+            <div class="ct-section-kicker">Issued Deliverable</div>
+            <h3>{{ publish.selected_artifact.preview_metadata.title or publish.selected_artifact.title }}</h3>
+          </div>
+          <div class="ct-section-meta">
+            <span>{{ publish.selected_artifact.authority_label }}</span>
+            <span>{{ publish.selected_artifact.issue_state_label }}</span>
+            <span>{{ publish.selected_artifact.preview_metadata.generated_at or publish.selected_artifact.generated_at }}</span>
+          </div>
+        </div>
+
+        <div class="ct-document-sheet">
+          <div class="ct-document-header">
+            <div class="ct-document-label">{{ publish.selected_artifact.artifact_type_label }}</div>
+            <h4>{{ publish.selected_artifact.preview_metadata.title or publish.selected_artifact.title }}</h4>
+            <p class="ct-document-project">
+              {% if publish.selected_artifact.preview_metadata.project_name %}
+              <strong>{{ publish.selected_artifact.preview_metadata.project_name }}</strong>
+              {% if publish.selected_artifact.preview_metadata.project_code %}
+              <span>{{ publish.selected_artifact.preview_metadata.project_code }}</span>
+              {% endif %}
+              {% elif publish.selected_artifact.preview_metadata.project_code %}
+              <strong>{{ publish.selected_artifact.preview_metadata.project_code }}</strong>
+              {% else %}
+              <strong>Portfolio / Cross-project</strong>
+              {% endif %}
+            </p>
+          </div>
+
+          <div class="ct-document-meta" id="publish-artifact-metadata">
+            <div class="ct-document-meta-item">
+              <span>Artifact</span>
+              <strong>{{ publish.selected_artifact.artifact_type_label }}</strong>
+            </div>
+            <div class="ct-document-meta-item">
+              <span>Project</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.project_name or "Portfolio" }}</strong>
+              <small>{{ publish.selected_artifact.preview_metadata.project_code or "Cross-project" }}</small>
+            </div>
+            <div class="ct-document-meta-item">
+              <span>Run Date</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.run_date or "Unavailable" }}</strong>
+            </div>
+            <div class="ct-document-meta-item">
+              <span>Generated</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.generated_at or publish.selected_artifact.generated_at }}</strong>
+            </div>
+            <div class="ct-document-meta-item">
+              <span>Source Run</span>
+              <strong>{{ publish.selected_artifact.source_run_id }}</strong>
+            </div>
+            <div class="ct-document-meta-item">
+              <span>Continuity</span>
+              <strong>{{ publish.selected_artifact.continuity.status_label }}</strong>
+              <small>{{ publish.selected_artifact.continuity.prior_run_id or "Prior issued baseline unavailable" }}</small>
+            </div>
+            {% if publish.selected_artifact.preview_metadata.health_tier %}
+            <div class="ct-document-meta-item">
+              <span>Health Tier</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.health_tier }}</strong>
+            </div>
+            {% endif %}
+            {% if publish.selected_artifact.preview_metadata.risk_level %}
+            <div class="ct-document-meta-item">
+              <span>Risk Level</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.risk_level }}</strong>
+            </div>
+            {% endif %}
+            {% if publish.selected_artifact.preview_metadata.health_score %}
+            <div class="ct-document-meta-item">
+              <span>Health Score</span>
+              <strong>{{ publish.selected_artifact.preview_metadata.health_score }}</strong>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="ct-artifact-summary">{{ publish.selected_artifact.preview_summary }}</div>
+        <div class="ct-document-body">
+          <div class="publish-markdown-preview">{{ publish.selected_artifact.preview_html|safe }}</div>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="ct-section" id="publish-proof-pack">
+        <div class="ct-section-header">
+          <div>
+            <div class="ct-section-kicker">Proof Pack</div>
+            <h3>Issued output set</h3>
+          </div>
+          <div class="ct-section-meta">
+            <span>{{ publish.artifacts|length }} outputs</span>
+            <span>Current and historical documents</span>
+          </div>
+        </div>
+
+        <div class="ct-table ct-table-3">
+          <div class="ct-table-header">
+            <div>Item</div>
+            <div>Status</div>
+            <div>Impact</div>
+          </div>
+          {% for artifact in publish.artifacts %}
+          <div class="ct-table-row{% if artifact.is_selected %} is-selected{% endif %}">
+            <div>
+              <strong>{{ artifact.title }}</strong>
+              <span>{{ artifact.artifact_type_label }}</span>
+            </div>
+            <div>
+              <strong>{{ artifact.issue_state_label }}</strong>
+              <span>{{ artifact.generated_at }}</span>
+            </div>
+            <div class="ct-table-actions">
+              <a class="text-link" href="{{ artifact.open_path }}">Open artifact</a>
+              <a class="text-link" href="{{ artifact.print_path }}">Export PDF</a>
+              <a class="text-link" href="{{ artifact.source_path }}">Source Markdown</a>
+            </div>
+          </div>
+          {% else %}
+          <div class="ct-table-row">
+            <div>No issued artifacts</div>
+            <div>Unavailable</div>
+            <div>Run an export to populate the proof pack.</div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% if publish.history %}
+      <section class="ct-section" id="publish-history">
+        <div class="ct-section-header">
+          <div>
+            <div class="ct-section-kicker">Issued Output History</div>
+            <h3>Run-to-run availability</h3>
+          </div>
+          <div class="ct-section-meta">
+            <span>Current vs prior issued runs</span>
+            <span>Artifact availability stays visible</span>
+          </div>
+        </div>
+
+        <div class="ct-table ct-table-3">
+          <div class="ct-table-header">
+            <div>Run</div>
+            <div>Status</div>
+            <div>Impact</div>
+          </div>
+          {% for item in publish.history %}
+          <div class="ct-table-row{% if item.is_latest %} is-current{% endif %}">
+            <div>
+              <strong>{{ item.generated_at }}</strong>
+              <span>{{ item.run_id }}</span>
+            </div>
+            <div>
+              <strong>{{ item.issue_state_label }}</strong>
+              <span>{{ item.focus_project_name }}{% if item.focus_project_code %} ({{ item.focus_project_code }}){% endif %}</span>
+            </div>
+            <div class="ct-table-actions">
+              <a class="text-link" href="{{ item.open_path }}">Open run</a>
+              {% if item.open_output_path %}
+              <a class="text-link" href="{{ item.open_output_path }}">Open prior output</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      <details class="ct-section" id="publish-supporting-surfaces">
+        <summary>
+          <div>
+            <div class="ct-section-kicker">Supporting Surface Only</div>
+            <strong>Secondary navigation and operational backup</strong>
+          </div>
+          <span class="ct-summary-hint">Expand</span>
+        </summary>
+        <div class="ct-support-links">
+          <a class="text-link" href="{{ publish.present_path }}">Open presentation mode</a>
+          <a class="text-link" href="{{ publish.arena_path }}">Open in Arena</a>
+          <a class="text-link" href="/control">Open legacy control</a>
+          <a class="text-link" href="{{ publish.print_path }}">Open print route</a>
+          {% if publish.obsidian_artifact_path %}
+          <a class="text-link" href="{{ publish.obsidian_artifact_path }}">Open selected artifact in Obsidian</a>
+          {% endif %}
+          <a class="text-link" href="{{ publish.exports_debug_path }}">Open exports debug</a>
+        </div>
+      </details>
+    </div>
+
+    <aside class="ct-sidebar">
+      <div class="ct-panel">
+        <div class="ct-panel-title">Actions</div>
+        <a class="ct-btn-primary" href="{{ publish.arena_path }}">Open Arena</a>
+        <a class="ct-btn-secondary" href="{{ publish.print_path }}">Export PDF</a>
+        <button type="button" class="ct-btn-secondary" data-copy-source="publish-brief-copy">Copy 5-Line Brief</button>
+        {% if publish.selected_artifact %}
+        <a class="ct-btn-secondary" href="{{ publish.selected_artifact.open_path }}">Open Output</a>
+        <button type="button" class="ct-btn-secondary" data-copy-source="publish-copy-{{ publish.selected_artifact.artifact_id }}">Copy Artifact</button>
+        <a class="ct-btn-secondary" href="{{ publish.selected_artifact.source_path }}">Source Markdown</a>
+        {% endif %}
+        <a class="ct-btn-secondary" href="{{ publish.present_path }}">Present</a>
+      </div>
+
+      {% if publish.selected_artifact %}
+      <div class="ct-panel">
+        <div class="ct-panel-title">Current Output</div>
+        <div class="ct-sidebar-block">
+          <div class="ct-mini-row">
+            <span>Document</span>
+            <strong>{{ publish.selected_artifact.artifact_type_label }}</strong>
+          </div>
+          <div class="ct-mini-row">
+            <span>Authority</span>
+            <strong>{{ publish.selected_artifact.authority_label }}</strong>
+          </div>
+          <div class="ct-mini-row">
+            <span>Continuity</span>
+            <strong>{{ publish.selected_artifact.continuity.status_label }}</strong>
+          </div>
+          <div class="ct-panel-text">{{ publish.selected_artifact.preview_summary }}</div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if publish.project_switches|length > 1 %}
+      <div class="ct-panel">
+        <div class="ct-panel-title">Project Focus</div>
+        <div class="ct-switch-list">
+          {% for option in publish.project_switches %}
+          <a
+            href="{{ option.open_path }}"
+            class="ct-switch{% if option.is_selected %} is-selected{% endif %}"
+            {% if option.is_selected %}aria-current="page"{% endif %}
+          >
+            <span>{{ option.project_name }}</span>
+            <strong>{{ option.canonical_project_code }}</strong>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+  {% else %}
+  <div class="ct-layout ct-layout-empty" id="publish-empty-state">
+    <div class="ct-main">
+      <div class="ct-header">
+        <div class="ct-project">
+          <div class="ct-block-label">Publish</div>
+          <div class="ct-project-name">No published artifacts yet</div>
+          <div class="ct-meta">Run an export to generate a command brief and issued output.</div>
+        </div>
+      </div>
+      <div class="ct-command-strip">
+        <div class="ct-row">
+          <div class="ct-label">Status</div>
+          <div class="ct-value">Publish surface is empty until an export is issued.</div>
+        </div>
+      </div>
+    </div>
+    <aside class="ct-sidebar">
+      <div class="ct-panel">
+        <div class="ct-panel-title">Actions</div>
+        <a class="ct-btn-primary" href="/exports/latest">Open export debug surface</a>
+      </div>
+    </aside>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

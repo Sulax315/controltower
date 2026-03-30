@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="grid two">
+  <article class="card">
+    <span class="label">Build</span>
+    <h2>{{ diagnostics.product.name }} {{ diagnostics.product.version }}</h2>
+    <ul class="flat-list">
+      <li>Environment: {{ diagnostics.product.environment }}</li>
+      <li>Git commit: {{ diagnostics.product.build_metadata.git_commit }}</li>
+      <li>Python: {{ diagnostics.product.build_metadata.python_version }}</li>
+      <li>Config status: {{ diagnostics.config.status }}</li>
+      <li>Registry path: {{ diagnostics.config.registry_path }}</li>
+      <li>State root: {{ diagnostics.config.state_root }}</li>
+      <li>Release status: {{ diagnostics.release.status }}</li>
+      <li>Release generated: {{ diagnostics.release.generated_at or "n/a" }}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <span class="label">Acceptance</span>
+    <h2>{{ diagnostics.acceptance.last_status }}</h2>
+    <ul class="flat-list">
+      <li>Last run: {{ diagnostics.acceptance.last_run_at or "n/a" }}</li>
+      <li>Last successful run: {{ diagnostics.acceptance.last_successful_run_at or "n/a" }}</li>
+      <li>Report present: {{ diagnostics.acceptance.report_present }}</li>
+      <li>Report path: {{ diagnostics.acceptance.report_path }}</li>
+    </ul>
+  </article>
+</section>
+
+<section class="grid two">
+  <article class="card">
+    <h3>Run Status</h3>
+    <ul class="flat-list">
+      <li>Latest operation type: {{ diagnostics.operations.latest_run_type or "n/a" }}</li>
+      <li>Latest operation status: {{ diagnostics.operations.latest_run_status }}</li>
+      <li>Latest operation completed: {{ diagnostics.operations.latest_run_timestamp or "n/a" }}</li>
+      <li>Latest export run: {{ diagnostics.latest_run.run_id or "n/a" }}</li>
+      <li>Latest export success: {{ diagnostics.latest_run.success }}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Portfolio Counts</h3>
+    <ul class="flat-list">
+      <li>Projects: {{ diagnostics.portfolio.project_count }}</li>
+      <li>Average health: {{ "%.1f"|format(diagnostics.portfolio.average_health_score or 0) }}</li>
+      <li>Healthy / Watch / At Risk / Critical: {{ diagnostics.portfolio.tier_counts.get("healthy", 0) }} / {{ diagnostics.portfolio.tier_counts.get("watch", 0) }} / {{ diagnostics.portfolio.tier_counts.get("at_risk", 0) }} / {{ diagnostics.portfolio.tier_counts.get("critical", 0) }}</li>
+      <li>Risk distribution HIGH / MEDIUM / LOW: {{ diagnostics.portfolio.risk_distribution.get("HIGH", 0) }} / {{ diagnostics.portfolio.risk_distribution.get("MEDIUM", 0) }} / {{ diagnostics.portfolio.risk_distribution.get("LOW", 0) }}</li>
+    </ul>
+  </article>
+</section>
+
+<section class="grid two">
+  <article class="card">
+    <h3>Templates And Registry</h3>
+    <ul class="flat-list">
+      <li>Markdown templates: {{ diagnostics.templates.markdown.status }}</li>
+      <li>UI assets: {{ diagnostics.templates.ui.status }}</li>
+      <li>Registry: {{ diagnostics.registry.status }}</li>
+      <li>Registry projects: {{ diagnostics.registry.project_count }}</li>
+      <li>Source validation: {{ diagnostics.source_validation.status }}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Artifact Presence</h3>
+    <ul class="flat-list">
+      <li>Artifact index: {{ diagnostics.artifacts.presence_checks.artifact_index_json }}</li>
+      <li>Latest run pointer: {{ diagnostics.artifacts.presence_checks.latest_run_json }}</li>
+      <li>Latest release JSON: {{ diagnostics.artifacts.presence_checks.latest_release_json }}</li>
+      <li>Latest diagnostics JSON: {{ diagnostics.artifacts.presence_checks.latest_diagnostics_json }}</li>
+      <li>History files: {{ diagnostics.artifacts.recent_history_file_count }}</li>
+      <li>Operation summaries: {{ diagnostics.artifacts.recent_operation_file_count }}</li>
+      <li>Release artifacts: {{ diagnostics.artifacts.recent_release_file_count }}</li>
+      <li>Log files: {{ diagnostics.artifacts.log_file_count }}</li>
+    </ul>
+  </article>
+</section>
+
+<section class="card">
+  <h3>Release Evidence</h3>
+  <p>{{ diagnostics.release.summary }}</p>
+  <ul class="flat-list">
+    <li>JSON artifact: {{ diagnostics.release.json_path }}</li>
+    <li>Markdown summary: {{ diagnostics.release.markdown_path }}</li>
+    <li>Artifact index: {{ diagnostics.artifacts.artifact_index_path }}</li>
+    <li>Latest diagnostics: {{ diagnostics.artifacts.latest_diagnostics_path }}</li>
+    <li>Latest run summary: {{ diagnostics.operations.latest_run_summary_path or "n/a" }}</li>
+    <li>Portfolio posture: {{ diagnostics.portfolio.overall_posture }}</li>
+  </ul>
+</section>
+{% endblock %}

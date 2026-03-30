@@ -1,0 +1,54 @@
+# {{ project.project_name }} Weekly Brief
+
+[[{{ portfolio_note }}]] | [[{{ prior_week_link }}|Prior Week]]
+
+## Executive Signal
+
+- Health Score: **{{ "%.1f"|format(project.health.health_score) }}**
+- Risk Level: **{{ project.health.risk_level }}**
+- Executive Summary: {{ project.executive_summary }}
+
+## What Changed This Week
+
+- Project: {{ project.canonical_project_code }}
+- Schedule: {{ project.delta.schedule.summary }}
+- Financial: {{ project.delta.financial.summary }}
+- Risk: {{ project.delta.risk.summary }}
+{% for change in project.latest_notable_changes[:4] %}
+- {{ change.summary }}
+{% endfor %}
+
+## Top Risks
+{% for issue in project.top_issues[:5] %}
+- **{{ issue.label }}**: {{ issue.detail }}
+{% endfor %}
+{% if not project.top_issues %}
+- No immediate escalations were surfaced by the current signals.
+{% endif %}
+
+## Required Actions
+{% for action in project.health.required_actions[:6] %}
+- **{{ action.priority.title() }} / {{ action.owner_hint }}**: {{ action.action }}
+{% endfor %}
+
+## Key Metrics
+{% if project.schedule %}
+- Finish Date: **{{ project.schedule.finish_date or "n/a" }}**
+- Schedule Health: **{{ "%.1f"|format(project.schedule.health_score or 0) }}**
+- Open Starts / Finishes: **{{ project.schedule.open_start_count or 0 }} / {{ project.schedule.open_finish_count or 0 }}**
+- Negative Float Activities: **{{ project.schedule.negative_float_count or 0 }}**
+{% else %}
+- Schedule metrics unavailable.
+{% endif %}
+{% if project.financial %}
+- Margin: **{% if project.financial.metrics.get("margin_percent") is not none %}{{ "%.1f"|format(project.financial.metrics.get("margin_percent")) }}%{% else %}n/a{% endif %}**
+- Projected Profit: **{% if project.financial.metrics.get("projected_profit") is not none %}${{ "{:,.0f}".format(project.financial.metrics.get("projected_profit")) }}{% else %}n/a{% endif %}**
+- Forecast Final Cost: **{% if project.financial.metrics.get("forecast_final_cost") is not none %}${{ "{:,.0f}".format(project.financial.metrics.get("forecast_final_cost")) }}{% else %}n/a{% endif %}**
+{% else %}
+- Financial metrics unavailable.
+{% endif %}
+
+## Reliability / Data Trust
+
+- Current trust: **{{ project.trust_indicator.status.title() }}**
+- Flags: {% if project.missing_data_flags %}{{ project.missing_data_flags|join(", ") }}{% else %}none{% endif %}

@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="card">
+  <h2>Projects Ranked By Health / Risk</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Risk</th>
+        <th>Tier</th>
+        <th>Score</th>
+        <th>Schedule</th>
+        <th>Financial</th>
+        <th>Compare</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for project in projects %}
+      <tr>
+        <td><a href="/projects/{{ project.canonical_project_code }}">{{ project.project_name }}</a></td>
+        <td><span class="pill {{ project.health.risk_level|lower }}">{{ project.health.risk_level }}</span></td>
+        <td><span class="pill {{ project.health.tier }}">{{ project.health.tier|replace('_', ' ') }}</span></td>
+        <td>{{ "%.1f"|format(project.health.health_score) }}</td>
+        <td>{% if project.schedule %}{{ "%.1f"|format(project.schedule.health_score or 0) }}{% else %}n/a{% endif %}</td>
+        <td>{% if project.financial %}{{ project.financial.trust_tier }}{% else %}missing{% endif %}</td>
+        <td><a href="/projects/{{ project.canonical_project_code }}/compare">Compare</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

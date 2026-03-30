@@ -1,0 +1,81 @@
+# {{ project.project_name }}
+
+[[{{ portfolio_note }}]] | [[{{ project_brief_name }}]] | [[{{ prior_week_link }}|Prior Week]]
+
+## Executive Summary
+
+{{ project.executive_summary }}
+
+- Project ID: **{{ project.canonical_project_code }}**
+
+## Current Health
+
+- Tier: **{{ project.health.tier.replace('_', ' ').title() }}**
+- Score: **{{ "%.1f"|format(project.health.health_score) }}**
+- Risk Level: **{{ project.health.risk_level }}**
+- Trust: **{{ project.trust_indicator.status.title() }}**
+
+### Why It Lands Here
+{% for item in project.health.rationale %}
+- {{ item }}
+{% endfor %}
+
+## Schedule Signals
+{% if project.schedule %}
+- Latest run: `{{ project.schedule.run_timestamp or "n/a" }}`
+- Schedule health score: **{{ "%.1f"|format(project.schedule.health_score or 0) }}**
+- Issues total: **{{ project.schedule.issues_total or 0 }}**
+- Open starts / finishes: **{{ project.schedule.open_start_count or 0 }} / {{ project.schedule.open_finish_count or 0 }}**
+- Cycles: **{{ project.schedule.cycle_count or 0 }}**
+- Top risk flags: {% if project.schedule.risk_flags %}{{ project.schedule.risk_flags|join(", ") }}{% else %}none published{% endif %}
+{% else %}
+ScheduleLab data is not currently available for this project.
+{% endif %}
+
+## Financial Signals
+{% if project.financial %}
+- Current report month: **{{ project.financial.report_month or "n/a" }}**
+- Trust tier: **{{ project.financial.trust_tier.title() }}**
+- Parse status: **{{ project.financial.parse_status or "n/a" }}**
+- Projected profit: **{% if project.financial.metrics.get("projected_profit") is not none %}${{ "{:,.0f}".format(project.financial.metrics.get("projected_profit")) }}{% else %}n/a{% endif %}**
+- Margin: **{% if project.financial.metrics.get("margin_percent") is not none %}{{ "%.1f"|format(project.financial.metrics.get("margin_percent")) }}%{% else %}n/a{% endif %}**
+- Forecast final cost: **{% if project.financial.metrics.get("forecast_final_cost") is not none %}${{ "{:,.0f}".format(project.financial.metrics.get("forecast_final_cost")) }}{% else %}n/a{% endif %}**
+{% else %}
+ProfitIntel data is not currently available for this project.
+{% endif %}
+
+## Top Risks
+{% for issue in project.top_issues %}
+- **{{ issue.label }}**: {{ issue.detail }}
+{% endfor %}
+{% if not project.top_issues %}
+- No material risks were surfaced by the current adapters.
+{% endif %}
+
+## Required Actions
+{% for action in project.health.required_actions %}
+- **{{ action.priority.title() }} / {{ action.owner_hint }}**: {{ action.action }}
+{% endfor %}
+
+## Latest Notable Changes
+{% for change in project.latest_notable_changes %}
+- {{ change.summary }}
+{% endfor %}
+{% if not project.latest_notable_changes %}
+- No major delta callouts were generated from the current source artifacts.
+{% endif %}
+
+## Decision / Risk Rollup
+
+- Immediate escalation needed: **{{ "Yes" if project.health.tier in ["critical", "at_risk"] else "No" }}**
+- Missing-data flags: {% if project.missing_data_flags %}{{ project.missing_data_flags|join(", ") }}{% else %}none{% endif %}
+
+- Trust rationale:
+{% for item in project.trust_indicator.rationale %}
+- {{ item }}
+{% endfor %}
+
+## Source Provenance
+{% for source in project.provenance %}
+- `{{ source.source_system }}` | `{{ source.artifact_type }}` | `{{ source.path }}`
+{% endfor %}

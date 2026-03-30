@@ -1,0 +1,38 @@
+app:
+  product_name: Control Tower
+  environment: production
+
+sources:
+  schedulelab:
+    # On the current bratek.io droplet, ScheduleLab publishes here via the existing docker bind mount.
+    published_root: /app/schedulelab_data/published
+  profitintel:
+    # On the current bratek.io droplet, ProfitIntel writes here via the existing backend runtime mount.
+    database_path: /app/data/runtime/profitintel.db
+    validation_search_roots:
+      - /app/data/runtime
+
+identity:
+  registry_path: /srv/controltower/app/config/project_registry.yaml
+
+obsidian:
+  vault_root: /srv/controltower/shared/obsidian_vault
+  projects_folder: "02 Projects"
+  exports_folder: "10 Exports"
+  timestamped_weekly_notes: true
+  rolling_portfolio_note_name: "Portfolio Weekly Summary"
+  rolling_project_brief_name: "Weekly Brief"
+  canonical_dossier_suffix: "Dossier"
+
+runtime:
+  state_root: /srv/controltower/shared/.controltower_runtime
+  retention:
+    run_history_limit: 30
+    release_history_limit: 12
+    operations_history_limit: 60
+    diagnostics_history_limit: 30
+    log_file_limit: 60
+
+ui:
+  host: 127.0.0.1
+  port: 8787

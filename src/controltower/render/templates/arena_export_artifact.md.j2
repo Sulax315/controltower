@@ -1,0 +1,94 @@
+# {{ arena.artifact_title }}
+
+## Scope / Timestamp
+
+- Generated at: {{ arena.generated_at }}
+- Scope: {{ arena.scope_summary }}
+- Selection: {{ arena.selection_summary }}
+- Promotion context: {{ arena.promotion_summary }}
+
+## Meeting Packet
+
+{% if arena.meeting_packet.items %}
+{% for item in arena.meeting_packet.items %}
+### {{ loop.index }}. {{ item.project_name }} ({{ item.canonical_project_code }})
+
+- Project: {{ item.canonical_project_code }} | {{ item.project_name }}
+- Finish: {{ item.finish_statement }}
+- Delta: {{ item.delta_statement }}
+- Status: {{ item.status_label }} | {{ item.status_detail }}
+- Controlling driver: {{ item.controlling_driver }}
+- Driver why it matters: {{ item.driver_reason }}
+- What changed since prior run:
+{% for change in item.what_changed %}
+  - {{ change }}
+{% endfor %}
+- Challenge next: {{ item.challenge_next }}
+- Required action(s):
+{% for action in item.required_actions %}
+  - {{ action }}
+{% endfor %}
+- Supporting evidence / signals:
+{% for evidence in item.supporting_evidence %}
+  - {{ evidence }}
+{% endfor %}
+- Trust posture: {{ item.trust_posture }}
+- Baseline posture: {{ item.baseline_posture }}
+- Driver detail link: {{ item.drilldown_path }}
+- Run comparison link: {{ item.compare_path }}
+
+{% endfor %}
+{% else %}
+- No meeting packet items are currently in scope.
+{% endif %}
+
+## Action Queue
+
+{% if arena.action_queue.groups %}
+{% for group in arena.action_queue.groups %}
+### {{ group.label }}
+
+- Summary: {{ group.summary }}
+
+{% for item in group.items %}
+#### {{ item.queue_id }}
+
+- Project: {{ item.canonical_project_code }} | {{ item.project_name }}
+- Owner / role: {{ item.owner_role }}
+- Action text: {{ item.action_text }}
+- Timing: {{ item.timing }}
+- Reason / source signal: {{ item.reason_source_signal }}
+- Priority: {{ item.priority.upper() if item.priority else "Not source-backed" }}
+{% if item.priority_basis %}
+- Priority basis: {{ item.priority_basis }}
+{% endif %}
+- Continuity: {{ item.continuity_detail }}
+- Driver detail link: {{ item.drilldown_path }}
+- Run comparison link: {{ item.compare_path }}
+
+{% endfor %}
+{% endfor %}
+{% else %}
+- No trackable actions were emitted from the current deterministic signals.
+{% endif %}
+
+## Continuity
+
+- Summary: {{ arena.continuity.summary }}
+- Comparison label: {{ arena.continuity.comparison_label }}
+- Comparison detail: {{ arena.continuity.comparison_detail }}
+- New actions: {{ arena.continuity.new_action_count }}
+- Carry-forward actions: {{ arena.continuity.carry_forward_action_count }}
+- Resolved issues: {{ arena.continuity.resolved_item_count }}
+
+{% if arena.continuity.resolved_items %}
+### Previously surfaced issues no longer present
+
+{% for item in arena.continuity.resolved_items %}
+- {{ item.canonical_project_code }} | {{ item.summary }}: {{ item.detail }}
+  Resolution basis: {{ item.resolution_basis }}
+  Run comparison link: {{ item.compare_path }}
+{% endfor %}
+{% else %}
+- No previously surfaced issue is deterministically absent from the current run.
+{% endif %}

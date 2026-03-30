@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="project-detail-shell operating-workspace" data-surface-tier="workspace">
+  <section class="workspace-band band-command" id="project-detail-primary-workspace" data-surface-tier="primary">
+    {% set command_answer = project_answer %}
+    {% set command_heading = "Project detail" %}
+    {% set command_block_id = "project-detail-primary-answer" %}
+    {% set command_delta_id = "project-detail-answer-delta" %}
+    {% set command_issue_id = "project-detail-answer-issue" %}
+    {% set command_action_id = "project-detail-answer-action" %}
+    {% set command_risk_id = "project-detail-answer-risk" %}
+    {% set command_authority_id = "project-detail-answer-authority" %}
+    {% set command_driver_id = "project-detail-answer-finish-driver" %}
+    {% set command_change_id = "project-detail-answer-what-changed" %}
+    {% set command_challenge_id = "project-detail-answer-challenge-next" %}
+    {% set command_trust_id = "project-detail-trust-posture" %}
+    {% set command_signal = project.delta.summary or project.executive_summary %}
+    {% set command_baseline_label = project.comparison_run_id or "current artifact" %}
+    {% set command_trust_status = project.comparison_status %}
+    {% set command_surface_variant = "dominant-answer" %}
+    {% include "_project_command_block.html" %}
+  </section>
+
+  <section class="workspace-band band-secondary project-secondary-band" id="project-detail-secondary-workspace" data-surface-tier="secondary">
+    <article class="card subdued supporting-preview">
+      <span class="label">Supporting brief</span>
+      <p>Top risks and near-term actions stay adjacent; packet and continuity remain below.</p>
+    </article>
+    <div class="project-support-rail">
+      <article class="card subdued">
+        <span class="label">Top risks</span>
+        <h3>Top Risks</h3>
+        <ul class="flat-list">
+          {% for issue in project.top_issues %}
+          <li>{{ issue.label }}: {{ issue.detail }}</li>
+          {% endfor %}
+          {% if not project.top_issues %}
+          <li>No top risks were surfaced.</li>
+          {% endif %}
+        </ul>
+      </article>
+      <article class="card subdued">
+        <span class="label">Required actions</span>
+        <h3>Required Actions</h3>
+        <ul class="flat-list">
+          {% for action in project.health.required_actions %}
+          <li>{{ action.owner_hint }}: {{ action.action }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="workspace-band band-supporting" id="project-detail-support-workspace" data-surface-tier="support">
+    {% set packet = meeting_packet %}
+    {% set action_queue = action_queue %}
+    {% set continuity = continuity %}
+    {% set section_scope = "project-detail" %}
+    {% set section_id = "project-detail-section-meeting-packet" %}
+    {% include "_meeting_packet_section.html" %}
+
+    {% set section_id = "project-detail-section-action-queue" %}
+    {% include "_action_queue_section.html" %}
+
+    {% set section_id = "project-detail-section-continuity" %}
+    {% include "_continuity_section.html" %}
+
+    <section class="reference-grid">
+      <article class="card subdued">
+        <span class="label">Operational delta</span>
+        <h3>What Changed This Week</h3>
+        <ul class="flat-list">
+          <li>{{ project.delta.schedule.summary }}</li>
+          <li>{{ project.delta.financial.summary }}</li>
+          <li>{{ project.delta.risk.summary }}</li>
+        </ul>
+      </article>
+
+      <article class="card subdued">
+        <span class="label">Reference surface</span>
+        <h3>Source Provenance</h3>
+        <ul class="flat-list">
+          {% for source in project.provenance %}
+          <li>{{ source.source_system }} | {{ source.artifact_type }} | {{ source.path }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    <section class="card subdued">
+      <span class="label">Reference surface</span>
+      <h3>Latest Generated Dossier Preview</h3>
+      <pre class="note-preview">{{ dossier_note.body if dossier_note else "No note was generated." }}</pre>
+    </section>
+  </section>
+</section>
+{% endblock %}

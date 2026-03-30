@@ -1,0 +1,13 @@
+{
+  "top_10_driver_activities": [
+    {
+      "activity_id": "A-101",
+      "activity_name": "Steel Release",
+      "risk_score": 66.0,
+      "why_it_matters": "long lead procurement"
+    }
+  ],
+  "recovery_levers": [
+    "Lock the steel release package this week."
+  ]
+}

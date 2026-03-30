@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="card">
+  <h2>Latest Export Run</h2>
+  {% if latest %}
+  <ul class="flat-list">
+    <li>Run id: {{ latest.run_id }}</li>
+    <li>Status: {{ latest.status }}</li>
+    <li>Preview only: {{ latest.preview_only }}</li>
+    <li>Previous run: {{ latest.previous_run_id or "n/a" }}</li>
+    <li>Vault root: {{ latest.vault_root }}</li>
+  </ul>
+  <h3>Generated Notes</h3>
+  <ul class="flat-list">
+    {% for note in latest.notes %}
+    <li>{{ note.title }} | {{ note.output_path }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No export run has been recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

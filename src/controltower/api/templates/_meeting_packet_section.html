@@ -1,0 +1,66 @@
+<details class="progressive-section" id="{{ section_id }}" data-progressive-section="{{ section_scope|default('shared') }}" {% if force_open|default(false) %}open{% endif %}>
+  <summary>
+    <div class="progressive-summary-copy">
+      <span class="label">Meeting packet</span>
+      <strong>{{ packet.title }}</strong>
+      <span class="summary-line">{{ packet.summary }}</span>
+    </div>
+    <div class="progressive-summary-meta">
+      <span class="count-pill">{{ packet.item_count if packet.item_count else "Stand by" }}</span>
+      <span class="summary-hint">Expand</span>
+      <span class="summary-toggle" aria-hidden="true"></span>
+    </div>
+  </summary>
+  <div class="progressive-body packet-stack">
+    {% for item in packet.items %}
+    <article class="attention-card packet-card" id="{{ section_id }}-{{ item.canonical_project_code }}">
+      <div class="attention-title-row">
+        <div>
+          <h4>{{ item.project_name }}</h4>
+          <p class="meta">{{ item.canonical_project_code }}</p>
+        </div>
+        <div class="card-actions">
+          <a class="text-link" href="{{ item.drilldown_path }}">Driver Detail</a>
+          <a class="text-link" href="{{ item.compare_path }}">Run Comparison</a>
+        </div>
+      </div>
+      <p><strong>Project:</strong> {{ item.canonical_project_code }} | {{ item.project_name }}</p>
+      <p><strong>Finish:</strong> {{ item.finish_statement }}</p>
+      <p><strong>Delta:</strong> {{ item.delta_statement }}</p>
+      <p><strong>Status:</strong> {{ item.status_label }} | {{ item.status_detail }}</p>
+      <p><strong>Controlling driver:</strong> {{ item.controlling_driver }}</p>
+      <p><strong>Driver why it matters:</strong> {{ item.driver_reason }}</p>
+      <div>
+        <strong>What changed since prior run:</strong>
+        <ul class="flat-list">
+          {% for change in item.what_changed %}
+          <li>{{ change }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <p><strong>Challenge next:</strong> {{ item.challenge_next }}</p>
+      <div>
+        <strong>Required action(s):</strong>
+        <ul class="flat-list">
+          {% for action in item.required_actions %}
+          <li>{{ action }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <strong>Supporting evidence / signals:</strong>
+        <ul class="flat-list">
+          {% for evidence in item.supporting_evidence %}
+          <li>{{ evidence }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <p><strong>Trust posture:</strong> {{ item.trust_posture }}</p>
+      <p><strong>Baseline posture:</strong> {{ item.baseline_posture }}</p>
+    </article>
+    {% endfor %}
+    {% if not packet.items %}
+    <article class="card subdued"><p>{{ packet.summary }}</p></article>
+    {% endif %}
+  </div>
+</details>

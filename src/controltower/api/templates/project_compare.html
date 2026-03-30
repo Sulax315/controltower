@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="card">
+  <span class="label">Run Comparison</span>
+  <h2>{{ comparison.current.project_name }}</h2>
+  <p>Current run compared with {{ comparison.previous_run_id or "the prior baseline" }}.</p>
+</section>
+<section class="grid two compare-grid">
+  <article class="card">
+    <h3>Current</h3>
+    <ul class="flat-list">
+      <li>Health score: {{ "%.1f"|format(comparison.current.health.health_score) }}</li>
+      <li>Risk level: {{ comparison.current.health.risk_level }}</li>
+      <li>Finish date: {{ comparison.current.schedule.finish_date if comparison.current.schedule else "n/a" }}</li>
+      <li>Margin: {% if comparison.current.financial and comparison.current.financial.metrics.get("margin_percent") is not none %}{{ "%.1f"|format(comparison.current.financial.metrics.get("margin_percent")) }}%{% else %}n/a{% endif %}</li>
+      <li>Projected profit: {% if comparison.current.financial and comparison.current.financial.metrics.get("projected_profit") is not none %}${{ "{:,.0f}".format(comparison.current.financial.metrics.get("projected_profit")) }}{% else %}n/a{% endif %}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Previous</h3>
+    {% if comparison.previous %}
+    <ul class="flat-list">
+      <li>Health score: {{ "%.1f"|format(comparison.previous.health.health_score) }}</li>
+      <li>Risk level: {{ comparison.previous.health.risk_level }}</li>
+      <li>Finish date: {{ comparison.previous.schedule.finish_date if comparison.previous.schedule else "n/a" }}</li>
+      <li>Margin: {% if comparison.previous.financial and comparison.previous.financial.metrics.get("margin_percent") is not none %}{{ "%.1f"|format(comparison.previous.financial.metrics.get("margin_percent")) }}%{% else %}n/a{% endif %}</li>
+      <li>Projected profit: {% if comparison.previous.financial and comparison.previous.financial.metrics.get("projected_profit") is not none %}${{ "{:,.0f}".format(comparison.previous.financial.metrics.get("projected_profit")) }}{% else %}n/a{% endif %}</li>
+    </ul>
+    {% else %}
+    <p>No previous run was available for this project.</p>
+    {% endif %}
+  </article>
+</section>
+<section class="grid two compare-grid">
+  <article class="card">
+    <h3>Schedule Shifts</h3>
+    <ul class="flat-list">
+      <li class="{{ 'delta-down' if comparison.current.delta.schedule.finish_date_movement_days and comparison.current.delta.schedule.finish_date_movement_days > 0 else 'delta-flat' }}">{{ comparison.current.delta.schedule.summary }}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Financial Changes</h3>
+    <ul class="flat-list">
+      <li class="{{ 'delta-down' if comparison.current.delta.financial.margin_movement and comparison.current.delta.financial.margin_movement < 0 else 'delta-flat' }}">{{ comparison.current.delta.financial.summary }}</li>
+    </ul>
+  </article>
+</section>
+<section class="card">
+  <h3>Risk Movement</h3>
+  <ul class="flat-list">
+    <li class="{{ 'delta-up' if comparison.current.delta.risk.resolved_risks else 'delta-flat' }}">Resolved: {% if comparison.current.delta.risk.resolved_risks %}{{ comparison.current.delta.risk.resolved_risks|join(", ") }}{% else %}none{% endif %}</li>
+    <li class="{{ 'delta-down' if comparison.current.delta.risk.new_risks or comparison.current.delta.risk.worsening_signals else 'delta-flat' }}">New: {% if comparison.current.delta.risk.new_risks %}{{ comparison.current.delta.risk.new_risks|join(", ") }}{% else %}none{% endif %}</li>
+    <li class="{{ 'delta-down' if comparison.current.delta.risk.worsening_signals else 'delta-flat' }}">Worsening: {% if comparison.current.delta.risk.worsening_signals %}{{ comparison.current.delta.risk.worsening_signals|join(" ") }}{% else %}none{% endif %}</li>
+  </ul>
+</section>
+{% endblock %}

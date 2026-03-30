@@ -1,0 +1,62 @@
+URL: https://controltower.bratek.io/publish
+TITLE: Publish
+DIMS: {'viewport': {'width': 1440, 'height': 1800}, 'header': {'x': 0, 'y': 0, 'width': 1440, 'height': 276.640625}, 'command': {'x': 260, 'y': 298.640625, 'width': 920, 'height': 965.9375}, 'sidebar': None, 'supportTable': None}
+
+BODY_HEAD:
+BRATEK OPERATIONS
+Control Tower
+Control Tower
+Publish
+Arena
+Projects
+Runs
+Exports Debug
+Diagnostics
+SURFACE
+Publish workspace
+CONTROL TOWER
+Publish
+
+Meeting-ready command brief and deliverable workspace
+
+OPERATOR POSTURE
+Publish workspace
+
+Finish-first command surfaces stay dominant. Supporting evidence and records remain available without taking over the workspace.
+
+COMMAND BRIEF
+Waverly Dorm
+
+Finish Aug 16, 2027. Delta 0d. Confidence medium.
+
+Driver: Frame Walls & - high_logic_density.
+
+Risks: open ends (131), cycle (2), profit fade.
+
+Need: remove cycle, close open ends, validate margin erosion in.
+
+Doing: resolving cycle, closing open ends, validating margin erosion in.
+
+CHANGE SINCE LAST RUN
+
+Finish unchanged.
+
+Driver comparison unavailable.
+
+Risks unchanged.
+
+Confidence unchanged.
+
+Copy Full Brief
+Print Clean View
+Expand Proof Pack
+PROOF PACK
+Top evidence only
+Open the shortest artifact set that helps defend the brief without turning the page back into a dashboard.
+5 items
+Expand
+SUPPORTING SURFACE ONLY
+Secondary navigation and run history
+Use these routes only when the meeting needs a deeper drill-down than the brief or proof pack.
+Collapsed
+Expand

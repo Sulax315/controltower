@@ -1,0 +1,54 @@
+# Portfolio Weekly Summary
+
+## Overall Portfolio Posture
+
+{{ summary.overall_posture }}
+
+## Key Metrics
+
+- Generated at: `{{ summary.generated_at }}`
+- Active projects: **{{ summary.active_project_count }}**
+- Average health score: **{{ "%.1f"|format(summary.average_health_score or 0) }}**
+- Risk distribution: **LOW {{ summary.risk_distribution.get("LOW", 0) }} / MEDIUM {{ summary.risk_distribution.get("MEDIUM", 0) }} / HIGH {{ summary.risk_distribution.get("HIGH", 0) }}**
+
+## What Changed This Week
+{% for item in summary.portfolio_changes %}
+- {{ item }}
+{% endfor %}
+{% if not summary.portfolio_changes %}
+- No project-level movement was captured from the current deterministic signals.
+{% endif %}
+
+## Top Risks
+{% for project_name in summary.top_5_at_risk_projects %}
+- [[{{ project_name }} - Dossier]]
+{% endfor %}
+{% if not summary.top_5_at_risk_projects %}
+- No HIGH-risk projects were surfaced in this run.
+{% endif %}
+
+## Required Actions
+{% for item in summary.key_actions_this_week %}
+- {{ item }}
+{% endfor %}
+{% if not summary.key_actions_this_week %}
+- No executable project-level action was generated.
+{% endif %}
+
+## Portfolio Risk Themes
+{% for theme in summary.cross_project_risk_themes %}
+- {{ theme }}
+{% endfor %}
+{% if not summary.cross_project_risk_themes %}
+- No repeating cross-project risk themes were detected.
+{% endif %}
+
+## Portfolio Risk Ranking
+{% for project in summary.project_rankings %}
+- **{{ project.canonical_project_code }}**: {{ project.executive_summary }} Current finish: {{ project.schedule.finish_date if project.schedule and project.schedule.finish_date else "n/a" }}.
+{% endfor %}
+
+## Source Provenance
+{% for source in summary.provenance %}
+- `{{ source.source_system }}` | `{{ source.artifact_type }}` | `{{ source.path }}`
+{% endfor %}

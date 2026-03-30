@@ -1,0 +1,7 @@
+projects:
+  - canonical_project_code: AURORA_HILLS
+    project_name: Aurora Hills
+    aliases:
+      schedulelab: AURORA_HILLS
+      profitintel: 219128
+

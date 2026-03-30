@@ -1,0 +1,201 @@
+{% macro render_panel_value(signal) -%}
+<span class="investigation-value {% if not signal.available %}investigation-value-unavailable{% endif %}">{{ signal.value }}</span>
+{% if signal.reason %}
+<span class="investigation-reason">Reason: {{ signal.reason }}</span>
+{% endif %}
+{%- endmacro %}
+
+<div class="investigation-backdrop" data-investigation-close></div>
+
+<aside
+  class="investigation-panel"
+  data-investigation-panel
+  id="{{ command_block_id }}-driver-panel"
+  aria-hidden="true"
+  aria-labelledby="{{ command_block_id }}-driver-panel-title">
+  <div class="investigation-panel-head">
+    <div>
+      <span class="label">Investigation</span>
+      <h4 id="{{ command_block_id }}-driver-panel-title">Finish Driver Detail</h4>
+      <p class="meta">{{ command_answer.canonical_project_code }} | {{ command_answer.project_name }}</p>
+    </div>
+    <button
+      type="button"
+      class="investigation-close"
+      data-investigation-close
+      aria-label="Close finish driver detail">
+      Close
+    </button>
+  </div>
+
+  <div class="investigation-panel-body">
+    <section class="investigation-section">
+      <span class="label">Current Driver</span>
+      <table class="investigation-table">
+        <tr>
+          <th>Driver</th>
+          <td>{{ command_answer.finish_driver_investigation.current_driver.driver_label }}</td>
+        </tr>
+        <tr>
+          <th>Activity ID</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.current_driver.activity_id) }}</td>
+        </tr>
+        <tr>
+          <th>Activity name</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.current_driver.activity_name) }}</td>
+        </tr>
+        <tr>
+          <th>Type</th>
+          <td>{{ command_answer.finish_driver_investigation.current_driver.driver_type.replace("_", " ") }}</td>
+        </tr>
+        <tr>
+          <th>Why controlling finish</th>
+          <td>{{ command_answer.finish_driver_investigation.current_driver.why_controlling_finish }}</td>
+        </tr>
+        <tr>
+          <th>Float signal</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.current_driver.float_signal) }}</td>
+        </tr>
+        <tr>
+          <th>Constraint signal</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.current_driver.constraint_signal) }}</td>
+        </tr>
+        <tr>
+          <th>Sequence context</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.current_driver.sequence_context) }}</td>
+        </tr>
+      </table>
+    </section>
+
+    <section class="investigation-section">
+      <span class="label">Prior Run Comparison</span>
+      <table class="investigation-table">
+        <tr>
+          <th>Comparison summary</th>
+          <td>{{ command_answer.finish_driver_investigation.comparison_summary }}</td>
+        </tr>
+        <tr>
+          <th>Present before?</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.prior_driver_presence) }}</td>
+        </tr>
+        <tr>
+          <th>What replaced it?</th>
+          <td>{{ render_panel_value(command_answer.finish_driver_investigation.replacement_detail) }}</td>
+        </tr>
+      </table>
+    </section>
+  </div>
+</aside>
+
+<aside
+  class="investigation-panel"
+  data-investigation-panel
+  id="{{ command_block_id }}-change-panel"
+  aria-hidden="true"
+  aria-labelledby="{{ command_block_id }}-change-panel-title">
+  <div class="investigation-panel-head">
+    <div>
+      <span class="label">Investigation</span>
+      <h4 id="{{ command_block_id }}-change-panel-title">Driver Change Exploration</h4>
+      <p class="meta">{{ command_answer.canonical_project_code }} | {{ command_answer.project_name }}</p>
+    </div>
+    <button
+      type="button"
+      class="investigation-close"
+      data-investigation-close
+      aria-label="Close driver change exploration">
+      Close
+    </button>
+  </div>
+
+  <div class="investigation-panel-body">
+    <section class="investigation-section">
+      <span class="label">Difference Summary</span>
+      <p class="investigation-summary">
+        {% if command_answer.driver_change_investigation.available %}
+        {{ command_answer.driver_change_investigation.difference_summary }}
+        {% else %}
+        {{ command_answer.driver_change_investigation.reason }}
+        {% endif %}
+      </p>
+    </section>
+
+    <div class="investigation-compare-grid">
+      <section class="investigation-section">
+        <span class="label">Prior Driver</span>
+        <table class="investigation-table">
+          <tr>
+            <th>Driver</th>
+            <td>{{ command_answer.driver_change_investigation.prior_driver.driver_label }}</td>
+          </tr>
+          <tr>
+            <th>Activity ID</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.prior_driver.activity_id) }}</td>
+          </tr>
+          <tr>
+            <th>Activity name</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.prior_driver.activity_name) }}</td>
+          </tr>
+          <tr>
+            <th>Type</th>
+            <td>{{ command_answer.driver_change_investigation.prior_driver.driver_type.replace("_", " ") }}</td>
+          </tr>
+          <tr>
+            <th>Why controlling finish</th>
+            <td>{{ command_answer.driver_change_investigation.prior_driver.why_controlling_finish }}</td>
+          </tr>
+          <tr>
+            <th>Float signal</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.prior_driver.float_signal) }}</td>
+          </tr>
+          <tr>
+            <th>Constraint signal</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.prior_driver.constraint_signal) }}</td>
+          </tr>
+          <tr>
+            <th>Sequence context</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.prior_driver.sequence_context) }}</td>
+          </tr>
+        </table>
+      </section>
+
+      <section class="investigation-section">
+        <span class="label">Current Driver</span>
+        <table class="investigation-table">
+          <tr>
+            <th>Driver</th>
+            <td>{{ command_answer.driver_change_investigation.current_driver.driver_label }}</td>
+          </tr>
+          <tr>
+            <th>Activity ID</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.current_driver.activity_id) }}</td>
+          </tr>
+          <tr>
+            <th>Activity name</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.current_driver.activity_name) }}</td>
+          </tr>
+          <tr>
+            <th>Type</th>
+            <td>{{ command_answer.driver_change_investigation.current_driver.driver_type.replace("_", " ") }}</td>
+          </tr>
+          <tr>
+            <th>Why controlling finish</th>
+            <td>{{ command_answer.driver_change_investigation.current_driver.why_controlling_finish }}</td>
+          </tr>
+          <tr>
+            <th>Float signal</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.current_driver.float_signal) }}</td>
+          </tr>
+          <tr>
+            <th>Constraint signal</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.current_driver.constraint_signal) }}</td>
+          </tr>
+          <tr>
+            <th>Sequence context</th>
+            <td>{{ render_panel_value(command_answer.driver_change_investigation.current_driver.sequence_context) }}</td>
+          </tr>
+        </table>
+      </section>
+    </div>
+  </div>
+</aside>
