@@ -11,6 +11,8 @@ This runbook covers the validated live-operations lane and the finished Linux pr
 
 Control Tower stays a single FastAPI process behind host nginx. The same Python process serves `/`, `/diagnostics`, and `/api/diagnostics`.
 
+Routine production releases now go through [`docs/PRODUCTION_RELEASE.md`](/C:/Dev/ControlTower/docs/PRODUCTION_RELEASE.md). The authoritative operator handoff is now `bash infra/deploy/controltower/deploy_update.sh`.
+
 ## Production Topology
 
 - Web process: `controltower-web.service` running `python /srv/controltower/app/run_controltower.py --config /etc/controltower/controltower.yaml serve --host 127.0.0.1 --port 8787`
@@ -34,11 +36,10 @@ sudo editor /etc/controltower/controltower.yaml
 The env file carries the TLS certificate/include paths used by the nginx template, so keep those aligned with the droplet's existing nginx certificate pattern.
 On the current `bratek.io` host, the authoritative mounted source paths are `/app/schedulelab_data/published` for ScheduleLab and `/app/data/runtime/profitintel.db` for ProfitIntel.
 
-Deploy or update the app code and virtualenv:
+Bootstrap or repair the host assets:
 
 ```bash
-cd /srv/controltower/app
-CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash ./infra/deploy/controltower/deploy_update.sh /path/to/ControlTower
+sudo CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/infra/deploy/controltower/install_host.sh
 ```
 
 Install or refresh the web service, nginx site, and cron schedule:
@@ -106,6 +107,27 @@ Run the one-command production verification flow:
 CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml --auth-username "$CODEX_AUTH_USERNAME" --auth-password "$CODEX_AUTH_PASSWORD"
 ```
 
+## Authoritative Release Process
+
+Use this sequence for every production release:
+
+1. Run `bash infra/deploy/controltower/deploy_update.sh` from the validated workstation checkout.
+2. Let the remote handoff restart `controltower-web`.
+3. Let the remote handoff run `verify_controltower_production.sh`.
+
+The production verifier is the authoritative post-deploy gate. The release handoff writes the source trace, verifies the auth-aware public surface, and stamps the release artifact with local `HEAD`, remote `origin/main`, deployed `GIT_COMMIT`, verification status, and timestamp.
+
+Quick live freshness proof without app credentials:
+
+```bash
+curl -fsS https://controltower.bratek.io/healthz
+```
+
+Expected result:
+
+- `git_commit` equals the intended release commit
+- `auth_mode` is `prod`
+
 ## Daily vs Weekly
 
 Daily run:
@@ -167,6 +189,7 @@ Under `.controltower_runtime/`:
 - `runs/<run_id>/manifest.json`: per-run export manifest
 - `release/latest_release_readiness.json`: newest release gate JSON
 - `release/latest_release_readiness.md`: newest operator/executive release summary
+- `release/latest_release_source_trace.json`: validated source-control metadata captured at deploy time
 - `release/release_readiness_<timestamp>.json|md`: timestamped release history
 - `diagnostics/latest_diagnostics.json`: newest diagnostics snapshot
 - `diagnostics/diagnostics_<timestamp>.json`: timestamped diagnostics history
@@ -189,6 +212,7 @@ The markdown summary in `.controltower_runtime/release/latest_release_readiness.
 
 - overall verdict
 - gate results for pytest, acceptance, route checks, export checks, and source validation
+- release trace showing local `HEAD`, remote `origin/main`, deployed `GIT_COMMIT`, verification status, and timestamp
 - failing checks, if any
 - latest evidence references
 - operator recommendation
@@ -235,6 +259,35 @@ Good production diagnostics look like:
 6. For web-process issues, check `sudo journalctl -u controltower-web -n 100 --no-pager`.
 
 ## Recovery Steps
+
+Source-control release failures:
+
+- Symptom: `deploy_update.sh` exits before the remote release starts and prints remediation commands.
+- Manual recovery:
+
+```bash
+cd /path/to/ControlTower
+git remote add origin <AUTHORITATIVE_REMOTE_URL>
+git fetch origin main
+git branch --set-upstream-to=origin/main main
+git status --short
+git pull --ff-only origin main
+git push origin main
+```
+
+- If the authoritative remote URL is still unknown, stop here and resolve that first. Do not treat any deploy from a remote-less checkout as authoritative.
+
+Deploy verification failures:
+
+- Symptom: `verify_controltower_production.sh` fails after restart.
+- Manual recovery:
+
+```bash
+CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml --auth-username "$CODEX_AUTH_USERNAME" --auth-password "$CODEX_AUTH_PASSWORD"
+sudo journalctl -u controltower-web -n 100 --no-pager
+```
+
+- Use `.controltower_runtime/release/latest_release_readiness.json` and `.md` as the authoritative failure record; they now include the local, remote, and deployed commit chain plus the final verification status.
 
 Config failures:
 

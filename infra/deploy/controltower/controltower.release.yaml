@@ -1,0 +1,15 @@
+release:
+  repository:
+    working_branch: main
+    remote_name: origin
+  deployment_target:
+    ssh_target: deploy@controltower.bratek.io
+    public_ip: 161.35.177.158
+    app_root: /srv/controltower/app
+    venv_python: /srv/controltower/venv/bin/python
+    runtime_root: /srv/controltower/shared/.controltower_runtime
+    env_file: /etc/controltower/controltower.env
+    config_path: /etc/controltower/controltower.yaml
+    service_name: controltower-web
+    backend_base_url: http://127.0.0.1:8787
+    public_base_url: https://controltower.bratek.io

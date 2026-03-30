@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from controltower import __version__
 from controltower.config import ControlTowerConfig
 from controltower.domain.models import ExportRecord, utc_now_iso
 from controltower.obsidian.exporter import load_latest_export
 from controltower.render.markdown import REQUIRED_MARKDOWN_TEMPLATES, validate_markdown_templates
+from controltower.services.build_info import current_build_info, workspace_root
 from controltower.services.controltower import ControlTowerService
 from controltower.services.identity_reconciliation import RegistryDocument
 from controltower.services.meeting_readiness import verify_meeting_readiness
@@ -37,7 +36,7 @@ RELEASE_SCHEMA_VERSION = "2026-03-27"
 
 def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
     ensure_runtime_layout(config.runtime.state_root)
-    build_info = _build_info()
+    build_info = current_build_info()
     config_status = {
         "status": "loaded",
         "registry_path": str(config.identity.registry_path),
@@ -45,6 +44,8 @@ def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
         "state_root": str(config.runtime.state_root),
         "ui_host": config.ui.host,
         "ui_port": config.ui.port,
+        "public_base_url": config.app.public_base_url,
+        "auth_mode": config.auth.mode,
     }
     markdown_template_status = _markdown_template_status()
     ui_template_status = _ui_template_status()
@@ -52,6 +53,7 @@ def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
     latest_export = load_latest_export(config.runtime.state_root)
     acceptance = _load_json(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME)
     latest_release = load_latest_release_readiness(config.runtime.state_root)
+    latest_live_deployment = _load_json(Path(config.runtime.state_root) / RELEASE_ROOT_NAME / "latest_live_deployment.json")
     artifact_index = _load_json(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME)
     latest_operation = _latest_operation_summary(config.runtime.state_root)
     diagnostics_snapshot = _load_json(Path(config.runtime.state_root) / "diagnostics" / LATEST_DIAGNOSTICS_NAME)
@@ -113,11 +115,13 @@ def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
         "product": {
             "name": config.app.product_name,
             "environment": config.app.environment,
-            "version": __version__,
+            "version": build_info["version"],
             "build_metadata": {
                 "git_commit": build_info["git_commit"] or "unavailable",
-                "git_commit_available": build_info["git_commit"] is not None,
-                "python_version": sys.version.split()[0],
+                "git_commit_available": build_info["git_commit_available"],
+                "git_commit_short": build_info["git_commit_short"],
+                "asset_version": build_info["asset_version"],
+                "python_version": build_info["python_version"],
             },
         },
         "config": config_status,
@@ -133,6 +137,10 @@ def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
             "summary": (latest_release.get("verdict") or {}).get("summary") if latest_release else "No release readiness artifact recorded yet.",
             "json_path": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON),
             "markdown_path": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_MD),
+            "live_deployment_path": str(_release_root(config.runtime.state_root) / "latest_live_deployment.json"),
+            "live_deployment_present": latest_live_deployment is not None,
+            "live_git_commit": latest_live_deployment.get("git_commit") if latest_live_deployment else None,
+            "live_deployed_at": latest_live_deployment.get("deployed_at") if latest_live_deployment else None,
         },
         "acceptance": {
             "last_run_at": acceptance.get("executed_at") if acceptance else None,
@@ -184,6 +192,7 @@ def build_release_readiness(
     pytest_result: dict[str, Any] | None = None,
     acceptance_result: dict[str, Any] | None = None,
     export_record: ExportRecord | None = None,
+    release_trace: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     service = ControlTowerService(config)
     validation_issues = service.validate_sources()
@@ -208,7 +217,12 @@ def build_release_readiness(
     diagnostics_snapshot = collect_operator_diagnostics(config)
     diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
     generated_at = utc_now_iso()
-    build_info = _build_info()
+    build_info = current_build_info()
+    release_trace_payload = _normalize_release_trace(
+        release_trace,
+        generated_at=generated_at,
+        deployed_git_commit=build_info["git_commit"],
+    )
 
     gate_results = {
         "pytest": pytest_result,
@@ -256,9 +270,9 @@ def build_release_readiness(
         "product": {
             "name": config.app.product_name,
             "environment": config.app.environment,
-            "version": __version__,
+            "version": build_info["version"],
             "git_commit": build_info["git_commit"],
-            "git_commit_available": build_info["git_commit"] is not None,
+            "git_commit_available": build_info["git_commit_available"],
         },
         "config": {
             "registry_path": str(config.identity.registry_path),
@@ -286,6 +300,7 @@ def build_release_readiness(
             "artifact_index_path": str(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME),
         },
         "diagnostics_snapshot": diagnostics_snapshot,
+        "release_trace": release_trace_payload,
         "verdict": verdict,
     }
 
@@ -299,6 +314,36 @@ def build_release_readiness(
     json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     refresh_artifact_index(config.runtime.state_root)
+    return artifact
+
+
+def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict[str, Any] | None:
+    latest_json_path = _release_root(state_root) / LATEST_RELEASE_JSON
+    if not latest_json_path.exists():
+        return None
+
+    artifact = json.loads(latest_json_path.read_text(encoding="utf-8"))
+    artifact["release_trace"] = _normalize_release_trace(
+        release_trace,
+        generated_at=artifact.get("generated_at"),
+        deployed_git_commit=((artifact.get("product") or {}).get("git_commit")),
+    )
+    rendered = _render_release_summary(artifact)
+    latest_markdown_path = _release_root(state_root) / LATEST_RELEASE_MD
+    latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+    latest_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
+
+    generated_at = artifact.get("generated_at")
+    if generated_at:
+        safe_stamp = str(generated_at).replace(":", "-")
+        history_json_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.json"
+        history_markdown_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.md"
+        if history_json_path.exists():
+            history_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        if history_markdown_path.exists():
+            history_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
+
+    refresh_artifact_index(state_root)
     return artifact
 
 
@@ -344,12 +389,16 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
     diagnostics_api_response = client.get("/api/diagnostics")
     auth_checks: dict[str, bool] = {}
     if auth_required:
+        login_response = anonymous_client.get("/login?next_path=/publish", follow_redirects=False)
         anonymous_publish_response = anonymous_client.get("/publish", follow_redirects=False)
         anonymous_diagnostics_response = anonymous_client.get("/api/diagnostics", follow_redirects=False)
         auth_checks = {
+            "login_returns_200": login_response.status_code == 200,
             "publish_requires_login": anonymous_publish_response.status_code == 303
             and anonymous_publish_response.headers.get("location", "").startswith("/login?next_path=/publish"),
             "api_requires_auth": anonymous_diagnostics_response.status_code == 401,
+            "authenticated_publish_succeeds": publish_response.status_code == 200,
+            "authenticated_api_succeeds": diagnostics_api_response.status_code == 200,
         }
     checks = {
         "/": home_response.status_code,
@@ -483,6 +532,11 @@ def _render_release_summary(artifact: dict[str, Any]) -> str:
     git_commit = product["git_commit"] or "unavailable"
     failing_checks = verdict["failing_checks"] or ["None."]
     remaining_risks = verdict["remaining_risks"] or ["None."]
+    release_trace = _normalize_release_trace(
+        artifact.get("release_trace"),
+        generated_at=artifact.get("generated_at"),
+        deployed_git_commit=product.get("git_commit"),
+    )
 
     lines = [
         "# Control Tower Release Readiness",
@@ -520,12 +574,38 @@ def _render_release_summary(artifact: dict[str, Any]) -> str:
             f"- Latest run pointer: {evidence['latest_run_path']}",
             f"- Artifact index: {evidence['artifact_index_path']}",
             "",
+            "## Release Trace",
+            "",
+            f"- Trace generated at: {release_trace['generated_at']}",
+            f"- Local HEAD commit: {release_trace['local_head_commit']}",
+            f"- Remote origin/main commit: {release_trace['remote_origin_main_commit']}",
+            f"- Deployed GIT_COMMIT: {release_trace['deployed_git_commit']}",
+            f"- Verification status: {release_trace['verification_status']}",
+            "",
             "## Remaining Risks",
             "",
         ]
     )
     lines.extend(f"- {risk}" for risk in remaining_risks)
     return "\n".join(lines) + "\n"
+
+
+def _normalize_release_trace(
+    payload: dict[str, Any] | None,
+    *,
+    generated_at: str | None,
+    deployed_git_commit: str | None,
+) -> dict[str, Any]:
+    payload = payload or {}
+    return {
+        "generated_at": payload.get("generated_at") or generated_at or "unavailable",
+        "local_head_commit": payload.get("local_head_commit") or "unavailable",
+        "remote_origin_main_commit": payload.get("remote_origin_main_commit") or "unavailable",
+        "deployed_git_commit": payload.get("deployed_git_commit") or deployed_git_commit or "unavailable",
+        "verification_status": payload.get("verification_status") or "not_run",
+        "push_status": payload.get("push_status") or "unknown",
+        "source_trace_path": payload.get("source_trace_path"),
+    }
 
 
 def _release_root(state_root: Path) -> Path:
@@ -537,31 +617,12 @@ def _load_json(path: Path) -> dict[str, Any] | None:
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
-
-def _build_info() -> dict[str, str | None]:
-    env_commit = os.getenv("GIT_COMMIT")
-    if env_commit:
-        return {"git_commit": env_commit}
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(_workspace_root()),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return {"git_commit": None}
-    git_commit = completed.stdout.strip() if completed.returncode == 0 else None
-    return {"git_commit": git_commit or None}
-
-
 def _tail_lines(text: str, count: int = 20) -> list[str]:
     return [line for line in text.splitlines()[-count:] if line.strip()]
 
 
 def _workspace_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return workspace_root()
 
 
 def _markdown_template_status() -> dict[str, Any]:

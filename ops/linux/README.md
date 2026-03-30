@@ -10,6 +10,8 @@ These wrappers execute the same production Python entrypoints as Windows. When `
 
 Use the full droplet pack in [`infra/deploy/controltower/README.md`](/C:/Dev/ControlTower/infra/deploy/controltower/README.md) for the nginx site, systemd unit, cron install, and deploy/update scripts.
 
+For releases, use `bash infra/deploy/controltower/deploy_update.sh`. The verifier still expects the source-control trace written by that handoff, so `verify_controltower_production.sh` on its own is a diagnostics tool, not a complete release handoff.
+
 ## Manual Invocation
 
 ```bash

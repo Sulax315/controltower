@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page_title or config.app.product_name }}</title>
-  <link rel="stylesheet" href="/static/site.css">
-  <script src="/static/investigation.js" defer></script>
+  <link rel="stylesheet" href="/static/site.css?v={{ asset_version }}">
+  <script src="/static/investigation.js?v={{ asset_version }}" defer></script>
 </head>
 <body class="{{ page_mode or 'support' }}">
   {% set current_path = request.url.path %}

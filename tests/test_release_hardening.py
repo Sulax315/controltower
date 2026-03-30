@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import subprocess
 
 from fastapi.testclient import TestClient
 import pytest
@@ -11,7 +13,8 @@ from controltower.config import load_config
 from controltower.domain.models import ProjectIdentity
 from controltower.services.controltower import ControlTowerService
 from controltower.services.delta import build_project_delta
-from controltower.services.release import build_release_readiness
+from controltower.services.release import build_release_readiness, stamp_release_trace
+from controltower.services.release_trace import collect_source_release_trace
 
 
 def test_load_config_fails_for_missing_file(tmp_path: Path):
@@ -146,6 +149,12 @@ def test_diagnostics_surface_exposes_version_and_release_status(sample_config_pa
         pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
         acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
     )
+    live_deployment_path = Path(config.runtime.state_root) / "release" / "latest_live_deployment.json"
+    live_deployment_path.parent.mkdir(parents=True, exist_ok=True)
+    live_deployment_path.write_text(
+        '{"git_commit": "abc123", "deployed_at": "2026-03-30T22:00:00Z"}',
+        encoding="utf-8",
+    )
 
     client = TestClient(create_app(str(sample_config_path)))
     diagnostics = client.get("/api/diagnostics")
@@ -153,7 +162,11 @@ def test_diagnostics_surface_exposes_version_and_release_status(sample_config_pa
     assert diagnostics.status_code == 200
     payload = diagnostics.json()
     assert payload["product"]["version"] == "0.1.0"
+    assert payload["product"]["build_metadata"]["asset_version"]
     assert payload["release"]["status"] == "ready"
+    assert payload["release"]["live_deployment_present"] is True
+    assert payload["release"]["live_git_commit"] == "abc123"
+    assert payload["release"]["live_deployed_at"] == "2026-03-30T22:00:00Z"
     assert payload["acceptance"]["last_successful_run_at"] == "2026-03-27T15:30:00Z"
     assert payload["artifacts"]["latest_export_status"] == "success"
     assert payload["templates"]["markdown"]["status"] == "ok"
@@ -179,5 +192,132 @@ def test_release_readiness_route_checks_pass_with_prod_app_auth(sample_config_pa
     assert artifact["route_checks"]["status"] == "pass"
     assert artifact["route_checks"]["checks"]["/publish"] == 200
     assert artifact["route_checks"]["checks"]["/api/diagnostics"] == 200
+    assert artifact["route_checks"]["auth_checks"]["login_returns_200"] is True
     assert artifact["route_checks"]["auth_checks"]["publish_requires_login"] is True
     assert artifact["route_checks"]["auth_checks"]["api_requires_auth"] is True
+    assert artifact["route_checks"]["auth_checks"]["authenticated_publish_succeeds"] is True
+    assert artifact["route_checks"]["auth_checks"]["authenticated_api_succeeds"] is True
+
+
+def test_release_source_trace_fails_when_origin_is_missing(tmp_path: Path):
+    repo_root = _init_git_repo(tmp_path / "repo")
+
+    trace = collect_source_release_trace(repo_root)
+
+    assert trace["status"] == "fail"
+    assert trace["error"] == "Required Git remote 'origin' is missing."
+    assert trace["checks"][2]["name"] == "origin_exists"
+    assert trace["checks"][2]["status"] == "fail"
+    assert trace["remediation_commands"] == [
+        f"cd {repo_root.resolve()}",
+        "git remote add origin <AUTHORITATIVE_REMOTE_URL>",
+        "git fetch origin main",
+        "git branch --set-upstream-to=origin/main main",
+    ]
+
+
+def test_release_source_trace_fails_when_fetch_fails(tmp_path: Path):
+    repo_root = _init_git_repo(tmp_path / "repo")
+    missing_remote = tmp_path / "missing-remote.git"
+    subprocess.run(["git", "-C", str(repo_root), "remote", "add", "origin", str(missing_remote)], check=True)
+
+    trace = collect_source_release_trace(repo_root)
+
+    assert trace["status"] == "fail"
+    assert trace["error"] == "Fetch from origin/main failed."
+    assert any(check["name"] == "fetch_origin" and check["status"] == "fail" for check in trace["checks"])
+
+
+def test_release_source_trace_fails_when_local_is_behind_origin_main(tmp_path: Path):
+    remote_root = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(remote_root)], check=True)
+
+    seeded_repo = _init_git_repo(tmp_path / "seed")
+    subprocess.run(["git", "-C", str(seeded_repo), "remote", "add", "origin", str(remote_root)], check=True)
+    subprocess.run(["git", "-C", str(seeded_repo), "push", "-u", "origin", "main"], check=True)
+
+    working_repo = tmp_path / "working"
+    subprocess.run(["git", "clone", str(remote_root), str(working_repo)], check=True)
+    subprocess.run(["git", "-C", str(working_repo), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(working_repo), "config", "user.name", "Test User"], check=True)
+
+    update_repo = tmp_path / "update"
+    subprocess.run(["git", "clone", str(remote_root), str(update_repo)], check=True)
+    subprocess.run(["git", "-C", str(update_repo), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(update_repo), "config", "user.name", "Test User"], check=True)
+    (update_repo / "remote.txt").write_text("remote update\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(update_repo), "add", "remote.txt"], check=True)
+    subprocess.run(["git", "-C", str(update_repo), "commit", "-m", "remote update"], check=True)
+    subprocess.run(["git", "-C", str(update_repo), "push", "origin", "main"], check=True)
+
+    trace = collect_source_release_trace(working_repo)
+
+    assert trace["status"] == "fail"
+    assert trace["push_status"] == "local_behind"
+    assert trace["error"] == "Local branch is behind origin/main."
+    assert any(check["name"] == "local_not_behind_origin_main" and check["status"] == "fail" for check in trace["checks"])
+
+
+def test_release_artifact_records_local_remote_and_deployed_commit_metadata(sample_config_path: Path):
+    config = load_config(sample_config_path)
+    artifact = build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+
+    stamped = stamp_release_trace(
+        Path(config.runtime.state_root),
+        {
+            "generated_at": "2026-03-30T21:20:00Z",
+            "local_head_commit": "c8f3e5a",
+            "remote_origin_main_commit": "c8f3e5a",
+            "deployed_git_commit": "c8f3e5a",
+            "verification_status": "pass",
+            "push_status": "up_to_date",
+        },
+    )
+    latest_json = Path(artifact["artifact_paths"]["latest_json"])
+    latest_markdown = Path(artifact["artifact_paths"]["latest_markdown"])
+    payload = json.loads(latest_json.read_text(encoding="utf-8"))
+    markdown = latest_markdown.read_text(encoding="utf-8")
+
+    assert stamped is not None
+    assert payload["release_trace"]["local_head_commit"] == "c8f3e5a"
+    assert payload["release_trace"]["remote_origin_main_commit"] == "c8f3e5a"
+    assert payload["release_trace"]["deployed_git_commit"] == "c8f3e5a"
+    assert payload["release_trace"]["verification_status"] == "pass"
+    assert "## Release Trace" in markdown
+    assert "- Local HEAD commit: c8f3e5a" in markdown
+    assert "- Remote origin/main commit: c8f3e5a" in markdown
+    assert "- Deployed GIT_COMMIT: c8f3e5a" in markdown
+    assert "- Verification status: pass" in markdown
+
+
+def test_release_entrypoints_delegate_to_single_authoritative_flow():
+    repo_root = Path(__file__).resolve().parents[1]
+    deploy_update = (repo_root / "infra" / "deploy" / "controltower" / "deploy_update.sh").read_text(encoding="utf-8")
+    python_wrapper = (repo_root / "scripts" / "release_controltower.py").read_text(encoding="utf-8")
+    linux_wrapper = (repo_root / "ops" / "linux" / "release_controltower.sh").read_text(encoding="utf-8")
+    windows_wrapper = (repo_root / "ops" / "windows" / "Invoke-ControlTowerRelease.ps1").read_text(encoding="utf-8")
+
+    assert "deploy_update_controltower.py" in deploy_update
+    assert "release_source_controltower.py" not in deploy_update
+    assert "rsync -a --delete" not in deploy_update
+    assert "deprecated" in python_wrapper
+    assert "deploy_update_controltower.py" in python_wrapper
+    assert "deprecated" in linux_wrapper
+    assert "infra/deploy/controltower/deploy_update.sh" in linux_wrapper
+    assert "compatibility wrapper" in windows_wrapper
+    assert "deploy_update_controltower.py" in windows_wrapper
+
+
+def _init_git_repo(repo_root: Path) -> Path:
+    repo_root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--initial-branch=main", str(repo_root)], check=True)
+    subprocess.run(["git", "-C", str(repo_root), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(repo_root), "config", "user.name", "Test User"], check=True)
+    (repo_root / "README.md").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo_root), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo_root), "commit", "-m", "initial"], check=True)
+    return repo_root

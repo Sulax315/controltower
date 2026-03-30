@@ -193,6 +193,7 @@ python .\run_controltower_ui.py
 - [Configuration Guide](./docs/CONFIGURATION.md)
 - [Config Reference](./docs/CONFIG_REFERENCE.md)
 - [Operations Runbook](./docs/OPERATIONS_RUNBOOK.md)
+- [Production Release](./docs/PRODUCTION_RELEASE.md)
 - [Review Approval Runbook](./docs/REVIEW_APPROVAL_RUNBOOK.md)
 - [n8n Execution Integration](./docs/N8N_EXECUTION_INTEGRATION.md)
 - [Production Deployment Pack](./infra/deploy/controltower/README.md)

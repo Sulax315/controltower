@@ -28,6 +28,8 @@ if str(SRC_ROOT) not in sys.path:
 
 from controltower.config import load_config
 from controltower.services.controltower import ControlTowerService
+from controltower.services.release import stamp_release_trace
+from controltower.services.release_trace import load_source_release_trace, release_source_trace_path
 from controltower.services.runtime_state import ARTIFACT_INDEX_NAME, LATEST_DIAGNOSTICS_NAME, LATEST_RELEASE_JSON
 
 
@@ -83,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="HTTP timeout for backend and nginx route checks.",
     )
     parser.add_argument(
+        "--expected-commit",
+        default=os.getenv("CONTROLTOWER_EXPECTED_COMMIT"),
+        help="Exact git commit that must be reported by the live deployment.",
+    )
+    parser.add_argument(
         "--auth-username",
         default=os.getenv("CODEX_AUTH_USERNAME"),
         help="Username used for application-layer authentication when prod auth is enabled.",
@@ -123,6 +130,7 @@ def main() -> int:
         "public_base_url": args.public_base_url.rstrip("/"),
         "public_http_base_url": None,
         "backend_base_url": None,
+        "expected_commit": args.expected_commit,
         "checks": [],
         "artifacts": {},
     }
@@ -141,6 +149,9 @@ def main() -> int:
 
     config_path = Path(args.config).resolve()
     runtime_root = Path(config.runtime.state_root)
+    source_trace = load_source_release_trace(runtime_root)
+    expected_commit = args.expected_commit or ((source_trace or {}).get("local_head_commit"))
+    deployed_commit = None
     service = ControlTowerService(config)
     backend_base_url = (args.backend_base_url or f"http://{config.ui.host}:{config.ui.port}").rstrip("/")
     public_base_url = args.public_base_url.rstrip("/")
@@ -157,13 +168,17 @@ def main() -> int:
     summary["backend_base_url"] = backend_base_url
     summary["public_http_base_url"] = public_http_base_url
     summary["auth_required"] = auth_required
+    summary["expected_commit"] = expected_commit
     summary["artifacts"] = {
         "runtime_root": str(runtime_root),
         "artifact_index": str(runtime_root / ARTIFACT_INDEX_NAME),
         "latest_diagnostics": str(runtime_root / "diagnostics" / LATEST_DIAGNOSTICS_NAME),
         "latest_release_json": str(runtime_root / "release" / LATEST_RELEASE_JSON),
+        "release_source_trace": str(release_source_trace_path(runtime_root)),
         "selected_codes": selected_codes,
     }
+    if source_trace is not None:
+        summary["release_source_trace"] = source_trace
     summary["checks"].append(
         {
             "name": "config_presence",
@@ -173,6 +188,95 @@ def main() -> int:
             "selected_codes": selected_codes,
         }
     )
+    summary["checks"].append(
+        {
+            "name": "release_source_trace_present",
+            "status": "pass" if source_trace is not None else "fail",
+            "trace_path": str(release_source_trace_path(runtime_root)),
+        }
+    )
+    if source_trace is None:
+        summary["error"] = "Release source trace is missing. Rerun the authoritative deploy_update handoff before production verification."
+        summary["remediation_commands"] = [
+            "bash infra/deploy/controltower/deploy_update.sh",
+        ]
+        return _finish(
+            summary,
+            exit_code=EXIT_RELEASE_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
+    if source_trace.get("status") != "pass":
+        summary["error"] = "Release source trace did not pass source-control validation."
+        summary["remediation_commands"] = source_trace.get("remediation_commands", [])
+        return _finish(
+            summary,
+            exit_code=EXIT_RELEASE_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
+
+    if not args.skip_release_readiness:
+        command = [
+            args.python_bin,
+            str(REPO_ROOT / "scripts" / "release_readiness_controltower.py"),
+            "--config",
+            str(config_path),
+        ]
+        if not args.rerun_pytest:
+            command.append("--skip-pytest")
+        if not args.rerun_acceptance:
+            command.append("--skip-acceptance")
+        release_result = _run_subprocess(command, cwd=REPO_ROOT)
+        summary["checks"].append({"name": "release_readiness", **release_result})
+        if release_result["status"] != "pass":
+            summary["error"] = "Release readiness failed."
+            return _finish(
+                summary,
+                exit_code=EXIT_RELEASE_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
+
+    public_health = _json_check(
+        f"{public_base_url}/healthz",
+        timeout_seconds=args.timeout_seconds,
+    )
+    public_health_check = {"name": "public_healthz", **public_health}
+    if public_health["status"] == "pass":
+        payload = public_health["payload"]
+        public_health_check["git_commit"] = payload.get("git_commit")
+        public_health_check["asset_version"] = payload.get("asset_version")
+        public_health_check["auth_mode"] = payload.get("auth_mode")
+        public_health_check["auth_mode_matches_config"] = payload.get("auth_mode") == config.auth.mode
+        public_health_check["public_base_url_matches"] = payload.get("public_base_url") == config.app.public_base_url
+        public_health_check["expected_commit_matches"] = (
+            payload.get("git_commit") == expected_commit if expected_commit else True
+        )
+        public_health_check.pop("payload", None)
+        public_health_check["status"] = (
+            "pass"
+            if (
+                public_health_check["public_base_url_matches"]
+                and public_health_check["expected_commit_matches"]
+                and public_health_check["auth_mode_matches_config"]
+            )
+            else "fail"
+        )
+    summary["checks"].append(public_health_check)
+    if public_health_check["status"] != "pass":
+        summary["error"] = "The public health endpoint did not report the expected build metadata."
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
+    deployed_commit = public_health_check.get("git_commit") or deployed_commit
 
     public_http_root = _http_check(
         f"{public_http_base_url}/",
@@ -190,35 +294,62 @@ def main() -> int:
     summary["checks"].append({"name": "public_http_root_redirect", **public_http_root})
     if public_http_root["status"] != "pass":
         summary["error"] = "The public HTTP route did not redirect cleanly to HTTPS."
-        print(json.dumps(summary, indent=2))
-        return EXIT_PROXY_ERROR
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
 
     tls_certificate = _tls_certificate_check(public_base_url, timeout_seconds=args.timeout_seconds)
     summary["checks"].append({"name": "public_tls_certificate", **tls_certificate})
     if tls_certificate["status"] != "pass":
         summary["error"] = "The public TLS certificate was invalid for the configured Control Tower hostname."
-        print(json.dumps(summary, indent=2))
-        return EXIT_PROXY_ERROR
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
 
     backend_opener = None
     public_opener = None
     if auth_required:
         if not auth_username or not auth_password:
             summary["error"] = "Application auth is enabled, but no auth username/password were provided to the verifier."
-            print(json.dumps(summary, indent=2))
-            return EXIT_CONFIG_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_CONFIG_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
+        expected_asset_markers = []
+        if public_health_check.get("asset_version"):
+            asset_version = public_health_check["asset_version"]
+            expected_asset_markers = [
+                f'/static/site.css?v={asset_version}',
+                f'/static/investigation.js?v={asset_version}',
+            ]
         public_login_page = _http_check(
             f"{public_base_url}/login?next_path=/publish",
             timeout_seconds=args.timeout_seconds,
             expected_content_type_prefix="text/html",
-            expected_markers=["Sign In", "AUTH REQUIRED"],
+            expected_markers=["Sign In", "AUTH REQUIRED", *expected_asset_markers],
         )
         summary["checks"].append({"name": "public_login_page", **public_login_page})
         if public_login_page["status"] != "pass":
             summary["error"] = "The public login page was not reachable."
-            print(json.dumps(summary, indent=2))
-            return EXIT_PROXY_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
         anonymous_publish = _http_check(
             f"{public_base_url}/publish",
@@ -238,8 +369,13 @@ def main() -> int:
         summary["checks"].append({"name": "public_publish_requires_login", **anonymous_publish})
         if anonymous_publish["status"] != "pass":
             summary["error"] = "Anonymous access to the public publish route was not redirected to login."
-            print(json.dumps(summary, indent=2))
-            return EXIT_PROXY_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
         anonymous_api = _http_check(
             f"{public_base_url}/api/diagnostics",
@@ -249,36 +385,47 @@ def main() -> int:
         summary["checks"].append({"name": "public_api_requires_auth", **anonymous_api})
         if anonymous_api["status"] != "pass":
             summary["error"] = "Anonymous access to the public diagnostics API was not denied."
-            print(json.dumps(summary, indent=2))
-            return EXIT_PROXY_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
-        backend_publish = _http_check(
-            f"{backend_base_url}/publish",
-            timeout_seconds=args.timeout_seconds,
-            follow_redirects=False,
-            expected_statuses={303},
-        )
         public_opener, public_login = _login_session(
             public_base_url,
             username=auth_username,
             password=auth_password,
             timeout_seconds=args.timeout_seconds,
         )
-        backend_publish["expected_location_prefix"] = "/login?next_path=/publish"
-        backend_publish["location_matches_login"] = str(backend_publish.get("headers", {}).get("location", "")).startswith(
-            "/login?next_path=/publish"
-        )
-        backend_publish["status"] = (
-            "pass"
-            if backend_publish["status"] == "pass" and backend_publish["location_matches_login"]
-            else "fail"
-        )
-        summary["checks"].append({"name": "backend_publish_requires_login", **backend_publish})
         summary["checks"].append({"name": "public_login", **public_login})
-        if backend_publish["status"] != "pass" or public_login["status"] != "pass":
+        if public_login["status"] != "pass":
             summary["error"] = "Application auth gating or public login failed."
-            print(json.dumps(summary, indent=2))
-            return EXIT_PROXY_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
+
+        authenticated_publish = _http_check(
+            f"{public_base_url}/publish",
+            timeout_seconds=args.timeout_seconds,
+            opener=public_opener,
+            expected_content_type_prefix="text/html",
+        )
+        summary["checks"].append({"name": "public_authenticated_publish", **authenticated_publish})
+        if authenticated_publish["status"] != "pass":
+            summary["error"] = "Authenticated access to the public publish route did not succeed."
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
         route_expectations = {
             "/publish": {
@@ -429,8 +576,13 @@ def main() -> int:
     summary["checks"].extend(route_results)
     if any(check["status"] != "pass" for check in route_results):
         summary["error"] = "One or more required backend/public routes failed or did not match across nginx."
-        print(json.dumps(summary, indent=2))
-        return EXIT_PROXY_ERROR
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
 
     diagnostics_page = _http_check(
         f"{public_base_url}/diagnostics",
@@ -440,8 +592,13 @@ def main() -> int:
     summary["checks"].append({"name": "public_diagnostics", **diagnostics_page})
     if diagnostics_page["status"] != "pass":
         summary["error"] = "The public /diagnostics route did not answer successfully."
-        print(json.dumps(summary, indent=2))
-        return EXIT_DIAGNOSTICS_ERROR
+        return _finish(
+            summary,
+            exit_code=EXIT_DIAGNOSTICS_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
 
     diagnostics_api = _json_check(
         f"{public_base_url}/api/diagnostics",
@@ -452,11 +609,19 @@ def main() -> int:
     if diagnostics_api["status"] == "pass":
         payload = diagnostics_api["payload"]
         diagnostics_check["config_status"] = payload.get("config", {}).get("status")
+        diagnostics_check["config_public_base_url"] = payload.get("config", {}).get("public_base_url")
+        diagnostics_check["config_auth_mode"] = payload.get("config", {}).get("auth_mode")
+        diagnostics_check["config_auth_mode_matches"] = payload.get("config", {}).get("auth_mode") == config.auth.mode
         diagnostics_check["release_status"] = payload.get("release", {}).get("status")
         diagnostics_check["latest_run_status"] = payload.get("latest_run", {}).get("status")
         diagnostics_check["artifact_index_present"] = payload.get("artifacts", {}).get("artifact_index_present")
         diagnostics_check["latest_diagnostics_present"] = payload.get("artifacts", {}).get("latest_diagnostics_present")
         diagnostics_check["comparison_runtime_present"] = "comparison_runtime" in payload
+        build_metadata = payload.get("product", {}).get("build_metadata", {})
+        diagnostics_check["git_commit"] = build_metadata.get("git_commit")
+        diagnostics_check["expected_commit_matches"] = (
+            build_metadata.get("git_commit") == expected_commit if expected_commit else True
+        )
         comparison_runtime = payload.get("comparison_runtime") or {}
         diagnostics_check["comparison_runtime_has_arena_artifact_path"] = (
             str(comparison_runtime.get("arena_artifact_path") or "").startswith("/arena/export/artifact.md")
@@ -465,16 +630,24 @@ def main() -> int:
             comparison_runtime.get("selected_arena_codes") == runtime_coherence.get("selected_arena_codes")
         )
         diagnostics_check.pop("payload", None)
+        deployed_commit = diagnostics_check.get("git_commit") or deployed_commit
     summary["checks"].append(diagnostics_check)
     if (
         diagnostics_api["status"] != "pass"
         or diagnostics_check.get("comparison_runtime_present") is not True
         or diagnostics_check.get("comparison_runtime_has_arena_artifact_path") is not True
         or diagnostics_check.get("comparison_runtime_selected_codes_match") is not True
+        or diagnostics_check.get("config_auth_mode_matches") is not True
+        or diagnostics_check.get("expected_commit_matches") is not True
     ):
         summary["error"] = "The public /api/diagnostics route did not return the accepted Control Tower runtime contract."
-        print(json.dumps(summary, indent=2))
-        return EXIT_DIAGNOSTICS_ERROR
+        return _finish(
+            summary,
+            exit_code=EXIT_DIAGNOSTICS_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
 
     if not args.skip_smoke:
         smoke_result = _run_subprocess(
@@ -489,30 +662,22 @@ def main() -> int:
         summary["checks"].append({"name": "smoke", **smoke_result})
         if smoke_result["status"] != "pass":
             summary["error"] = "Smoke verification failed."
-            print(json.dumps(summary, indent=2))
-            return EXIT_SMOKE_ERROR
-
-    if not args.skip_release_readiness:
-        command = [
-            args.python_bin,
-            str(REPO_ROOT / "scripts" / "release_readiness_controltower.py"),
-            "--config",
-            str(config_path),
-        ]
-        if not args.rerun_pytest:
-            command.append("--skip-pytest")
-        if not args.rerun_acceptance:
-            command.append("--skip-acceptance")
-        release_result = _run_subprocess(command, cwd=REPO_ROOT)
-        summary["checks"].append({"name": "release_readiness", **release_result})
-        if release_result["status"] != "pass":
-            summary["error"] = "Release readiness failed."
-            print(json.dumps(summary, indent=2))
-            return EXIT_RELEASE_ERROR
+            return _finish(
+                summary,
+                exit_code=EXIT_SMOKE_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
 
     summary["status"] = "pass"
-    print(json.dumps(summary, indent=2))
-    return EXIT_SUCCESS
+    return _finish(
+        summary,
+        exit_code=EXIT_SUCCESS,
+        runtime_root=runtime_root,
+        source_trace=source_trace,
+        deployed_commit=deployed_commit,
+    )
 
 
 def _verify_route_set(
@@ -900,6 +1065,33 @@ def _normalize_semantic_text(text: str) -> str:
     normalized = re.sub(r"generated_at:\s*'[^']+'", "generated_at: '<normalized>'", text)
     normalized = re.sub(r"- Generated at:\s*[0-9T:\-]+Z", "- Generated at: <normalized>", normalized)
     return normalized
+
+
+def _finish(
+    summary: dict[str, Any],
+    *,
+    exit_code: int,
+    runtime_root: Path | None,
+    source_trace: dict[str, Any] | None,
+    deployed_commit: str | None,
+) -> int:
+    release_trace = {
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "local_head_commit": (source_trace or {}).get("local_head_commit"),
+        "remote_origin_main_commit": (source_trace or {}).get("remote_origin_main_commit"),
+        "deployed_git_commit": deployed_commit,
+        "verification_status": "pass" if exit_code == EXIT_SUCCESS else "fail",
+        "push_status": (source_trace or {}).get("push_status"),
+        "source_trace_path": str(release_source_trace_path(runtime_root)) if runtime_root is not None else None,
+    }
+    if runtime_root is not None:
+        stamped = stamp_release_trace(runtime_root, release_trace)
+        if stamped is not None:
+            summary["release_trace"] = stamped.get("release_trace")
+    if exit_code == EXIT_SUCCESS:
+        summary["status"] = "pass"
+    print(json.dumps(summary, indent=2))
+    return exit_code
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):

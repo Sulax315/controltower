@@ -2,6 +2,8 @@
 
 These wrappers execute the real Python operation scripts from the repo root and always redirect stdout/stderr to `.controltower_runtime/logs/`.
 
+Routine production release now standardizes on `bash .\infra\deploy\controltower\deploy_update.sh`. `Invoke-ControlTowerRelease.ps1` remains a compatibility wrapper only.
+
 ## Manual Invocation
 
 ```powershell

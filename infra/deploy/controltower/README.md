@@ -9,6 +9,8 @@ This pack finishes the Linux droplet deployment for Control Tower using the repo
 - cron running the canonical daily and weekly operations
 - persistent runtime state under a shared `.controltower_runtime/`
 
+Routine releases now go through the authoritative workstation entrypoint documented in [`docs/PRODUCTION_RELEASE.md`](/C:/Dev/ControlTower/docs/PRODUCTION_RELEASE.md). The scripts in this folder remain the bootstrap/install substrate beneath that release lane.
+
 ## Canonical Paths
 
 The provided examples assume:
@@ -48,11 +50,10 @@ sudo cp /srv/controltower/app/infra/deploy/controltower/controltower.production.
 sudo editor /etc/controltower/controltower.yaml
 ```
 
-3. Deploy or update the repo and virtualenv:
+3. Install or refresh the host assets:
 
 ```bash
-cd /srv/controltower/app
-CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash ./infra/deploy/controltower/deploy_update.sh /path/to/ControlTower
+sudo CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/infra/deploy/controltower/install_host.sh
 ```
 
 4. Install the service, cron schedule, and nginx site:
@@ -67,12 +68,15 @@ sudo CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controlt
 CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env bash /srv/controltower/app/ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml
 ```
 
+Treat `verify_controltower_production.sh` as mandatory for release completion. The authoritative `deploy_update.sh` handoff consumes the checked-in remote script in this folder, writes the source trace into runtime state, confirms the auth gate is still intact, and stamps the release artifact with local `HEAD`, remote `origin/main`, deployed `GIT_COMMIT`, verification status, and verification timestamp.
+
 ## Installed Assets
 
 - `templates/controltower-web.service.tpl`: systemd unit for the loopback FastAPI process
 - `templates/controltower.cron.tpl`: cron schedule for the canonical daily and weekly runs
 - `templates/controltower-nginx.conf.tpl`: nginx site for `controltower.bratek.io`
-- `deploy_update.sh`: rsync + virtualenv refresh
+- `deploy_update.sh`: authoritative workstation release handoff
+- `release_remote.sh`: internal remote deploy substrate invoked by `deploy_update.sh`
 - `install_host.sh`: renders and installs systemd, cron, and nginx assets
 
 ## Manual Operator Commands

@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from controltower.config import load_config
 from controltower.obsidian.exporter import load_latest_export
+from controltower.services.build_info import current_build_info
 from controltower.services.controltower import ControlTowerService
 from controltower.services.orchestration import OrchestrationService, ReviewActorContext
 from controltower.services.release import collect_operator_diagnostics
@@ -75,6 +76,7 @@ def create_app_from_config(config) -> FastAPI:
     validate_ui_assets()
     service = ControlTowerService(config)
     orchestration = OrchestrationService(config)
+    build_info = current_build_info()
     app = FastAPI(title=config.app.product_name)
     app.add_middleware(AppAuthGuardMiddleware, config=config, orchestration=orchestration)
     app.add_middleware(
@@ -91,6 +93,8 @@ def create_app_from_config(config) -> FastAPI:
     def _template_payload(request: Request, **context: object) -> dict[str, object]:
         payload = {
             "config": config,
+            "build_info": build_info,
+            "asset_version": build_info["asset_version"],
             "auth_context": _app_auth_context(config, orchestration, request),
             "auth_csrf_token": _ensure_auth_csrf_token(request),
         }
@@ -113,7 +117,26 @@ def create_app_from_config(config) -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "product": config.app.product_name,
+                "environment": config.app.environment,
+                "version": build_info["version"],
+                "git_commit": build_info["git_commit"] or "unavailable",
+                "git_commit_short": build_info["git_commit_short"],
+                "git_commit_available": build_info["git_commit_available"],
+                "asset_version": build_info["asset_version"],
+                "auth_mode": config.auth.mode,
+                "public_base_url": config.app.public_base_url,
+            },
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "X-ControlTower-Version": str(build_info["version"]),
+                "X-ControlTower-Git-Commit": str(build_info["git_commit"] or "unavailable"),
+                "X-ControlTower-Auth-Mode": str(config.auth.mode or "dev"),
+            },
+        )
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, next_path: str | None = None):

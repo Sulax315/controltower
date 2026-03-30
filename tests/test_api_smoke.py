@@ -19,6 +19,17 @@ def test_api_and_pages_render(sample_config_path):
     tower = service.build_control_tower(["AURORA_HILLS"])
     app = create_app(str(sample_config_path))
     client = TestClient(app)
+    health = client.get("/healthz")
+
+    assert health.status_code == 200
+    health_payload = health.json()
+    assert health_payload["status"] == "ok"
+    assert health_payload["version"] == "0.1.0"
+    assert health_payload["auth_mode"] == config.auth.mode
+    assert health_payload["asset_version"]
+    assert health.headers["x-controltower-version"] == "0.1.0"
+    assert "x-controltower-git-commit" in health.headers
+    assert "no-store" in health.headers["cache-control"]
 
     root_redirect = client.get("/", follow_redirects=False)
     assert root_redirect.status_code == 307
@@ -30,6 +41,8 @@ def test_api_and_pages_render(sample_config_path):
     assert 'id="publish-latest-brief"' in home.text
     assert 'id="publish-home-header"' in home.text
     assert "Meeting-ready command brief" in home.text
+    assert '/static/site.css?v=' in home.text
+    assert '/static/investigation.js?v=' in home.text
     assert 'class="ct-layout"' in home.text
     assert 'class="ct-header"' in home.text
     assert 'class="ct-command-strip command-strip"' in home.text
@@ -261,6 +274,8 @@ def test_api_and_pages_render(sample_config_path):
     assert "health_score:" not in artifact_html
     assert "## Executive Summary" not in artifact_html
     assert present_markers_present(present.text)
+    assert '/static/site.css?v=' in present.text
+    assert '/static/investigation.js?v=' in present.text
     assert _ordered(
         present.text,
         (
