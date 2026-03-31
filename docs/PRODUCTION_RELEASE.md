@@ -27,7 +27,7 @@ The authoritative command reads the exact production target from [`infra/deploy/
 5. Refuses releases when local is behind or diverged from `origin/main`.
 6. Pushes local `HEAD` to `origin/main` when the checkout is safely ahead.
 7. Stamps and ships the validated source-trace payload containing local `HEAD`, remote `origin/main`, and push status.
-8. Pipes the checked-in VM release script to the target over SSH.
+8. Copies the checked-in VM release script to `/tmp/release_remote.sh` over SCP, marks it executable, and runs it via `/bin/bash`.
 9. On the VM, hard-resets the deployment checkout to the exact commit, reinstalls Python dependencies, refreshes host assets when they changed, and restarts `controltower-web`.
 10. Runs the mandatory auth-aware production verifier against nginx/public HTTPS using the production env-backed app credentials.
 11. Persists `latest_release_source_trace.json` and `latest_live_deployment.json` under the runtime release directory.

@@ -314,7 +314,7 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     assert "deploy_update_controltower.py" in windows_wrapper
 
 
-def test_remote_release_command_uses_absolute_bash_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_remote_release_copies_script_then_executes_absolute_bash_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     repo_root = Path(__file__).resolve().parents[1]
     module_path = repo_root / "scripts" / "deploy_update_controltower.py"
     spec = importlib.util.spec_from_file_location("test_deploy_update_controltower", module_path)
@@ -408,35 +408,42 @@ def test_remote_release_command_uses_absolute_bash_path(tmp_path: Path, monkeypa
     assert module.main() == 0
     assert commands == [
         [
+            "scp",
+            str(remote_script_path),
+            "deploy@controltower.bratek.io:/tmp/release_remote.sh",
+        ],
+        [
             "ssh",
             "deploy@controltower.bratek.io",
-            "/bin/bash -s",
-            "--",
-            "--app-root",
-            "/srv/controltower/app",
-            "--branch",
-            "main",
-            "--commit",
-            "abc123",
-            "--venv-python",
-            "/srv/controltower/.venv/bin/python",
-            "--runtime-root",
-            "/srv/controltower/runtime",
-            "--env-file",
-            "/etc/controltower/controltower.env",
-            "--config",
-            "/etc/controltower/controltower.yaml",
-            "--service-name",
-            "controltower-web",
-            "--backend-base-url",
-            "http://127.0.0.1:8787",
-            "--public-base-url",
-            "https://controltower.bratek.io",
-            "--git-remote",
-            "origin",
-            "--source-trace-b64",
-            module.encode_json_payload({"status": "pass", "local_head_commit": "abc123"}),
+            "chmod +x /tmp/release_remote.sh && /bin/bash /tmp/release_remote.sh --app-root /srv/controltower/app --branch main --commit abc123 --venv-python /srv/controltower/.venv/bin/python --runtime-root /srv/controltower/runtime --env-file /etc/controltower/controltower.env --config /etc/controltower/controltower.yaml --service-name controltower-web --backend-base-url http://127.0.0.1:8787 --public-base-url https://controltower.bratek.io --git-remote origin --source-trace-b64 "
+            + module.encode_json_payload({"status": "pass", "local_head_commit": "abc123"}),
         ]
+    ]
+
+
+def test_remote_release_exec_command_shell_quotes_arguments(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "deploy_update_controltower.py"
+    spec = importlib.util.spec_from_file_location("test_deploy_update_controltower_quote_args", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    command = module.build_remote_exec_command(
+        "deploy@example.com",
+        [
+            "--service-name",
+            "controltower web",
+            "--source-trace-b64",
+            "value'withquote",
+        ],
+    )
+
+    assert command == [
+        "ssh",
+        "deploy@example.com",
+        "chmod +x /tmp/release_remote.sh && /bin/bash /tmp/release_remote.sh --service-name 'controltower web' --source-trace-b64 'value'\"'\"'withquote'",
     ]
 
 

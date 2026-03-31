@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from controltower.services.release_trace import collect_source_release_trace
 
 DEFAULT_SPEC_PATH = REPO_ROOT / "infra" / "deploy" / "controltower" / "controltower.release.yaml"
 DEFAULT_REMOTE_SCRIPT_PATH = REPO_ROOT / "infra" / "deploy" / "controltower" / "release_remote.sh"
+REMOTE_SCRIPT_DESTINATION = "/tmp/release_remote.sh"
 
 
 @dataclass(frozen=True)
@@ -73,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--remote-script",
         type=Path,
         default=DEFAULT_REMOTE_SCRIPT_PATH,
-        help="Checked-in remote deployment script that will be piped over SSH.",
+        help="Checked-in remote deployment script that will be copied to the remote host before execution.",
     )
     parser.add_argument(
         "--notify-webhook-url",
@@ -138,11 +140,7 @@ def main() -> int:
                 summary=summary,
             )
 
-        remote_command = [
-            "ssh",
-            spec.ssh_target,
-            "/bin/bash -s",
-            "--",
+        release_args = [
             "--app-root",
             spec.app_root,
             "--branch",
@@ -169,11 +167,16 @@ def main() -> int:
             encode_json_payload(source_trace),
         ]
         run_checked(
-            remote_command,
+            build_remote_copy_command(spec.ssh_target, remote_script),
+            step="remote_script_copy",
+            action="Confirm SSH/SCP connectivity and that the deploy target can write to /tmp before retrying.",
+            summary=summary,
+        )
+        run_checked(
+            build_remote_exec_command(spec.ssh_target, release_args),
             step="remote_release",
             action="Inspect the remote release output, verifier JSON, and service journal before retrying.",
             summary=summary,
-            input_text=remote_script.read_text(encoding="utf-8"),
         )
 
         summary["public_after"] = fetch_public_health(spec.public_base_url)
@@ -307,6 +310,17 @@ def validate_and_push_release_source(spec: ReleaseSpec, summary: dict[str, Any])
     }
 
 
+def build_remote_copy_command(ssh_target: str, remote_script: Path) -> list[str]:
+    return ["scp", str(remote_script), f"{ssh_target}:{REMOTE_SCRIPT_DESTINATION}"]
+
+
+def build_remote_exec_command(ssh_target: str, remote_args: list[str]) -> list[str]:
+    chmod_clause = f"chmod +x {shlex.quote(REMOTE_SCRIPT_DESTINATION)}"
+    exec_parts = ["/bin/bash", REMOTE_SCRIPT_DESTINATION, *remote_args]
+    exec_clause = " ".join(shlex.quote(part) for part in exec_parts)
+    return ["ssh", ssh_target, f"{chmod_clause} && {exec_clause}"]
+
+
 def assert_public_freshness(
     public_health: dict[str, Any] | None,
     spec: ReleaseSpec,
@@ -375,12 +389,10 @@ def run_checked(
     step: str,
     action: str,
     summary: dict[str, Any],
-    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         command,
         cwd=str(REPO_ROOT),
-        input=input_text,
         capture_output=True,
         text=True,
         check=False,
