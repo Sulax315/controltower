@@ -267,6 +267,7 @@ run_step "git_fetch" "Verify the deployment checkout has the expected remote and
 run_step "git_verify_commit" "Push the intended commit first so the VM can fetch it from the authoritative remote." git -C "$APP_ROOT" cat-file -e "${COMMIT}^{commit}"
 run_step "git_checkout_target" "Inspect the deployment checkout and repair git permissions before retrying." git -C "$APP_ROOT" checkout -B "$BRANCH" "$COMMIT"
 run_step "git_reset_exact_commit" "Inspect the deployment checkout and rerun once git can hard-reset to the requested commit." git -C "$APP_ROOT" reset --hard "$COMMIT"
+run_step "git_normalize_filemode" "Disable filemode drift so executable-bit repair does not dirty the deployment checkout." git -C "$APP_ROOT" config core.filemode false
 echo "==> write_release_source_trace"
 write_source_trace
 
@@ -275,6 +276,7 @@ CHANGED_HOST_ASSETS="$(git -C "$APP_ROOT" diff --name-only "$PREVIOUS_HEAD" "$CO
 run_step "restore_execute_bits" "Restore Linux execute bits on the deploy and ops scripts before retrying." find "$APP_ROOT/infra/deploy/controltower" "$APP_ROOT/ops/linux" -type f -name '*.sh' -exec chmod 0755 {} +
 run_step "prune_python_caches" "Remove stale python caches manually if this cleanup step keeps failing." find "$APP_ROOT" -type d \( -name '__pycache__' -o -name '.pytest_cache' \) -prune -exec rm -rf {} +
 run_step "pip_install" "Inspect pip output and dependency resolution errors before retrying." "$VENV_PYTHON" -m pip install -e "$APP_ROOT[dev]"
+run_step "remove_editable_metadata" "Remove generated editable-build metadata so the deployment checkout stays clean for the next release." rm -rf "$APP_ROOT/src/controltower.egg-info"
 
 if [[ -n "$CHANGED_HOST_ASSETS" ]]; then
   if ! have_passwordless_sudo; then
