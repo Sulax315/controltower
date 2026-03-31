@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 import pytest
@@ -310,6 +312,132 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     assert "infra/deploy/controltower/deploy_update.sh" in linux_wrapper
     assert "compatibility wrapper" in windows_wrapper
     assert "deploy_update_controltower.py" in windows_wrapper
+
+
+def test_remote_release_command_uses_absolute_bash_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "deploy_update_controltower.py"
+    spec = importlib.util.spec_from_file_location("test_deploy_update_controltower", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    release_spec_path = tmp_path / "controltower.release.yaml"
+    release_spec_path.write_text(
+        yaml.safe_dump(
+            {
+                "release": {
+                    "repository": {
+                        "working_branch": "main",
+                        "remote_name": "origin",
+                    },
+                    "deployment_target": {
+                        "ssh_target": "deploy@controltower.bratek.io",
+                        "public_ip": "161.35.177.158",
+                        "app_root": "/srv/controltower/app",
+                        "venv_python": "/srv/controltower/.venv/bin/python",
+                        "runtime_root": "/srv/controltower/runtime",
+                        "env_file": "/etc/controltower/controltower.env",
+                        "config_path": "/etc/controltower/controltower.yaml",
+                        "service_name": "controltower-web",
+                        "backend_base_url": "http://127.0.0.1:8787",
+                        "public_base_url": "https://controltower.bratek.io",
+                    },
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    remote_script_path = tmp_path / "release_remote.sh"
+    remote_script_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    commands: list[list[str]] = []
+    health_checks = iter(
+        [
+            {"reachable": True, "git_commit": "old-commit", "auth_mode": "prod", "public_base_url": "https://controltower.bratek.io"},
+            {"reachable": True, "git_commit": "abc123", "auth_mode": "prod", "public_base_url": "https://controltower.bratek.io"},
+        ]
+    )
+
+    monkeypatch.setattr(
+        module,
+        "validate_and_push_release_source",
+        lambda release_spec, summary: {
+            "branch": release_spec.working_branch,
+            "working_branch_expected": release_spec.working_branch,
+            "remote_name": release_spec.remote_name,
+            "remote_url": "git@example.com:controltower.git",
+            "head_commit": "abc123",
+            "upstream_ref": f"{release_spec.remote_name}/{release_spec.working_branch}",
+            "upstream_commit": "abc123",
+            "ahead": 0,
+            "behind": 0,
+            "relationship": "in_sync",
+            "dirty": False,
+            "push_performed": False,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "collect_source_release_trace",
+        lambda *args, **kwargs: {"status": "pass", "local_head_commit": "abc123"},
+    )
+    monkeypatch.setattr(module, "fetch_public_health", lambda *args, **kwargs: next(health_checks))
+    monkeypatch.setattr(module, "maybe_notify", lambda *args, **kwargs: {"status": "not_configured"})
+    monkeypatch.setattr(module, "maybe_write_summary", lambda *args, **kwargs: None)
+
+    def _capture_run_checked(command: list[str], **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "run_checked", _capture_run_checked)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy_update_controltower.py",
+            "--spec",
+            str(release_spec_path),
+            "--remote-script",
+            str(remote_script_path),
+        ],
+    )
+
+    assert module.main() == 0
+    assert commands == [
+        [
+            "ssh",
+            "deploy@controltower.bratek.io",
+            "/bin/bash -s",
+            "--",
+            "--app-root",
+            "/srv/controltower/app",
+            "--branch",
+            "main",
+            "--commit",
+            "abc123",
+            "--venv-python",
+            "/srv/controltower/.venv/bin/python",
+            "--runtime-root",
+            "/srv/controltower/runtime",
+            "--env-file",
+            "/etc/controltower/controltower.env",
+            "--config",
+            "/etc/controltower/controltower.yaml",
+            "--service-name",
+            "controltower-web",
+            "--backend-base-url",
+            "http://127.0.0.1:8787",
+            "--public-base-url",
+            "https://controltower.bratek.io",
+            "--git-remote",
+            "origin",
+            "--source-trace-b64",
+            module.encode_json_payload({"status": "pass", "local_head_commit": "abc123"}),
+        ]
+    ]
 
 
 def _init_git_repo(repo_root: Path) -> Path:

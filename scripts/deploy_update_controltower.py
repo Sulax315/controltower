@@ -141,8 +141,7 @@ def main() -> int:
         remote_command = [
             "ssh",
             spec.ssh_target,
-            "bash",
-            "-s",
+            "/bin/bash -s",
             "--",
             "--app-root",
             spec.app_root,
