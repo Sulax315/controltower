@@ -99,14 +99,41 @@ try:
         print(json.dumps({
             "reachable": True,
             "status_code": response.status,
-            "git_commit": payload.get("git_commit"),
-            "auth_mode": payload.get("auth_mode"),
+            "status": payload.get("status"),
         }))
 except HTTPError as exc:
     print(json.dumps({"reachable": False, "status_code": exc.code, "error": str(exc)}))
 except (URLError, OSError, json.JSONDecodeError) as exc:
     print(json.dumps({"reachable": False, "error": str(exc)}))
 PY
+}
+
+have_passwordless_sudo() {
+  if [[ ${#SUDO[@]} -eq 0 ]]; then
+    return 0
+  fi
+  "${SUDO[@]}" true >/dev/null 2>&1
+}
+
+service_main_pid() {
+  systemctl show -p MainPID --value "$SERVICE_NAME" 2>/dev/null || echo 0
+}
+
+restart_service() {
+  if have_passwordless_sudo; then
+    "${SUDO[@]}" systemctl restart "$SERVICE_NAME"
+    return 0
+  fi
+
+  local pid
+  pid="$(service_main_pid)"
+  if [[ -z "$pid" || "$pid" == "0" ]]; then
+    fail "Passwordless sudo is unavailable and $SERVICE_NAME is not currently running, so the service cannot be restarted safely." "Grant the deploy user passwordless sudo for systemctl or start the service manually as root."
+  fi
+  if ! kill "$pid"; then
+    fail "Passwordless sudo is unavailable and the current $SERVICE_NAME PID $pid could not be terminated for a restart." "Grant the deploy user passwordless sudo for systemctl or restart the service manually as root."
+  fi
+  sleep 2
 }
 
 fail() {
@@ -130,38 +157,28 @@ fail() {
   echo "Public live state: $(public_live_state)" >&2
   echo "Recommended action: $action" >&2
   echo "Recent service log tail:" >&2
-  if [[ ${#SUDO[@]} -eq 0 ]]; then
-    journalctl -u "$SERVICE_NAME" -n 80 --no-pager >&2 || true
-  else
+  if have_passwordless_sudo; then
     "${SUDO[@]}" journalctl -u "$SERVICE_NAME" -n 80 --no-pager >&2 || true
+  else
+    systemctl status "$SERVICE_NAME" --no-pager >&2 || true
+    journalctl -u "$SERVICE_NAME" -n 20 --no-pager >&2 || true
   fi
   exit 1
 }
 
-ensure_root_or_sudo() {
-  if [[ ${#SUDO[@]} -eq 0 ]]; then
-    return 0
-  fi
-  if ! "${SUDO[@]}" true 2>/dev/null; then
-    fail "Passwordless sudo is required for service restart and host verification." "Grant the deploy user passwordless sudo for systemctl/journalctl/install_host.sh, or rerun the release as root."
-  fi
-}
-
-verify_health_commit() {
+verify_health_status() {
   local url="$1"
-  local expected_commit="$2"
-  python3 - "$url" "$expected_commit" <<'PY'
+  python3 - "$url" <<'PY'
 import json
 import sys
 from urllib.request import Request, urlopen
 
 url = sys.argv[1]
-expected = sys.argv[2]
 request = Request(url, headers={"User-Agent": "controltower-release-remote/1.0"})
 with urlopen(request, timeout=10) as response:
     payload = json.loads(response.read().decode("utf-8"))
-if payload.get("git_commit") != expected:
-    raise SystemExit(f"Expected git_commit {expected!r} from {url}, got {payload.get('git_commit')!r}.")
+if payload.get("status") != "ok":
+    raise SystemExit(f"Expected status 'ok' from {url}, got {payload.get('status')!r}.")
 PY
 }
 
@@ -239,7 +256,6 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   fail "Configured virtualenv python is missing: $VENV_PYTHON" "Recreate the production virtualenv or correct the release spec."
 fi
 
-ensure_root_or_sudo
 PREVIOUS_HEAD="$(current_checkout_head)"
 
 DIRTY_TREE="$(git -C "$APP_ROOT" status --porcelain)"
@@ -261,14 +277,17 @@ run_step "prune_python_caches" "Remove stale python caches manually if this clea
 run_step "pip_install" "Inspect pip output and dependency resolution errors before retrying." "$VENV_PYTHON" -m pip install -e "$APP_ROOT[dev]"
 
 if [[ -n "$CHANGED_HOST_ASSETS" ]]; then
+  if ! have_passwordless_sudo; then
+    fail "Host asset changes require sudo, but passwordless sudo is unavailable for the deploy user." "Either rerun the release as root or grant passwordless sudo before deploying changes that affect nginx or systemd assets."
+  fi
   run_step "install_host_assets" "Run sudo CONTROLTOWER_ENV_FILE=$ENV_FILE bash $APP_ROOT/infra/deploy/controltower/install_host.sh $ENV_FILE and confirm nginx/systemd install cleanly." "${SUDO[@]}" env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/infra/deploy/controltower/install_host.sh" "$ENV_FILE"
 else
-  run_step "systemd_restart" "Inspect systemctl status and journal output for the service before retrying." "${SUDO[@]}" systemctl restart "$SERVICE_NAME"
+  run_step "service_restart" "Inspect systemctl status and journal output for the service before retrying." restart_service
 fi
 
-run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." "${SUDO[@]}" systemctl is-active --quiet "$SERVICE_NAME"
-run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." verify_health_commit "$BACKEND_BASE_URL/healthz" "$COMMIT"
-run_step "production_verify" "Use the verifier JSON above plus journalctl to resolve the failing route, auth, or freshness check before retrying." "${SUDO[@]}" env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/ops/linux/verify_controltower_production.sh" --config "$CONFIG_PATH" --public-base-url "$PUBLIC_BASE_URL" --backend-base-url "$BACKEND_BASE_URL" --expected-commit "$COMMIT" --skip-smoke --skip-release-readiness
+run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." systemctl is-active --quiet "$SERVICE_NAME"
+run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." verify_health_status "$BACKEND_BASE_URL/healthz"
+run_step "production_verify" "Use the verifier JSON above plus systemctl status to resolve the failing route, auth, or freshness check before retrying." env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/ops/linux/verify_controltower_production.sh" --config "$CONFIG_PATH" --public-base-url "$PUBLIC_BASE_URL" --backend-base-url "$BACKEND_BASE_URL" --expected-commit "$COMMIT" --skip-smoke --skip-release-readiness
 
 echo "==> write_release_manifest"
 write_deployment_manifest
