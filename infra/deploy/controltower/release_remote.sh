@@ -20,6 +20,7 @@ PUBLIC_BASE_URL=""
 GIT_REMOTE_NAME="origin"
 SOURCE_TRACE_B64=""
 SERVICE_ACTIVE_TIMEOUT_SECONDS=30
+BACKEND_HEALTH_TIMEOUT_SECONDS=30
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -201,6 +202,19 @@ if payload.get("status") != "ok":
 PY
 }
 
+wait_for_backend_health() {
+  local url="$1"
+  local deadline=$((SECONDS + BACKEND_HEALTH_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
+    if verify_health_status "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Backend health endpoint did not report ok within ${BACKEND_HEALTH_TIMEOUT_SECONDS}s: $url" >&2
+  return 1
+}
+
 write_deployment_manifest() {
   python3 - "$RUNTIME_ROOT" "$BRANCH" "$COMMIT" "$PREVIOUS_HEAD" "$SERVICE_NAME" "$BACKEND_BASE_URL" "$PUBLIC_BASE_URL" "$SOURCE_TRACE_B64" <<'PY'
 import base64
@@ -307,7 +321,7 @@ else
 fi
 
 run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." wait_for_service_active
-run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." verify_health_status "$BACKEND_BASE_URL/healthz"
+run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." wait_for_backend_health "$BACKEND_BASE_URL/healthz"
 run_step "production_verify" "Use the verifier JSON above plus systemctl status to resolve the failing route, auth, or freshness check before retrying." env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/ops/linux/verify_controltower_production.sh" --config "$CONFIG_PATH" --public-base-url "$PUBLIC_BASE_URL" --backend-base-url "$BACKEND_BASE_URL" --expected-commit "$COMMIT" --skip-smoke --skip-release-readiness
 
 echo "==> write_release_manifest"
