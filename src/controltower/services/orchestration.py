@@ -2331,9 +2331,6 @@ class OrchestrationService:
         temp_path.replace(path)
 
     def _git_commit(self) -> str | None:
-        env_commit = os.getenv("GIT_COMMIT")
-        if env_commit:
-            return env_commit
         try:
             completed = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
@@ -2343,9 +2340,15 @@ class OrchestrationService:
                 check=False,
             )
         except OSError:
-            return None
-        commit = completed.stdout.strip()
-        return commit if completed.returncode == 0 and commit else None
+            completed = None
+        if completed is not None:
+            commit = completed.stdout.strip()
+            if completed.returncode == 0 and commit:
+                return commit
+        env_commit = os.getenv("GIT_COMMIT")
+        if env_commit:
+            return env_commit
+        return None
 
     def _orchestration_root(self) -> Path:
         root = Path(self.config.runtime.state_root) / ORCHESTRATION_ROOT_NAME

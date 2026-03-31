@@ -13,13 +13,19 @@ def workspace_root() -> Path:
 
 
 def current_git_commit() -> str | None:
+    if commit := _git_head(workspace_root()):
+        return commit
     env_commit = (os.getenv("GIT_COMMIT") or "").strip()
     if env_commit:
         return env_commit
+    return None
+
+
+def _git_head(root: Path) -> str | None:
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=str(workspace_root()),
+            cwd=str(root),
             capture_output=True,
             text=True,
             check=False,

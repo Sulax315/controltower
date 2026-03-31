@@ -47,7 +47,7 @@ Latest pointer files are never deleted, and pruning also preserves the most rece
 
 - `CONTROLTOWER_CONFIG`: optional alternate path to the YAML config for UI launches or wrappers that rely on environment-based discovery.
 - `CONTROLTOWER_PUBLIC_BASE_URL`: optional override for `app.public_base_url`.
-- `GIT_COMMIT`: optional build metadata override. If unset, Control Tower attempts `git rev-parse HEAD`; if git metadata is unavailable, diagnostics report `unavailable`.
+- `GIT_COMMIT`: optional build metadata fallback. Control Tower prefers `git rev-parse HEAD` when the workspace is a real git checkout and only falls back to `GIT_COMMIT` when git metadata is unavailable.
 - `CODEX_AUTH_MODE`: optional override for `auth.mode`.
 - `CODEX_AUTH_SESSION_SECRET`: required in production to sign the public app session.
 - `CODEX_AUTH_USERNAME`: required in production for the public login screen.
