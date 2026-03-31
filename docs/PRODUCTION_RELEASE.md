@@ -31,24 +31,27 @@ The authoritative command reads the exact production target from [`infra/deploy/
 9. On the VM, hard-resets the deployment checkout to the exact commit, reinstalls Python dependencies, refreshes host assets when they changed, and restarts `controltower-web`.
 10. Runs the mandatory auth-aware production verifier against nginx/public HTTPS using the production env-backed app credentials.
 11. Persists `latest_release_source_trace.json` and `latest_live_deployment.json` under the runtime release directory.
-12. Confirms from outside the box that `https://controltower.bratek.io/healthz` reports the intended git commit and `auth_mode=prod`.
+12. Confirms from outside the box that `https://controltower.bratek.io/healthz` is healthy, then proves the live build through authenticated diagnostics and the persisted live-deployment artifact.
 
 ## Before First Use
 
-- Configure the local git remote named `origin`. This workspace currently has no git remote configured, so the release command will refuse to proceed until `origin` exists.
+- Configure the local git remote named `origin`.
 - Ensure the SSH identity used by the workstation can authenticate to `deploy@controltower.bratek.io`.
 - Ensure the deploy user can run the needed service commands with passwordless sudo, or run the release as root on the VM.
+- Ensure `/srv/controltower/app` is a real git checkout with `run_controltower.py` and `pyproject.toml` present. The release command intentionally refuses to treat a copied or half-deleted tree as authoritative.
 
 ## Freshness Proof
 
 These are the authoritative freshness checks after a release:
 
 - `curl https://controltower.bratek.io/healthz`
-  Expected: JSON with `git_commit` equal to the intended release commit and `auth_mode` equal to `prod`.
+  Expected: JSON body `{"status":"ok"}`.
+- `curl -I https://controltower.bratek.io/`
+  Expected: `303` redirect to `/login`.
 - `https://controltower.bratek.io/login`
-  Expected: HTML references `/static/site.css?v=<commit-short>` and `/static/investigation.js?v=<commit-short>`.
+  Expected: HTTP 200 login page with `Sign In`, `AUTH REQUIRED`, and versioned static asset URLs.
 - Authenticated `GET /api/diagnostics`
-  Expected: `product.build_metadata.git_commit` matches the intended commit.
+  Expected: `product.build_metadata.git_commit` matches the intended commit and `release.live_deployment_present` is `true`.
 - `/srv/controltower/shared/.controltower_runtime/release/latest_live_deployment.json`
   Expected: persisted record showing the accepted live commit and deployment timestamp.
 
@@ -70,6 +73,9 @@ When unset, the release summary records `notification.status = not_configured`.
 Use this only when workstation SSH release execution is unavailable but the pushed commit already exists on `origin/main`.
 
 ```bash
+test -d /srv/controltower/app/.git
+test -f /srv/controltower/app/run_controltower.py
+test -f /srv/controltower/app/pyproject.toml
 cd /srv/controltower/app
 git fetch --prune origin
 git checkout -B main <COMMIT>

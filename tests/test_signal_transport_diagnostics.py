@@ -18,6 +18,7 @@ def test_signal_transport_reports_missing_config(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("SIGNAL_CLI_PATH", raising=False)
     monkeypatch.delenv("SIGNAL_SENDER", raising=False)
     monkeypatch.delenv("SIGNAL_RECIPIENT", raising=False)
+    monkeypatch.setattr("controltower.services.notifications._windows_persistent_env_values", lambda names: {})
 
     summary = inspect_signal_transport(send_test=False)
 

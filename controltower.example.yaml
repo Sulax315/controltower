@@ -16,7 +16,7 @@ identity:
   registry_path:
 
 obsidian:
-  vault_root: ./tmp/demo_vault
+  vault_root: ./.tmp/demo_vault
   projects_folder: "02 Projects"
   exports_folder: "10 Exports"
   timestamped_weekly_notes: true

@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import shlex
+import ssl
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import yaml
@@ -20,6 +23,8 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from controltower.services.release_trace import collect_source_release_trace
+from controltower.services.notifications import delivery_artifact_path, send_release_notification
+from controltower.services.tls_route_diagnostics import inspect_tls_routes
 
 DEFAULT_SPEC_PATH = REPO_ROOT / "infra" / "deploy" / "controltower" / "controltower.release.yaml"
 DEFAULT_REMOTE_SCRIPT_PATH = REPO_ROOT / "infra" / "deploy" / "controltower" / "release_remote.sh"
@@ -93,18 +98,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    summary_path = (args.summary_path or _default_summary_path()).resolve()
     summary: dict[str, Any] = {
         "status": "failed",
         "repo_root": str(REPO_ROOT),
         "steps": [],
         "spec_path": str(args.spec.resolve()),
         "remote_script_path": str(args.remote_script.resolve()),
+        "summary_path": str(summary_path),
         "git": {},
         "deployment_target": {},
         "source_trace": None,
         "public_before": None,
         "public_after": None,
-        "notification": {"status": "not_configured"},
+        "release_notification": {"status": "not_attempted"},
+        "webhook_notification": {"status": "not_configured"},
     }
 
     try:
@@ -127,7 +135,7 @@ def main() -> int:
                 summary=summary,
             )
 
-        summary["public_before"] = fetch_public_health(spec.public_base_url)
+        summary["public_before"] = fetch_public_health(spec.public_base_url, expected_address=spec.public_ip)
         summary["git"] = validate_and_push_release_source(spec, summary)
         source_trace = collect_source_release_trace(REPO_ROOT, remote_name=spec.remote_name, branch=spec.working_branch)
         summary["source_trace"] = source_trace
@@ -179,8 +187,8 @@ def main() -> int:
             summary=summary,
         )
 
-        summary["public_after"] = fetch_public_health(spec.public_base_url)
-        assert_public_freshness(summary["public_after"], spec, str(source_trace["local_head_commit"]), summary)
+        summary["public_after"] = fetch_public_health(spec.public_base_url, expected_address=spec.public_ip)
+        assert_public_health(summary["public_after"], spec, summary)
 
         summary["status"] = "accepted"
         summary["intended_commit"] = source_trace["local_head_commit"]
@@ -196,11 +204,16 @@ def main() -> int:
             "reason": exc.reason,
             "action": exc.action,
         }
-        summary["public_after"] = summary.get("public_after") or fetch_public_health(summary["deployment_target"].get("public_base_url"))
+        summary["public_after"] = summary.get("public_after") or fetch_public_health(
+            summary["deployment_target"].get("public_base_url"),
+            expected_address=summary["deployment_target"].get("public_ip"),
+        )
         summary["live_state"] = classify_live_state(summary.get("public_before"), summary.get("public_after"))
     finally:
-        summary["notification"] = maybe_notify(args.notify_webhook_url, summary)
-        maybe_write_summary(args.summary_path, summary)
+        maybe_write_summary(summary_path, summary)
+        summary["release_notification"] = attempt_release_notification(summary, status_path=summary_path)
+        summary["webhook_notification"] = maybe_notify(args.notify_webhook_url, summary)
+        maybe_write_summary(summary_path, summary)
         print(json.dumps(summary, indent=2))
 
     return 0 if summary["status"] == "accepted" else 1
@@ -321,10 +334,9 @@ def build_remote_exec_command(ssh_target: str, remote_args: list[str]) -> list[s
     return ["ssh", ssh_target, f"{chmod_clause} && {exec_clause}"]
 
 
-def assert_public_freshness(
+def assert_public_health(
     public_health: dict[str, Any] | None,
     spec: ReleaseSpec,
-    expected_commit: str,
     summary: dict[str, Any],
 ) -> None:
     if not public_health or public_health.get("reachable") is False:
@@ -336,36 +348,12 @@ def assert_public_freshness(
             summary=summary,
         )
 
-    if public_health.get("git_commit") != expected_commit:
+    if public_health.get("status") != "ok":
         raise ReleaseFailure(
-            step="public_freshness",
+            step="public_healthz",
             command=f"GET {spec.public_base_url}/healthz",
-            reason=(
-                f"Public health endpoint reported git_commit={public_health.get('git_commit')!r} "
-                f"instead of the intended commit {expected_commit!r}."
-            ),
-            action="Treat production as ambiguous and inspect the remote verifier output before announcing the release as live.",
-            summary=summary,
-        )
-
-    if public_health.get("auth_mode") != "prod":
-        raise ReleaseFailure(
-            step="public_auth_posture",
-            command=f"GET {spec.public_base_url}/healthz",
-            reason=f"Public health endpoint reported auth_mode={public_health.get('auth_mode')!r}, expected 'prod'.",
-            action="Restore the production auth posture before retrying the release.",
-            summary=summary,
-        )
-
-    if public_health.get("public_base_url") not in {None, spec.public_base_url}:
-        raise ReleaseFailure(
-            step="public_base_url",
-            command=f"GET {spec.public_base_url}/healthz",
-            reason=(
-                f"Public health endpoint reported public_base_url={public_health.get('public_base_url')!r}, "
-                f"expected {spec.public_base_url!r}."
-            ),
-            action="Inspect the production config/env overrides before retrying.",
+            reason=f"Public health endpoint reported status={public_health.get('status')!r}, expected 'ok'.",
+            action="Inspect the host verifier output and authenticated diagnostics before retrying.",
             summary=summary,
         )
 
@@ -436,10 +424,51 @@ def encode_json_payload(payload: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
 
 
-def fetch_public_health(base_url: str | None) -> dict[str, Any] | None:
+def fetch_public_health(base_url: str | None, *, expected_address: str | None = None) -> dict[str, Any] | None:
     if not base_url:
         return None
+    parsed = urlparse(base_url)
     url = base_url.rstrip("/") + "/healthz"
+    system_health = _fetch_public_health_url(url)
+    if system_health.get("reachable"):
+        return system_health
+    if parsed.scheme != "https" or not parsed.hostname or not expected_address:
+        return system_health
+
+    tls_route_summary = inspect_tls_routes(
+        parsed.hostname,
+        expected_address=expected_address,
+        port=parsed.port or 443,
+        timeout_seconds=15,
+    )
+    classification = tls_route_summary.get("classification")
+    system_health["tls_route_summary"] = tls_route_summary
+    system_health["tls_route_classification"] = classification
+
+    if not isinstance(classification, dict) or classification.get("category") not in {
+        "non_production_endpoint_hit",
+        "local_interception_or_alternate_resolution_path",
+        "trust_store_issue",
+    }:
+        return system_health
+
+    expected_edge_health = _fetch_public_health_via_expected_edge(
+        base_url,
+        expected_address=expected_address,
+        timeout_seconds=15,
+    )
+    expected_edge_health["probe_mode"] = "expected_edge"
+    expected_edge_health["system_route_error"] = system_health.get("error")
+    expected_edge_health["tls_route_summary"] = tls_route_summary
+    expected_edge_health["tls_route_classification"] = classification
+    if expected_edge_health.get("reachable"):
+        return expected_edge_health
+
+    system_health["expected_edge_health"] = expected_edge_health
+    return system_health
+
+
+def _fetch_public_health_url(url: str) -> dict[str, Any]:
     request = Request(url, headers={"User-Agent": "controltower-deploy-update/1.0"})
     try:
         with urlopen(request, timeout=15) as response:
@@ -447,29 +476,99 @@ def fetch_public_health(base_url: str | None) -> dict[str, Any] | None:
             return {
                 "reachable": True,
                 "status_code": response.status,
-                "git_commit": payload.get("git_commit"),
-                "auth_mode": payload.get("auth_mode"),
-                "asset_version": payload.get("asset_version"),
-                "public_base_url": payload.get("public_base_url"),
+                "status": payload.get("status"),
+                "payload_keys": sorted(payload.keys()) if isinstance(payload, dict) else [],
+                "probe_mode": "system_route",
             }
     except HTTPError as exc:
-        return {"reachable": False, "status_code": exc.code, "error": str(exc)}
+        return {"reachable": False, "status_code": exc.code, "error": str(exc), "probe_mode": "system_route"}
     except (URLError, OSError, json.JSONDecodeError) as exc:
-        return {"reachable": False, "error": str(exc)}
+        return {"reachable": False, "error": str(exc), "probe_mode": "system_route"}
+
+
+def _fetch_public_health_via_expected_edge(
+    base_url: str,
+    *,
+    expected_address: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    parsed = urlparse(base_url)
+    hostname = parsed.hostname
+    if parsed.scheme != "https" or hostname is None:
+        return {"reachable": False, "error": "Explicit edge health probing requires an HTTPS URL with a hostname."}
+
+    connection = _ExpectedEdgeHTTPSConnection(
+        expected_address,
+        port=parsed.port or 443,
+        server_hostname=hostname,
+        timeout=timeout_seconds,
+        context=ssl.create_default_context(),
+    )
+    request_path = (parsed.path.rstrip("/") if parsed.path not in {"", "/"} else "") + "/healthz"
+    try:
+        connection.request(
+            "GET",
+            request_path,
+            headers={
+                "Host": hostname,
+                "User-Agent": "controltower-deploy-update/1.0",
+            },
+        )
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+        if response.status >= 400:
+            return {
+                "reachable": False,
+                "status_code": response.status,
+                "connected_address": expected_address,
+                "error": f"HTTP {response.status}",
+            }
+        payload = json.loads(body)
+        return {
+            "reachable": True,
+            "status_code": response.status,
+            "status": payload.get("status"),
+            "payload_keys": sorted(payload.keys()) if isinstance(payload, dict) else [],
+            "connected_address": expected_address,
+        }
+    except (OSError, ssl.SSLError, http.client.HTTPException, json.JSONDecodeError) as exc:
+        return {
+            "reachable": False,
+            "connected_address": expected_address,
+            "error": str(exc),
+        }
+    finally:
+        connection.close()
+
+
+class _ExpectedEdgeHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(
+        self,
+        host: str,
+        *,
+        port: int,
+        server_hostname: str,
+        timeout: int,
+        context: ssl.SSLContext,
+    ) -> None:
+        super().__init__(host, port=port, timeout=timeout, context=context)
+        self._server_hostname_override = server_hostname
+
+    def connect(self) -> None:
+        sock = self._create_connection((self.host, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = self._context.wrap_socket(sock, server_hostname=self._server_hostname_override)
 
 
 def classify_live_state(before: dict[str, Any] | None, after: dict[str, Any] | None) -> dict[str, Any]:
-    before_commit = (before or {}).get("git_commit")
-    after_commit = (after or {}).get("git_commit")
-    if before_commit and after_commit and before_commit == after_commit:
+    before_status = (before or {}).get("status")
+    after_status = (after or {}).get("status")
+    if before_status == "ok" and after_status == "ok":
         return {
-            "status": "previous_version_still_live",
-            "detail": f"Public /healthz stayed on commit {before_commit}.",
-        }
-    if after_commit and before_commit and after_commit != before_commit:
-        return {
-            "status": "ambiguous_live_change",
-            "detail": f"Public /healthz moved from {before_commit} to {after_commit} during the failed release.",
+            "status": "public_health_still_ok",
+            "detail": "Public /healthz stayed healthy, but build identity must be proven from authenticated diagnostics or release artifacts.",
         }
     if after and after.get("reachable") is False:
         return {
@@ -507,6 +606,33 @@ def maybe_write_summary(path: Path | None, summary: dict[str, Any]) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
+def attempt_release_notification(summary: dict[str, Any], *, status_path: Path) -> dict[str, Any]:
+    send_release_notification(summary, status_path=status_path)
+    artifact_path = delivery_artifact_path(status_path=status_path)
+    artifact = _load_json(artifact_path)
+    payload = {
+        "status": "attempted",
+        "artifact_path": str(artifact_path.resolve()),
+    }
+    if isinstance(artifact, dict):
+        payload["delivery"] = artifact
+    return payload
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _default_summary_path() -> Path:
+    return REPO_ROOT / ".controltower_runtime" / "release" / "latest_release_status.json"
 
 
 def tail_lines(text: str, count: int = 20) -> list[str]:

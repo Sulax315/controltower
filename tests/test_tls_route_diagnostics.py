@@ -57,6 +57,33 @@ def test_tls_route_classifies_production_misconfiguration():
     assert classification["category"] == "production_cert_misconfiguration"
 
 
+def test_tls_route_classifies_local_interception_or_alternate_resolution_path():
+    summary = {
+        "expected_address": "161.35.177.158",
+        "system_route": {
+            "peer_ip": "161.35.177.158",
+            "verified": False,
+            "certificate": {
+                "hostname_match": True,
+                "currently_valid": True,
+                "sha256_fingerprint": "intercepted-cert",
+            },
+        },
+        "expected_route": {
+            "verified": True,
+            "certificate": {
+                "hostname_match": True,
+                "currently_valid": True,
+                "sha256_fingerprint": "live-cert",
+            },
+        },
+    }
+
+    classification = classify_tls_routes(summary)
+
+    assert classification["category"] == "local_interception_or_alternate_resolution_path"
+
+
 def test_tls_route_classifies_trust_store_issue():
     summary = {
         "expected_address": "161.35.177.158",

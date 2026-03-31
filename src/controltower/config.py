@@ -44,7 +44,7 @@ class IdentityConfig(BaseModel):
 
 
 class ObsidianConfig(BaseModel):
-    vault_root: Path = Field(default_factory=lambda: _repo_root() / "tmp" / "demo_vault")
+    vault_root: Path = Field(default_factory=lambda: _repo_root() / ".tmp" / "demo_vault")
     projects_folder: str = "02 Projects"
     exports_folder: str = "10 Exports"
     timestamped_weekly_notes: bool = True
@@ -170,6 +170,7 @@ class ControlTowerConfig(BaseModel):
 
     @model_validator(mode="after")
     def normalize_paths(self) -> "ControlTowerConfig":
+        local_environments = {"local", "local-livecheck", "dev", "development", "test"}
         if self.identity.registry_path is None:
             self.identity.registry_path = _default_registry_path()
         if not self.identity.registry_path.exists():
@@ -189,10 +190,10 @@ class ControlTowerConfig(BaseModel):
         self.execution.dead_letter_dir.parent.mkdir(parents=True, exist_ok=True)
         if self.review.mode is None:
             normalized_environment = self.app.environment.lower()
-            self.review.mode = "dev" if normalized_environment in {"local", "dev", "development", "test"} else "prod"
+            self.review.mode = "dev" if normalized_environment in local_environments else "prod"
         if self.auth.mode is None:
             normalized_environment = self.app.environment.lower()
-            self.auth.mode = "dev" if normalized_environment in {"local", "dev", "development", "test"} else "prod"
+            self.auth.mode = "dev" if normalized_environment in local_environments else "prod"
         return self
 
     @property

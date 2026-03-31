@@ -1,0 +1,8 @@
+approval_events.jsonl
+next_prompt.md
+pending_approval.json
+run_state.json
+trigger_next_run.json
+inbox/*.json
+inbox/processed/
+!inbox/.gitkeep

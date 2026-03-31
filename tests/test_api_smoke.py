@@ -24,11 +24,7 @@ def test_api_and_pages_render(sample_config_path):
     assert health.status_code == 200
     health_payload = health.json()
     assert health_payload["status"] == "ok"
-    assert health_payload["version"] == "0.1.0"
-    assert health_payload["auth_mode"] == config.auth.mode
-    assert health_payload["asset_version"]
-    assert health.headers["x-controltower-version"] == "0.1.0"
-    assert "x-controltower-git-commit" in health.headers
+    assert health_payload == {"status": "ok"}
     assert "no-store" in health.headers["cache-control"]
 
     root_redirect = client.get("/", follow_redirects=False)

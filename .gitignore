@@ -8,4 +8,5 @@ dist/
 build/
 *.pyc
 .controltower_runtime/
-
+.tmp/
+tmp/demo_vault/

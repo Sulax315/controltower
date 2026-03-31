@@ -152,7 +152,7 @@ Use this sequence for every production release:
 
 The production verifier is the authoritative post-deploy gate. The release handoff writes the source trace, verifies the auth-aware public surface, and stamps the release artifact with local `HEAD`, remote `origin/main`, deployed `GIT_COMMIT`, verification status, and timestamp.
 
-Quick live freshness proof without app credentials:
+Quick unauthenticated edge proof:
 
 ```bash
 curl -fsS https://controltower.bratek.io/healthz
@@ -160,8 +160,12 @@ curl -fsS https://controltower.bratek.io/healthz
 
 Expected result:
 
-- `git_commit` equals the intended release commit
-- `auth_mode` is `prod`
+- JSON body is exactly `{"status":"ok"}`
+
+Authoritative live-build proof:
+
+- authenticated `GET /api/diagnostics` shows `product.build_metadata.git_commit` equal to the intended release commit
+- `.controltower_runtime/release/latest_live_deployment.json` records the same accepted live commit
 
 ## Daily vs Weekly
 
@@ -275,10 +279,12 @@ Key fields:
 
 Good production diagnostics look like:
 
-- `/` returns HTTP 200 through nginx
+- `/` returns HTTP 303 through nginx and redirects to `/login`
+- `/login` returns HTTP 200 through nginx
 - `/diagnostics` returns HTTP 200 through nginx
 - `/api/diagnostics` returns HTTP 200 and `config.status = loaded`
 - `release.status` is `ready`
+- `release.live_deployment_present` is `true`
 - `latest_run.status` is `success`
 - `operations.latest_run_status` is `success`
 - `artifacts.artifact_index_present` is `true`
@@ -323,6 +329,19 @@ sudo journalctl -u controltower-web -n 100 --no-pager
 ```
 
 - Use `.controltower_runtime/release/latest_release_readiness.json` and `.md` as the authoritative failure record; they now include the local, remote, and deployed commit chain plus the final verification status.
+
+Broken deployment substrate:
+
+- Symptom: `/srv/controltower/app` is not a real git checkout or expected files such as `run_controltower.py` are missing.
+- Manual recovery:
+
+```bash
+test -d /srv/controltower/app/.git
+test -f /srv/controltower/app/run_controltower.py
+test -f /srv/controltower/app/pyproject.toml
+```
+
+- If any of those checks fail, stop treating the host as a coherent release target. Restore `/srv/controltower/app` as a real git checkout first, then reinstall the editable package and rerun the production verifier.
 
 Config failures:
 

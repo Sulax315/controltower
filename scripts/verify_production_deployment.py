@@ -248,27 +248,13 @@ def main() -> int:
     public_health_check = {"name": "public_healthz", **public_health}
     if public_health["status"] == "pass":
         payload = public_health["payload"]
-        public_health_check["git_commit"] = payload.get("git_commit")
-        public_health_check["asset_version"] = payload.get("asset_version")
-        public_health_check["auth_mode"] = payload.get("auth_mode")
-        public_health_check["auth_mode_matches_config"] = payload.get("auth_mode") == config.auth.mode
-        public_health_check["public_base_url_matches"] = payload.get("public_base_url") == config.app.public_base_url
-        public_health_check["expected_commit_matches"] = (
-            payload.get("git_commit") == expected_commit if expected_commit else True
-        )
+        public_health_check["health_status"] = payload.get("status")
+        public_health_check["payload_keys"] = sorted(payload.keys())
         public_health_check.pop("payload", None)
-        public_health_check["status"] = (
-            "pass"
-            if (
-                public_health_check["public_base_url_matches"]
-                and public_health_check["expected_commit_matches"]
-                and public_health_check["auth_mode_matches_config"]
-            )
-            else "fail"
-        )
+        public_health_check["status"] = "pass" if public_health_check["health_status"] == "ok" else "fail"
     summary["checks"].append(public_health_check)
     if public_health_check["status"] != "pass":
-        summary["error"] = "The public health endpoint did not report the expected build metadata."
+        summary["error"] = "The public /healthz endpoint did not return the expected healthy status."
         return _finish(
             summary,
             exit_code=EXIT_PROXY_ERROR,
@@ -276,7 +262,6 @@ def main() -> int:
             source_trace=source_trace,
             deployed_commit=deployed_commit,
         )
-    deployed_commit = public_health_check.get("git_commit") or deployed_commit
 
     public_http_root = _http_check(
         f"{public_http_base_url}/",
@@ -327,18 +312,42 @@ def main() -> int:
                 deployed_commit=deployed_commit,
             )
 
-        expected_asset_markers = []
-        if public_health_check.get("asset_version"):
-            asset_version = public_health_check["asset_version"]
-            expected_asset_markers = [
-                f'/static/site.css?v={asset_version}',
-                f'/static/investigation.js?v={asset_version}',
-            ]
+        public_root_redirect = _http_check(
+            f"{public_base_url}/",
+            timeout_seconds=args.timeout_seconds,
+            follow_redirects=False,
+            expected_statuses={303},
+        )
+        public_root_redirect["expected_location_prefix"] = "/login?next_path=/"
+        public_root_redirect["location_matches_login"] = str(
+            public_root_redirect.get("headers", {}).get("location", "")
+        ).startswith("/login?next_path=/")
+        public_root_redirect["status"] = (
+            "pass"
+            if public_root_redirect["status"] == "pass" and public_root_redirect["location_matches_login"]
+            else "fail"
+        )
+        summary["checks"].append({"name": "public_root_requires_login", **public_root_redirect})
+        if public_root_redirect["status"] != "pass":
+            summary["error"] = "Anonymous access to the public root route was not redirected to login."
+            return _finish(
+                summary,
+                exit_code=EXIT_PROXY_ERROR,
+                runtime_root=runtime_root,
+                source_trace=source_trace,
+                deployed_commit=deployed_commit,
+            )
+
         public_login_page = _http_check(
             f"{public_base_url}/login?next_path=/publish",
             timeout_seconds=args.timeout_seconds,
             expected_content_type_prefix="text/html",
-            expected_markers=["Sign In", "AUTH REQUIRED", *expected_asset_markers],
+            expected_markers=[
+                "Sign In",
+                "AUTH REQUIRED",
+                "/static/site.css?v=",
+                "/static/investigation.js?v=",
+            ],
         )
         summary["checks"].append({"name": "public_login_page", **public_login_page})
         if public_login_page["status"] != "pass":
@@ -610,9 +619,17 @@ def main() -> int:
         payload = diagnostics_api["payload"]
         diagnostics_check["config_status"] = payload.get("config", {}).get("status")
         diagnostics_check["config_public_base_url"] = payload.get("config", {}).get("public_base_url")
+        diagnostics_check["config_public_base_url_matches"] = (
+            payload.get("config", {}).get("public_base_url") == config.app.public_base_url
+        )
         diagnostics_check["config_auth_mode"] = payload.get("config", {}).get("auth_mode")
         diagnostics_check["config_auth_mode_matches"] = payload.get("config", {}).get("auth_mode") == config.auth.mode
         diagnostics_check["release_status"] = payload.get("release", {}).get("status")
+        diagnostics_check["live_deployment_present"] = payload.get("release", {}).get("live_deployment_present")
+        diagnostics_check["live_git_commit"] = payload.get("release", {}).get("live_git_commit")
+        diagnostics_check["live_git_commit_matches"] = (
+            payload.get("release", {}).get("live_git_commit") == expected_commit if expected_commit else True
+        )
         diagnostics_check["latest_run_status"] = payload.get("latest_run", {}).get("status")
         diagnostics_check["artifact_index_present"] = payload.get("artifacts", {}).get("artifact_index_present")
         diagnostics_check["latest_diagnostics_present"] = payload.get("artifacts", {}).get("latest_diagnostics_present")
@@ -630,10 +647,14 @@ def main() -> int:
             comparison_runtime.get("selected_arena_codes") == runtime_coherence.get("selected_arena_codes")
         )
         diagnostics_check.pop("payload", None)
-        deployed_commit = diagnostics_check.get("git_commit") or deployed_commit
+        deployed_commit = diagnostics_check.get("live_git_commit") or diagnostics_check.get("git_commit") or deployed_commit
     summary["checks"].append(diagnostics_check)
     if (
         diagnostics_api["status"] != "pass"
+        or diagnostics_check.get("config_status") != "loaded"
+        or diagnostics_check.get("config_public_base_url_matches") is not True
+        or diagnostics_check.get("live_deployment_present") is not True
+        or diagnostics_check.get("live_git_commit_matches") is not True
         or diagnostics_check.get("comparison_runtime_present") is not True
         or diagnostics_check.get("comparison_runtime_has_arena_artifact_path") is not True
         or diagnostics_check.get("comparison_runtime_selected_codes_match") is not True

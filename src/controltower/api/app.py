@@ -118,24 +118,8 @@ def create_app_from_config(config) -> FastAPI:
     @app.get("/healthz")
     def healthz():
         return JSONResponse(
-            content={
-                "status": "ok",
-                "product": config.app.product_name,
-                "environment": config.app.environment,
-                "version": build_info["version"],
-                "git_commit": build_info["git_commit"] or "unavailable",
-                "git_commit_short": build_info["git_commit_short"],
-                "git_commit_available": build_info["git_commit_available"],
-                "asset_version": build_info["asset_version"],
-                "auth_mode": config.auth.mode,
-                "public_base_url": config.app.public_base_url,
-            },
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate",
-                "X-ControlTower-Version": str(build_info["version"]),
-                "X-ControlTower-Git-Commit": str(build_info["git_commit"] or "unavailable"),
-                "X-ControlTower-Auth-Mode": str(config.auth.mode or "dev"),
-            },
+            content={"status": "ok"},
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
         )
 
     @app.get("/login", response_class=HTMLResponse)

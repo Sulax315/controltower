@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from controltower.services.notifications import format_release_message, send_release_notification
+from controltower.services.notifications import format_release_message, load_notification_environment, send_release_notification
 
 
 @pytest.fixture
@@ -89,6 +89,37 @@ def test_format_release_message_failure_highlights_stage_reason_and_action():
     )
 
 
+def test_format_release_message_handles_authoritative_release_failure_summary():
+    status = {
+        "status": "failed",
+        "git": {"branch": "main"},
+        "source_trace": {"local_head_commit": "f3ca503613f8e37943f5f6315eb689be5fd85a72"},
+        "failure": {
+            "step": "git_state",
+            "reason": "Working tree is dirty.",
+            "action": "Commit or stash local changes before running the authoritative release handoff.",
+        },
+        "deployment_target": {"public_base_url": "https://controltower.bratek.io"},
+    }
+
+    message = format_release_message(status)
+
+    assert message == (
+        "Control Tower Release FAIL\n"
+        "Commit: f3ca503\n"
+        "Branch: main\n"
+        "\n"
+        "Failed Stage:\n"
+        "git_state\n"
+        "\n"
+        "Reason:\n"
+        "Working tree is dirty.\n"
+        "\n"
+        "Action:\n"
+        "Commit or stash local changes before running the authoritative release handoff."
+    )
+
+
 def test_send_release_notification_constructs_signal_command(
     monkeypatch: pytest.MonkeyPatch,
     sample_release_status: dict[str, object],
@@ -96,8 +127,9 @@ def test_send_release_notification_constructs_signal_command(
 ):
     captured: dict[str, object] = {}
 
-    def _fake_run(command, capture_output=None, text=None, check=None, timeout=None):
+    def _fake_run(command, input=None, capture_output=None, text=None, check=None, timeout=None):
         captured["command"] = command
+        captured["input"] = input
         captured["timeout"] = timeout
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -122,6 +154,7 @@ def test_send_release_notification_constructs_signal_command(
         format_release_message(sample_release_status),
         "+15557654321",
     ]
+    assert captured["input"] is None
     assert captured["timeout"] == 15
     artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
     assert artifact["selected_channel"] == "signal_cli"
@@ -134,6 +167,84 @@ def test_send_release_notification_constructs_signal_command(
     assert artifact["failure_reason"] is None
 
 
+def test_send_release_notification_loads_windows_persistent_signal_env(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_release_status: dict[str, object],
+    notification_artifact_env: Path,
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, input=None, capture_output=None, text=None, check=None, timeout=None):
+        captured["command"] = command
+        captured["input"] = input
+        captured["timeout"] = timeout
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.delenv("SIGNAL_CLI_PATH", raising=False)
+    monkeypatch.delenv("SIGNAL_SENDER", raising=False)
+    monkeypatch.delenv("SIGNAL_RECIPIENT", raising=False)
+    monkeypatch.delenv("NOTIFICATION_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr("controltower.services.notifications.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "controltower.services.notifications._resolve_command_path",
+        lambda command_path: command_path,
+    )
+    monkeypatch.setattr(
+        "controltower.services.notifications._windows_persistent_env_values",
+        lambda names: {
+            "SIGNAL_CLI_PATH": r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat",
+            "SIGNAL_SENDER": "+15551230000",
+            "SIGNAL_RECIPIENT": "+15557654321",
+        },
+    )
+
+    send_release_notification(sample_release_status)
+
+    assert captured["command"] == [
+        r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat",
+        "-a",
+        "+15551230000",
+        "send",
+        "--message-from-stdin",
+        "+15557654321",
+    ]
+    assert captured["input"] == format_release_message(sample_release_status)
+    assert captured["timeout"] == 15
+    artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
+    assert artifact["selected_channel"] == "signal_cli"
+    assert artifact["command_path"] == r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat"
+    assert artifact["success"] is True
+    assert artifact["delivery_state"] == "send_succeeded"
+
+
+def test_load_notification_environment_merges_windows_java_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    environ = {
+        "Path": r"C:\Windows\system32;C:\Windows",
+    }
+
+    monkeypatch.setattr(
+        "controltower.services.notifications._windows_persistent_env_values",
+        lambda names: {
+            "JAVA_HOME": r"C:\Users\JBratek\AppData\Local\Programs\Eclipse Adoptium\jdk-25.0.2.10-hotspot",
+            "SIGNAL_CLI_PATH": r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat",
+        },
+    )
+    monkeypatch.setattr(
+        "controltower.services.notifications._windows_persistent_path_entries",
+        lambda: [r"C:\Users\JBratek\AppData\Local\Programs\Eclipse Adoptium\jdk-25.0.2.10-hotspot\bin"],
+    )
+
+    loaded_path = load_notification_environment(environ, env_file=tmp_path / "missing.env")
+
+    assert loaded_path is None
+    assert environ["JAVA_HOME"] == r"C:\Users\JBratek\AppData\Local\Programs\Eclipse Adoptium\jdk-25.0.2.10-hotspot"
+    assert environ["SIGNAL_CLI_PATH"] == r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat"
+    assert (
+        environ["Path"]
+        == r"C:\Windows\system32;C:\Windows;C:\Users\JBratek\AppData\Local\Programs\Eclipse Adoptium\jdk-25.0.2.10-hotspot\bin"
+    )
+
+
 def test_send_release_notification_falls_back_to_console_without_config(
     monkeypatch: pytest.MonkeyPatch,
     sample_release_status: dict[str, object],
@@ -143,6 +254,7 @@ def test_send_release_notification_falls_back_to_console_without_config(
     monkeypatch.delenv("SIGNAL_SENDER", raising=False)
     monkeypatch.delenv("SIGNAL_RECIPIENT", raising=False)
     monkeypatch.delenv("NOTIFICATION_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr("controltower.services.notifications._windows_persistent_env_values", lambda names: {})
 
     send_release_notification(sample_release_status)
 
@@ -198,6 +310,7 @@ def test_send_release_notification_uses_webhook_when_signal_not_configured(
     monkeypatch.delenv("SIGNAL_SENDER", raising=False)
     monkeypatch.delenv("SIGNAL_RECIPIENT", raising=False)
     monkeypatch.setenv("NOTIFICATION_WEBHOOK_URL", "https://example.test/hooks/release")
+    monkeypatch.setattr("controltower.services.notifications._windows_persistent_env_values", lambda names: {})
     monkeypatch.setattr("controltower.services.notifications.urlopen", _fake_urlopen)
 
     send_release_notification(sample_release_status)
@@ -223,6 +336,7 @@ def test_missing_signal_config_writes_clear_failure_artifact(
     monkeypatch.delenv("SIGNAL_SENDER", raising=False)
     monkeypatch.delenv("SIGNAL_RECIPIENT", raising=False)
     monkeypatch.delenv("NOTIFICATION_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr("controltower.services.notifications._windows_persistent_env_values", lambda names: {})
 
     with pytest.raises(ValueError, match="Signal delivery is not configured"):
         dispatch_notification_message("test", require_channel="signal_cli")
@@ -244,7 +358,7 @@ def test_signal_registration_failure_is_classified_and_masked(
 ):
     from controltower.services.notifications import dispatch_notification_message
 
-    def _fake_run(command, capture_output=None, text=None, check=None, timeout=None):
+    def _fake_run(command, input=None, capture_output=None, text=None, check=None, timeout=None):
         return subprocess.CompletedProcess(
             command,
             1,
@@ -267,3 +381,47 @@ def test_signal_registration_failure_is_classified_and_masked(
     artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
     assert artifact["delivery_state"] == "registration_missing"
     assert artifact["failure_reason"] == "User +***0000 is not registered."
+
+
+def test_send_release_notification_uses_stdin_for_windows_batch_signal_command(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_release_status: dict[str, object],
+    notification_artifact_env: Path,
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, input=None, capture_output=None, text=None, check=None, timeout=None):
+        captured["command"] = command
+        captured["input"] = input
+        captured["timeout"] = timeout
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    message = format_release_message(sample_release_status)
+    signal_cli_bat = r"C:\Tools\signal-cli\signal-cli-0.14.1\bin\signal-cli.bat"
+    monkeypatch.setenv("SIGNAL_CLI_PATH", signal_cli_bat)
+    monkeypatch.setenv("SIGNAL_SENDER", "+15551230000")
+    monkeypatch.setenv("SIGNAL_RECIPIENT", "+15557654321")
+    monkeypatch.delenv("NOTIFICATION_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr("controltower.services.notifications.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "controltower.services.notifications._resolve_command_path",
+        lambda command_path: command_path,
+    )
+
+    send_release_notification(sample_release_status)
+
+    assert captured["command"] == [
+        signal_cli_bat,
+        "-a",
+        "+15551230000",
+        "send",
+        "--message-from-stdin",
+        "+15557654321",
+    ]
+    assert captured["input"] == message
+    assert captured["timeout"] == 15
+    artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
+    assert artifact["selected_channel"] == "signal_cli"
+    assert artifact["command_path"] == signal_cli_bat
+    assert artifact["success"] is True
+    assert artifact["delivery_state"] == "send_succeeded"

@@ -107,6 +107,8 @@ def dispatch_notification_message(
     status_path: Path | None = None,
 ) -> str:
     current_environ = os.environ if environ is None else environ
+    if environ is None:
+        load_notification_environment(current_environ)
     channel = _selected_channel(current_environ)
     signal_config = signal_cli_configuration(current_environ)
     attempt = _delivery_attempt_record(
@@ -194,6 +196,7 @@ def load_notification_environment(
     current_environ = os.environ if environ is None else environ
     candidate = _notification_env_path(env_file)
     if candidate is None or not candidate.exists():
+        _load_windows_persistent_environment(current_environ)
         return None
 
     for line in candidate.read_text(encoding="utf-8").splitlines():
@@ -207,6 +210,7 @@ def load_notification_environment(
         if not key:
             continue
         current_environ.setdefault(key, value.strip().strip('"').strip("'"))
+    _load_windows_persistent_environment(current_environ)
     return candidate
 
 
@@ -244,9 +248,15 @@ def _send_signal_cli(message: str, environ: dict[str, str]) -> None:
     resolved_command = _resolve_command_path(signal_cli_path)
     if resolved_command is None:
         raise RuntimeError(f"signal-cli executable is not available: {signal_cli_path}")
-    command = [resolved_command, "-u", sender, "send", "-m", message, recipient]
+    command, stdin_payload = _build_signal_send_command(
+        resolved_command,
+        sender=sender,
+        recipient=recipient,
+        message=message,
+    )
     completed = subprocess.run(
         command,
+        input=stdin_payload,
         capture_output=True,
         text=True,
         check=False,
@@ -316,9 +326,17 @@ def _stage_rows(status: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def _failed_stage(status: dict[str, Any]) -> str | None:
+    stages = status.get("stage_results")
+    gate_results = status.get("gate_results")
+    failure = status.get("failure") or {}
+    if not (isinstance(stages, dict) and stages) and not (isinstance(gate_results, dict) and gate_results):
+        if isinstance(failure, dict) and failure.get("step"):
+            return str(failure["step"])
     for name, stage_status in _stage_rows(status):
         if _normalized_state(stage_status) == "fail":
             return "post_deploy_smoke" if name == "deploy" else name
+    if isinstance(failure, dict) and failure.get("step"):
+        return str(failure["step"])
     verdict = status.get("verdict") or {}
     failing_checks = verdict.get("failing_checks") if isinstance(verdict, dict) else None
     if failing_checks:
@@ -330,6 +348,9 @@ def _failed_stage(status: dict[str, Any]) -> str | None:
 def _failure_reason(status: dict[str, Any]) -> str | None:
     if reason := status.get("failure_reason"):
         return str(reason)
+    failure = status.get("failure") or {}
+    if isinstance(failure, dict) and failure.get("reason"):
+        return str(failure["reason"])
     error = status.get("error") or {}
     if isinstance(error, dict) and error.get("message"):
         return str(error["message"])
@@ -339,6 +360,9 @@ def _failure_reason(status: dict[str, Any]) -> str | None:
 def _next_action(status: dict[str, Any], *, release_passed: bool) -> str | None:
     if action := status.get("next_recommended_action"):
         return str(action)
+    failure = status.get("failure") or {}
+    if not release_passed and isinstance(failure, dict) and failure.get("action"):
+        return str(failure["action"])
     verdict = status.get("verdict") or {}
     if isinstance(verdict, dict) and verdict.get("operator_recommendation"):
         return str(verdict["operator_recommendation"])
@@ -355,8 +379,16 @@ def _commit_from_status(status: dict[str, Any]) -> str | None:
     product = status.get("product") or {}
     if isinstance(product, dict) and product.get("git_commit"):
         return str(product["git_commit"])[:7]
+    if commit := status.get("intended_commit"):
+        return str(commit)[:7]
     if commit := status.get("git_commit"):
         return str(commit)[:7]
+    source_trace = status.get("source_trace") or {}
+    if isinstance(source_trace, dict) and source_trace.get("local_head_commit"):
+        return str(source_trace["local_head_commit"])[:7]
+    git = status.get("git") or {}
+    if isinstance(git, dict) and git.get("head_commit"):
+        return str(git["head_commit"])[:7]
     release_trace = status.get("release_trace") or {}
     if isinstance(release_trace, dict) and release_trace.get("local_head_commit"):
         return str(release_trace["local_head_commit"])[:7]
@@ -429,6 +461,25 @@ def _resolve_command_path(command_path: str | None) -> str | None:
     if candidate.exists():
         return str(candidate)
     return None
+
+
+def _build_signal_send_command(
+    resolved_command: str,
+    *,
+    sender: str,
+    recipient: str,
+    message: str,
+) -> tuple[list[str], str | None]:
+    if _is_windows_batch_command(resolved_command):
+        # Batch wrappers are parsed by cmd.exe, which truncates newline-bearing
+        # `-m` arguments and drops the trailing recipient. Pipe the full message
+        # over stdin instead so the recipient remains a separate argument.
+        return [resolved_command, "-a", sender, "send", "--message-from-stdin", recipient], message
+    return [resolved_command, "-u", sender, "send", "-m", message, recipient], None
+
+
+def _is_windows_batch_command(command_path: str) -> bool:
+    return Path(command_path).suffix.lower() in {".bat", ".cmd"}
 
 
 def _missing_signal_config_reason(missing_env: list[str]) -> str:
@@ -578,6 +629,105 @@ def _notification_env_path(explicit_path: Path | None) -> Path | None:
     repo_root = Path(__file__).resolve().parents[3]
     candidate = repo_root / DEFAULT_ENV_FILE_NAME
     return candidate if candidate.exists() else None
+
+
+def _load_windows_persistent_environment(environ: MutableMapping[str, str]) -> None:
+    missing = [
+        name
+        for name in (
+            "SIGNAL_CLI_PATH",
+            "SIGNAL_SENDER",
+            "SIGNAL_RECIPIENT",
+            "NOTIFICATION_WEBHOOK_URL",
+            "JAVA_HOME",
+        )
+        if _env_value(environ, name) is None
+    ]
+    if missing:
+        for name, value in _windows_persistent_env_values(missing).items():
+            environ.setdefault(name, value)
+    _merge_windows_path_environment(environ, _windows_persistent_path_entries())
+
+
+def _windows_persistent_env_values(names: list[str]) -> dict[str, str]:
+    if os.name != "nt":
+        return {}
+    try:
+        import winreg
+    except ImportError:  # pragma: no cover - winreg is only available on Windows
+        return {}
+
+    values: dict[str, str] = {}
+    registry_roots = (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+    )
+    for hive, subkey in registry_roots:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                for name in names:
+                    if name in values:
+                        continue
+                    try:
+                        value, _ = winreg.QueryValueEx(key, name)
+                    except OSError:
+                        continue
+                    if isinstance(value, str):
+                        stripped = value.strip()
+                        if stripped:
+                            values[name] = stripped
+        except OSError:
+            continue
+    return values
+
+
+def _windows_persistent_path_entries() -> list[str]:
+    if os.name != "nt":
+        return []
+    try:
+        import winreg
+    except ImportError:  # pragma: no cover - winreg is only available on Windows
+        return []
+
+    entries: list[str] = []
+    seen: set[str] = set()
+    registry_roots = (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+    )
+    for hive, subkey in registry_roots:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                try:
+                    value, _ = winreg.QueryValueEx(key, "Path")
+                except OSError:
+                    continue
+        except OSError:
+            continue
+        if not isinstance(value, str):
+            continue
+        for entry in value.split(os.pathsep):
+            stripped = entry.strip()
+            normalized = stripped.lower()
+            if not stripped or normalized in seen:
+                continue
+            seen.add(normalized)
+            entries.append(stripped)
+    return entries
+
+
+def _merge_windows_path_environment(environ: MutableMapping[str, str], path_entries: list[str]) -> None:
+    if not path_entries:
+        return
+    path_key = next((name for name in environ if name.lower() == "path"), "Path")
+    current_value = str(environ.get(path_key, ""))
+    current_entries = [entry.strip() for entry in current_value.split(os.pathsep) if entry.strip()]
+    seen = {entry.lower() for entry in current_entries}
+    additions = [entry for entry in path_entries if entry.lower() not in seen]
+    if not additions:
+        return
+    combined = current_entries + additions if current_entries else additions
+    environ[path_key] = os.pathsep.join(combined)
 
 
 if __name__ == "__main__":

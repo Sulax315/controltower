@@ -256,6 +256,17 @@ def test_release_readiness_route_checks_pass_with_prod_app_auth(sample_config_pa
     assert artifact["route_checks"]["auth_checks"]["authenticated_api_succeeds"] is True
 
 
+def test_local_livecheck_environment_defaults_review_and_auth_to_dev(sample_config_path: Path):
+    payload = yaml.safe_load(sample_config_path.read_text(encoding="utf-8"))
+    payload["app"] = {"environment": "local-livecheck"}
+    sample_config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    config = load_config(sample_config_path)
+
+    assert config.review.mode == "dev"
+    assert config.auth.mode == "dev"
+
+
 def test_release_source_trace_fails_when_origin_is_missing(tmp_path: Path):
     repo_root = _init_git_repo(tmp_path / "repo")
 
@@ -366,12 +377,155 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     assert "deploy_update_controltower.py" in python_wrapper
     assert "compatibility wrapper" in powershell_wrapper
     assert "release_controltower.py" in powershell_wrapper
-    assert "controltower.services.notifications" in powershell_wrapper
-    assert "Notification attempt:" in powershell_wrapper
+    assert "controltower.services.notifications" not in powershell_wrapper
     assert "deprecated" in linux_wrapper
     assert "infra/deploy/controltower/deploy_update.sh" in linux_wrapper
     assert "compatibility wrapper" in windows_wrapper
     assert "release_controltower.ps1" in windows_wrapper
+
+
+def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import argparse
+
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "release_readiness_controltower.py"
+    scripts_root = str(module_path.parent)
+    if scripts_root not in sys.path:
+        sys.path.insert(0, scripts_root)
+    spec = importlib.util.spec_from_file_location("test_release_readiness_controltower", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    release_json = tmp_path / "release" / "release_readiness_test.json"
+    release_json.parent.mkdir(parents=True, exist_ok=True)
+    release_json.write_text('{"status": "ready"}', encoding="utf-8")
+    notified: list[Path] = []
+
+    def _build_parser(*args, **kwargs):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--config", default=None)
+        return parser
+
+    monkeypatch.setattr(module, "build_parser", _build_parser)
+    monkeypatch.setattr(module, "log_paths_from_env", lambda: (None, None))
+    monkeypatch.setattr(
+        module,
+        "run_release_gate",
+        lambda **kwargs: {
+            "exit_code": 0,
+            "artifacts": {"release_json": str(release_json)},
+        },
+    )
+    monkeypatch.setattr(module, "print_summary", lambda summary: None)
+    monkeypatch.setattr(module, "notify_release_status_file", lambda path: notified.append(path))
+    monkeypatch.setattr(
+        module,
+        "sync_pending_release_approval",
+        lambda path: {"status": "awaiting_approval", "pending_approval_path": str(tmp_path / "pending.json")},
+    )
+    monkeypatch.setattr(sys, "argv", ["release_readiness_controltower.py"])
+
+    assert module.main() == 0
+    assert notified == [release_json]
+
+
+def test_authoritative_release_writes_summary_and_attempts_notification_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "deploy_update_controltower.py"
+    spec = importlib.util.spec_from_file_location("test_deploy_update_controltower_notify", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    release_spec_path = tmp_path / "controltower.release.yaml"
+    release_spec_path.write_text(
+        yaml.safe_dump(
+            {
+                "release": {
+                    "repository": {
+                        "working_branch": "main",
+                        "remote_name": "origin",
+                    },
+                    "deployment_target": {
+                        "ssh_target": "deploy@controltower.bratek.io",
+                        "public_ip": "161.35.177.158",
+                        "app_root": "/srv/controltower/app",
+                        "venv_python": "/srv/controltower/.venv/bin/python",
+                        "runtime_root": "/srv/controltower/runtime",
+                        "env_file": "/etc/controltower/controltower.env",
+                        "config_path": "/etc/controltower/controltower.yaml",
+                        "service_name": "controltower-web",
+                        "backend_base_url": "http://127.0.0.1:8787",
+                        "public_base_url": "https://controltower.bratek.io",
+                    },
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    remote_script_path = tmp_path / "release_remote.sh"
+    remote_script_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    summary_path = tmp_path / "release" / "latest_release_status.json"
+
+    def _fail_validate(spec_obj, summary):
+        raise module.ReleaseFailure(
+            step="git_state",
+            command="git status --porcelain",
+            reason="Working tree is dirty.",
+            action="Commit or stash local changes before running the authoritative release handoff.",
+            summary=summary,
+        )
+
+    def _fake_send_release_notification(status, *, status_path=None):
+        artifact_path = module.delivery_artifact_path(status_path=status_path)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(
+            json.dumps(
+                {
+                    "selected_channel": "signal_cli",
+                    "success": True,
+                    "delivery_state": "send_succeeded",
+                    "failure_reason": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(module, "fetch_public_health", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "validate_and_push_release_source", _fail_validate)
+    monkeypatch.setattr(module, "send_release_notification", _fake_send_release_notification)
+    monkeypatch.setattr(module, "maybe_notify", lambda *args, **kwargs: {"status": "not_configured"})
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy_update_controltower.py",
+            "--spec",
+            str(release_spec_path),
+            "--remote-script",
+            str(remote_script_path),
+            "--summary-path",
+            str(summary_path),
+        ],
+    )
+
+    assert module.main() == 1
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["failure"]["step"] == "git_state"
+    assert payload["release_notification"]["status"] == "attempted"
+    assert payload["release_notification"]["delivery"]["delivery_state"] == "send_succeeded"
+    assert payload["release_notification"]["artifact_path"].endswith("latest_delivery_attempt.json")
 
 
 def test_remote_release_copies_script_then_executes_absolute_bash_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -416,8 +570,8 @@ def test_remote_release_copies_script_then_executes_absolute_bash_path(tmp_path:
     commands: list[list[str]] = []
     health_checks = iter(
         [
-            {"reachable": True, "git_commit": "old-commit", "auth_mode": "prod", "public_base_url": "https://controltower.bratek.io"},
-            {"reachable": True, "git_commit": "abc123", "auth_mode": "prod", "public_base_url": "https://controltower.bratek.io"},
+            {"reachable": True, "status": "ok", "payload_keys": ["status"]},
+            {"reachable": True, "status": "ok", "payload_keys": ["status"]},
         ]
     )
 
@@ -505,6 +659,143 @@ def test_remote_release_exec_command_shell_quotes_arguments(tmp_path: Path):
         "deploy@example.com",
         "chmod +x /tmp/release_remote.sh && /bin/bash /tmp/release_remote.sh --service-name 'controltower web' --source-trace-b64 'value'\"'\"'withquote'",
     ]
+
+
+def test_fetch_public_health_falls_back_to_expected_edge_when_system_route_hits_non_production_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "deploy_update_controltower.py"
+    spec = importlib.util.spec_from_file_location("test_deploy_update_controltower_health_fallback", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    monkeypatch.setattr(
+        module,
+        "_fetch_public_health_url",
+        lambda url: {
+            "reachable": False,
+            "error": "certificate verify failed",
+            "probe_mode": "system_route",
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "inspect_tls_routes",
+        lambda *args, **kwargs: {
+            "classification": {
+                "status": "problem",
+                "category": "non_production_endpoint_hit",
+                "reason": "system route hit a different IP",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_fetch_public_health_via_expected_edge",
+        lambda base_url, *, expected_address, timeout_seconds: {
+            "reachable": True,
+            "status_code": 200,
+            "status": "ok",
+            "payload_keys": ["status"],
+            "connected_address": expected_address,
+        },
+    )
+
+    health = module.fetch_public_health(
+        "https://controltower.bratek.io",
+        expected_address="161.35.177.158",
+    )
+
+    assert health == {
+        "reachable": True,
+        "status_code": 200,
+        "status": "ok",
+        "payload_keys": ["status"],
+        "connected_address": "161.35.177.158",
+        "probe_mode": "expected_edge",
+        "system_route_error": "certificate verify failed",
+        "tls_route_summary": {
+            "classification": {
+                "status": "problem",
+                "category": "non_production_endpoint_hit",
+                "reason": "system route hit a different IP",
+            }
+        },
+        "tls_route_classification": {
+            "status": "problem",
+            "category": "non_production_endpoint_hit",
+            "reason": "system route hit a different IP",
+        },
+    }
+
+
+def test_fetch_public_health_keeps_production_cert_failure_explicit_without_edge_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = Path(__file__).resolve().parents[1]
+    module_path = repo_root / "scripts" / "deploy_update_controltower.py"
+    spec = importlib.util.spec_from_file_location("test_deploy_update_controltower_health_no_fallback", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    edge_attempted = False
+
+    monkeypatch.setattr(
+        module,
+        "_fetch_public_health_url",
+        lambda url: {
+            "reachable": False,
+            "error": "certificate verify failed",
+            "probe_mode": "system_route",
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "inspect_tls_routes",
+        lambda *args, **kwargs: {
+            "classification": {
+                "status": "problem",
+                "category": "production_cert_misconfiguration",
+                "reason": "explicit edge is invalid",
+            }
+        },
+    )
+
+    def _unexpected_edge_probe(*args, **kwargs):
+        nonlocal edge_attempted
+        edge_attempted = True
+        return {"reachable": True}
+
+    monkeypatch.setattr(module, "_fetch_public_health_via_expected_edge", _unexpected_edge_probe)
+
+    health = module.fetch_public_health(
+        "https://controltower.bratek.io",
+        expected_address="161.35.177.158",
+    )
+
+    assert health == {
+        "reachable": False,
+        "error": "certificate verify failed",
+        "probe_mode": "system_route",
+        "tls_route_summary": {
+            "classification": {
+                "status": "problem",
+                "category": "production_cert_misconfiguration",
+                "reason": "explicit edge is invalid",
+            }
+        },
+        "tls_route_classification": {
+            "status": "problem",
+            "category": "production_cert_misconfiguration",
+            "reason": "explicit edge is invalid",
+        },
+    }
+    assert edge_attempted is False
 
 
 def _init_git_repo(repo_root: Path) -> Path:
