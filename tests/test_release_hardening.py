@@ -430,6 +430,8 @@ def test_remote_release_waits_for_service_to_become_active_after_restart():
     assert "wait_for_backend_health()" in remote_release
     assert "BACKEND_HEALTH_TIMEOUT_SECONDS=30" in remote_release
     assert 'run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." wait_for_backend_health "$BACKEND_BASE_URL/healthz"' in remote_release
+    assert 'write_deployment_manifest "pending" "false"' in remote_release
+    assert 'write_deployment_manifest "pass" "true"' in remote_release
 
 
 def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(

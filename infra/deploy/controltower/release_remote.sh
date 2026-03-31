@@ -216,7 +216,9 @@ wait_for_backend_health() {
 }
 
 write_deployment_manifest() {
-  python3 - "$RUNTIME_ROOT" "$BRANCH" "$COMMIT" "$PREVIOUS_HEAD" "$SERVICE_NAME" "$BACKEND_BASE_URL" "$PUBLIC_BASE_URL" "$SOURCE_TRACE_B64" <<'PY'
+  local verification_status="${1:-pass}"
+  local write_history="${2:-true}"
+  python3 - "$RUNTIME_ROOT" "$BRANCH" "$COMMIT" "$PREVIOUS_HEAD" "$SERVICE_NAME" "$BACKEND_BASE_URL" "$PUBLIC_BASE_URL" "$SOURCE_TRACE_B64" "$verification_status" "$write_history" <<'PY'
 import base64
 import json
 import socket
@@ -232,6 +234,8 @@ service_name = sys.argv[5]
 backend_base_url = sys.argv[6]
 public_base_url = sys.argv[7]
 source_trace_b64 = sys.argv[8]
+verification_status = sys.argv[9]
+write_history = sys.argv[10].lower() == "true"
 deployed_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 release_root = runtime_root / "release"
 history_root = release_root / "deployments"
@@ -251,14 +255,16 @@ payload = {
     "local_head_commit": source_trace.get("local_head_commit"),
     "remote_origin_main_commit": source_trace.get("remote_origin_main_commit"),
     "source_push_status": source_trace.get("push_status"),
-    "verification_status": "pass",
+    "verification_status": verification_status,
 }
 stamp = deployed_at.replace(":", "-")
 history_path = history_root / f"deployment_{stamp}.json"
 latest_path = release_root / "latest_live_deployment.json"
-history_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+if write_history:
+    history_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 latest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-print(str(history_path))
+if write_history:
+    print(str(history_path))
 print(str(latest_path))
 PY
 }
@@ -322,8 +328,10 @@ fi
 
 run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." wait_for_service_active
 run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." wait_for_backend_health "$BACKEND_BASE_URL/healthz"
+echo "==> write_live_deployment_pending"
+write_deployment_manifest "pending" "false"
 run_step "production_verify" "Use the verifier JSON above plus systemctl status to resolve the failing route, auth, or freshness check before retrying." env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/ops/linux/verify_controltower_production.sh" --config "$CONFIG_PATH" --public-base-url "$PUBLIC_BASE_URL" --backend-base-url "$BACKEND_BASE_URL" --expected-commit "$COMMIT" --skip-smoke --skip-release-readiness
 
 echo "==> write_release_manifest"
-write_deployment_manifest
+write_deployment_manifest "pass" "true"
 echo "Remote release accepted for commit $COMMIT"
