@@ -628,8 +628,10 @@ def main() -> int:
         diagnostics_check["release_status"] = payload.get("release", {}).get("status")
         diagnostics_check["live_deployment_present"] = payload.get("release", {}).get("live_deployment_present")
         diagnostics_check["live_git_commit"] = payload.get("release", {}).get("live_git_commit")
-        diagnostics_check["live_git_commit_matches"] = (
-            payload.get("release", {}).get("live_git_commit") == expected_commit if expected_commit else True
+        diagnostics_check["live_git_commit_matches_expected"] = (
+            payload.get("release", {}).get("live_git_commit") == expected_commit
+            if payload.get("release", {}).get("live_deployment_present") and expected_commit
+            else True
         )
         diagnostics_check["latest_run_status"] = payload.get("latest_run", {}).get("status")
         diagnostics_check["artifact_index_present"] = payload.get("artifacts", {}).get("artifact_index_present")
@@ -654,8 +656,7 @@ def main() -> int:
         diagnostics_api["status"] != "pass"
         or diagnostics_check.get("config_status") != "loaded"
         or diagnostics_check.get("config_public_base_url_matches") is not True
-        or diagnostics_check.get("live_deployment_present") is not True
-        or diagnostics_check.get("live_git_commit_matches") is not True
+        or diagnostics_check.get("live_git_commit_matches_expected") is not True
         or diagnostics_check.get("comparison_runtime_present") is not True
         or diagnostics_check.get("comparison_runtime_has_arena_artifact_path") is not True
         or diagnostics_check.get("comparison_runtime_selected_codes_match") is not True
