@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,7 +28,7 @@ def send_release_notification(status: dict[str, Any], *, status_path: Path | Non
         dispatch_notification_message(message, status=status, status_path=status_path)
     except Exception as exc:  # pragma: no cover - defended by tests through call sites
         channel = _selected_channel(os.environ)
-        LOGGER.warning("Release notification via %s failed: %s", channel, exc)
+        LOGGER.warning("Release notification via %s failed: %s", channel, _mask_sensitive_text(str(exc)))
 
 
 def format_release_message(status: dict[str, Any]) -> str:
@@ -94,7 +95,7 @@ def send_operator_notification(message: str, *, status: dict[str, Any] | None = 
         dispatch_notification_message(message, status=status)
     except Exception as exc:  # pragma: no cover - defended by higher-level service tests
         channel = _selected_channel(os.environ)
-        LOGGER.warning("Operator notification via %s failed: %s", channel, exc)
+        LOGGER.warning("Operator notification via %s failed: %s", channel, _mask_sensitive_text(str(exc)))
 
 
 def dispatch_notification_message(
@@ -127,10 +128,16 @@ def dispatch_notification_message(
         else:
             _send_console(message)
         attempt["success"] = True
+        attempt["delivery_state"] = _success_delivery_state(attempt["selected_channel"])
         attempt["failure_reason"] = None
     except Exception as exc:
         attempt["success"] = False
-        attempt["failure_reason"] = str(exc)
+        attempt["delivery_state"] = _failure_delivery_state(
+            attempt["selected_channel"],
+            exc,
+            signal_config=signal_config,
+        )
+        attempt["failure_reason"] = _mask_sensitive_text(str(exc))
         _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path)
         raise
     _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path)
@@ -439,10 +446,12 @@ def _delivery_attempt_record(
     selected_channel = require_channel or channel
     configuration_present = False
     command_path = None
+    sender = None
     recipient = None
     if selected_channel == "signal_cli":
         configuration_present = bool(signal_config["configuration_present"])
         command_path = signal_config["command_path"]
+        sender = signal_config["sender"]
         recipient = signal_config["recipient"]
     elif selected_channel == "webhook":
         configuration_present = _env_value(environ, "NOTIFICATION_WEBHOOK_URL") is not None
@@ -453,8 +462,10 @@ def _delivery_attempt_record(
         "required_channel": require_channel,
         "configuration_present": configuration_present,
         "command_path": command_path,
+        "sender": sender,
         "recipient": recipient,
         "success": False,
+        "delivery_state": "pending",
         "failure_reason": None,
     }
 
@@ -496,6 +507,60 @@ def _mask_phone_number(value: str | None) -> str | None:
     suffix = "".join(digits[-4:])
     prefix = "+" if trimmed.startswith("+") else ""
     return f"{prefix}***{suffix}"
+
+
+def _mask_sensitive_text(value: str) -> str:
+    masked = value
+    for match in re.findall(r"\+?\d[\d\s().-]{5,}\d", value):
+        masked_number = _mask_phone_number(match)
+        if masked_number:
+            masked = masked.replace(match, masked_number)
+    return masked
+
+
+def _success_delivery_state(channel: str) -> str:
+    if channel == "signal_cli":
+        return "send_succeeded"
+    if channel == "webhook":
+        return "webhook_succeeded"
+    return "console_only"
+
+
+def _failure_delivery_state(
+    channel: str,
+    exc: Exception,
+    *,
+    signal_config: dict[str, Any],
+) -> str:
+    if channel != "signal_cli":
+        if channel == "webhook":
+            return "webhook_failed"
+        return "send_failed"
+
+    reason = str(exc)
+    normalized = reason.strip().lower()
+    if not signal_config["configuration_present"] or "signal delivery is not configured" in normalized:
+        return "config_missing"
+    if "requires signal_cli_path" in normalized or "requires signal_sender" in normalized:
+        return "config_missing"
+    if "signal-cli executable is not available" in normalized:
+        return "executable_missing"
+    if _looks_like_registration_failure(normalized):
+        return "registration_missing"
+    return "send_failed"
+
+
+def _looks_like_registration_failure(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "not registered",
+            "unregistered",
+            "register the number",
+            "register a new device",
+            "linked device",
+        )
+    )
 
 
 def _default_status_path() -> Path:

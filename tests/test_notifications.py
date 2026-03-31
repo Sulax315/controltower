@@ -127,8 +127,10 @@ def test_send_release_notification_constructs_signal_command(
     assert artifact["selected_channel"] == "signal_cli"
     assert artifact["configuration_present"] is True
     assert artifact["command_path"] == "/usr/local/bin/signal-cli"
+    assert artifact["sender"] == "+***0000"
     assert artifact["recipient"] == "+***4321"
     assert artifact["success"] is True
+    assert artifact["delivery_state"] == "send_succeeded"
     assert artifact["failure_reason"] is None
 
 
@@ -168,6 +170,7 @@ def test_send_release_notification_does_not_raise_on_signal_failure(
     assert artifact["selected_channel"] == "signal_cli"
     assert artifact["configuration_present"] is True
     assert artifact["success"] is False
+    assert artifact["delivery_state"] == "executable_missing"
     assert "signal-cli executable is not available" in artifact["failure_reason"]
 
 
@@ -207,6 +210,7 @@ def test_send_release_notification_uses_webhook_when_signal_not_configured(
     assert artifact["selected_channel"] == "webhook"
     assert artifact["configuration_present"] is True
     assert artifact["success"] is True
+    assert artifact["delivery_state"] == "webhook_succeeded"
 
 
 def test_missing_signal_config_writes_clear_failure_artifact(
@@ -227,6 +231,39 @@ def test_missing_signal_config_writes_clear_failure_artifact(
     assert artifact["selected_channel"] == "signal_cli"
     assert artifact["configuration_present"] is False
     assert artifact["command_path"] is None
+    assert artifact["sender"] is None
     assert artifact["recipient"] is None
     assert artifact["success"] is False
+    assert artifact["delivery_state"] == "config_missing"
     assert "SIGNAL_CLI_PATH, SIGNAL_SENDER, SIGNAL_RECIPIENT" in artifact["failure_reason"]
+
+
+def test_signal_registration_failure_is_classified_and_masked(
+    monkeypatch: pytest.MonkeyPatch,
+    notification_artifact_env: Path,
+):
+    from controltower.services.notifications import dispatch_notification_message
+
+    def _fake_run(command, capture_output=None, text=None, check=None, timeout=None):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="User +15551230000 is not registered.",
+        )
+
+    monkeypatch.setenv("SIGNAL_CLI_PATH", "/usr/local/bin/signal-cli")
+    monkeypatch.setenv("SIGNAL_SENDER", "+15551230000")
+    monkeypatch.setenv("SIGNAL_RECIPIENT", "+15557654321")
+    monkeypatch.setattr("controltower.services.notifications.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "controltower.services.notifications._resolve_command_path",
+        lambda command_path: command_path,
+    )
+
+    with pytest.raises(RuntimeError, match="not registered"):
+        dispatch_notification_message("test", require_channel="signal_cli")
+
+    artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
+    assert artifact["delivery_state"] == "registration_missing"
+    assert artifact["failure_reason"] == "User +***0000 is not registered."

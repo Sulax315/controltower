@@ -75,6 +75,35 @@ Verify the public login screen through nginx:
 curl -fsS https://controltower.bratek.io/login > /tmp/controltower-login.html
 ```
 
+## Signal Transport Activation
+
+Keep Signal delivery on the existing approval/file-drop control surface. Do not introduce a second config system.
+
+Exact host-side activation sequence:
+
+```bash
+sudo install -d /etc/controltower
+sudo editor /etc/controltower/controltower.env
+grep -E '^(SIGNAL_CLI_PATH|SIGNAL_SENDER|SIGNAL_RECIPIENT)=' /etc/controltower/controltower.env
+CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env \
+bash /srv/controltower/app/ops/linux/verify_signal_transport.sh
+```
+
+The verifier reads the existing env file, checks `SIGNAL_CLI_PATH`, `SIGNAL_SENDER`, `SIGNAL_RECIPIENT`, confirms the executable path resolves, runs `signal-cli listAccounts` to determine whether the configured sender is locally registered, attempts the same outbound notification path Control Tower uses in production, and then reports the latest `latest_delivery_attempt.json` payload with masked values only.
+
+Successful activation is:
+
+- verifier status `send_succeeded`
+- outbound test status `pass`
+- latest delivery artifact `delivery_state = send_succeeded`
+
+Deterministic failure states are:
+
+- `config_missing`: missing env or required Signal fields
+- `executable_missing`: `SIGNAL_CLI_PATH` does not resolve on-host
+- `registration_missing`: `signal-cli listAccounts` or outbound send proves the sender is not registered
+- `send_failed`: command executed but delivery still failed
+
 ## Local Access Triage
 
 If a Windows workstation says `https://controltower.bratek.io` is down or shows the parked-domain certificate, do not restart the VM first. Prove whether the browser is resolving the wrong IP before treating this as a production outage.
@@ -87,6 +116,12 @@ Operator checks:
 - If public resolvers return `161.35.177.158` but the workstation does not, switch the active interface DNS temporarily or use a proof-only hosts override.
 
 Detailed DNS/TLS commands and remediation steps live in [`infra/deploy/controltower/DNS_TLS_RUNBOOK.md`](/C:/Dev/ControlTower/infra/deploy/controltower/DNS_TLS_RUNBOOK.md).
+
+For structured TLS-route evidence, compare the system route with the known-good edge:
+
+```powershell
+python .\scripts\inspect_tls_route.py controltower.bratek.io --expected-address 161.35.177.158
+```
 
 Verify release readiness using persisted evidence:
 

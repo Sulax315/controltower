@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import sys
 from pathlib import Path
@@ -59,12 +60,15 @@ def main(argv: list[str] | None = None) -> int:
             require_channel="signal_cli",
         )
     except Exception as exc:
+        artifact = _load_artifact(artifact_path)
         print("Control Tower Signal Test")
         print("Status: FAIL")
         print(f"Channel: {channel}")
         print(f"Host: {host_marker}")
         print(f"Time: {now}")
-        print(f"Reason: {exc}")
+        if artifact and artifact.get("delivery_state"):
+            print(f"Delivery State: {artifact['delivery_state']}")
+        print(f"Reason: {artifact.get('failure_reason') if artifact else exc}")
         if signal_config["missing_env"]:
             print(f"Missing: {', '.join(signal_config['missing_env'])}")
         print(f"Delivery Artifact: {artifact_path}")
@@ -72,15 +76,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Env File: {loaded_env}")
         return 1
 
+    artifact = _load_artifact(artifact_path)
     print("Control Tower Signal Test")
     print("Status: PASS")
     print(f"Channel: {channel}")
     print(f"Host: {host_marker}")
     print(f"Time: {now}")
+    if artifact and artifact.get("delivery_state"):
+        print(f"Delivery State: {artifact['delivery_state']}")
     print(f"Delivery Artifact: {artifact_path}")
     if loaded_env is not None:
         print(f"Env File: {loaded_env}")
     return 0
+
+
+def _load_artifact(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 if __name__ == "__main__":

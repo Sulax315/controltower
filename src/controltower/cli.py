@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -22,6 +23,7 @@ from controltower.services.operations import (
 )
 from controltower.services.orchestration import OrchestrationService
 from controltower.services.release import build_release_readiness
+from controltower.services.signal_receive_adapter import adapt_signal_receive_text
 
 
 def _default_config_path() -> Path | None:
@@ -141,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Consume file-based inbound approval messages from ops/orchestration/inbox.",
     )
     approval_ingest.add_argument("--orchestration-root", type=Path, default=None)
+    signal_receive = subparsers.add_parser(
+        "approval-adapt-signal-receive",
+        help="Convert one-shot signal-cli receive payloads into inbox files for the existing approval ingest loop.",
+    )
+    signal_receive.add_argument("--payload-file", type=Path, default=None)
+    signal_receive.add_argument("--orchestration-root", type=Path, default=None)
 
     serve = subparsers.add_parser("serve", help="Launch the browser UI.")
     serve.add_argument("--host", default=None)
@@ -200,6 +208,23 @@ def main() -> int:
 
     if args.command == "approval-ingest":
         result = ingest_approval_inbox(orchestration_root=args.orchestration_root)
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "approval-adapt-signal-receive":
+        try:
+            if args.payload_file is not None:
+                raw_text = args.payload_file.read_text(encoding="utf-8")
+            else:
+                raw_text = sys.stdin.read()
+            result = adapt_signal_receive_text(
+                raw_text,
+                orchestration_root=args.orchestration_root,
+                source_path=args.payload_file,
+            )
+        except (OSError, ValueError) as exc:
+            print(json.dumps({"status": "error", "message": str(exc)}, indent=2))
+            return 1
         print(json.dumps(result, indent=2))
         return 0
 

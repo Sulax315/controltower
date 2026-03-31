@@ -25,7 +25,25 @@ chmod +x ops/linux/*.sh infra/deploy/controltower/*.sh
 ./ops/linux/diagnostics_snapshot_controltower.sh --config /etc/controltower/controltower.yaml
 ./ops/linux/release_readiness_controltower.sh --config /etc/controltower/controltower.yaml --skip-pytest --skip-acceptance
 ./ops/linux/verify_controltower_production.sh --config /etc/controltower/controltower.yaml
+./ops/linux/verify_signal_transport.sh
 ```
+
+## Signal Activation
+
+Run the host-side Signal activation check through the existing env file and notification artifact path:
+
+```bash
+CONTROLTOWER_ENV_FILE=/etc/controltower/controltower.env \
+bash /srv/controltower/app/ops/linux/verify_signal_transport.sh
+```
+
+The command emits structured JSON and drives the same `latest_delivery_attempt.json` artifact used by the notification service. The outcome is intentionally reduced to one of:
+
+- `config_missing`
+- `executable_missing`
+- `registration_missing`
+- `send_failed`
+- `send_succeeded`
 
 ## Runtime Evidence
 

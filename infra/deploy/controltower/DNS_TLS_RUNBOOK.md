@@ -36,6 +36,20 @@ Only continue with workstation DNS remediation when:
 - forced `GET` via `--resolve` returns HTTP `200`
 - the verifier says `EDGE HEALTHY / LOCAL DNS BAD`
 
+For structured certificate evidence, run:
+
+```powershell
+python .\scripts\inspect_tls_route.py controltower.bratek.io --expected-address 161.35.177.158
+```
+
+Interpretation:
+
+- `healthy`: the system route certificate is valid
+- `non_production_endpoint_hit`: the workstation connected somewhere other than `161.35.177.158`
+- `local_interception_or_alternate_resolution_path`: the workstation received a different certificate than the verified live edge
+- `production_cert_misconfiguration`: the explicit live edge itself presented an invalid certificate
+- `trust_store_issue`: the explicit live edge looks correct, but local certificate trust still failed
+
 ## 2. Preferred Cutover In An Elevated PowerShell Window
 
 Open an elevated PowerShell window in `C:\Dev\ControlTower`, then run this block:
