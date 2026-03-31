@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,11 @@ from controltower.services.test_auth import app_auth_required, build_authenticat
 RELEASE_SCHEMA_VERSION = "2026-03-27"
 
 
-def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
+def collect_operator_diagnostics(
+    config: ControlTowerConfig,
+    *,
+    latest_release_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     ensure_runtime_layout(config.runtime.state_root)
     build_info = current_build_info()
     config_status = {
@@ -52,7 +57,7 @@ def collect_operator_diagnostics(config: ControlTowerConfig) -> dict[str, Any]:
     registry_status = _registry_status(config)
     latest_export = load_latest_export(config.runtime.state_root)
     acceptance = _load_json(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME)
-    latest_release = load_latest_release_readiness(config.runtime.state_root)
+    latest_release = latest_release_override or load_latest_release_readiness(config.runtime.state_root)
     latest_live_deployment = _load_json(Path(config.runtime.state_root) / RELEASE_ROOT_NAME / "latest_live_deployment.json")
     artifact_index = _load_json(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME)
     latest_operation = _latest_operation_summary(config.runtime.state_root)
@@ -214,8 +219,6 @@ def build_release_readiness(
 
     route_checks = verify_live_routes(config, export_record)
     export_checks = verify_export_record(export_record)
-    diagnostics_snapshot = collect_operator_diagnostics(config)
-    diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
     generated_at = utc_now_iso()
     build_info = current_build_info()
     release_trace_payload = _normalize_release_trace(
@@ -294,15 +297,21 @@ def build_release_readiness(
         },
         "latest_evidence": {
             "acceptance_report_path": str(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME),
-            "diagnostics_snapshot_path": str(diagnostics_history_path),
-            "latest_diagnostics_path": str(diagnostics_latest_path),
+            "diagnostics_snapshot_path": None,
+            "latest_diagnostics_path": None,
             "latest_run_path": str(Path(config.runtime.state_root) / "latest_run.json"),
             "artifact_index_path": str(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME),
         },
-        "diagnostics_snapshot": diagnostics_snapshot,
+        "diagnostics_snapshot": None,
         "release_trace": release_trace_payload,
         "verdict": verdict,
     }
+
+    diagnostics_snapshot = collect_operator_diagnostics(config, latest_release_override=artifact)
+    diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
+    artifact["latest_evidence"]["diagnostics_snapshot_path"] = str(diagnostics_history_path)
+    artifact["latest_evidence"]["latest_diagnostics_path"] = str(diagnostics_latest_path)
+    artifact["diagnostics_snapshot"] = diagnostics_snapshot
 
     json_path, markdown_path = write_release_readiness_artifacts(config.runtime.state_root, artifact)
     artifact["artifact_paths"] = {
@@ -315,6 +324,33 @@ def build_release_readiness(
     (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     refresh_artifact_index(config.runtime.state_root)
     return artifact
+
+
+def refresh_release_readiness_diagnostics(config: ControlTowerConfig) -> dict[str, Any] | None:
+    artifact = load_latest_release_readiness(config.runtime.state_root)
+    if artifact is None:
+        return None
+
+    diagnostics_snapshot = collect_operator_diagnostics(config, latest_release_override=artifact)
+    diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
+    artifact["diagnostics_snapshot"] = diagnostics_snapshot
+    latest_evidence = artifact.setdefault("latest_evidence", {})
+    latest_evidence["diagnostics_snapshot_path"] = str(diagnostics_history_path)
+    latest_evidence["latest_diagnostics_path"] = str(diagnostics_latest_path)
+    json_path, markdown_path = write_release_readiness_artifacts(config.runtime.state_root, artifact)
+    artifact["artifact_paths"] = {
+        "json": str(json_path),
+        "markdown": str(markdown_path),
+        "latest_json": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON),
+        "latest_markdown": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_MD),
+    }
+    latest_json_path = _release_root(config.runtime.state_root) / LATEST_RELEASE_JSON
+    latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+    return {
+        "artifact": artifact,
+        "diagnostics_snapshot_path": str(diagnostics_history_path),
+        "latest_diagnostics_path": str(diagnostics_latest_path),
+    }
 
 
 def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict[str, Any] | None:

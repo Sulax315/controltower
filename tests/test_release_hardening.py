@@ -13,10 +13,29 @@ import yaml
 from controltower.api.app import create_app
 from controltower.config import load_config
 from controltower.domain.models import ProjectIdentity
+from controltower.services.operations import run_release_gate
 from controltower.services.controltower import ControlTowerService
 from controltower.services.delta import build_project_delta
-from controltower.services.release import build_release_readiness, stamp_release_trace
+from controltower.services.release import build_release_readiness, run_pytest_suite, stamp_release_trace
 from controltower.services.release_trace import collect_source_release_trace
+
+
+def test_run_pytest_suite_invokes_subprocess(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, cwd=None, capture_output=None, text=None, check=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(command, 0, stdout="12 passed\n", stderr="")
+
+    monkeypatch.setattr("controltower.services.release.subprocess.run", _fake_run)
+
+    result = run_pytest_suite()
+
+    assert result["status"] == "pass"
+    assert result["exit_code"] == 0
+    assert result["command"] == "pytest -q"
+    assert captured["command"][1:] == ["-m", "pytest", "-q"]
 
 
 def test_load_config_fails_for_missing_file(tmp_path: Path):
@@ -142,6 +161,30 @@ def test_release_readiness_writes_json_and_markdown_artifacts(sample_config_path
     assert "Overall verdict: READY" in markdown
     assert "Operator recommendation:" in markdown
     assert "Latest Evidence References" in markdown
+    assert artifact["diagnostics_snapshot"]["release"]["generated_at"] == artifact["generated_at"]
+    persisted_diagnostics = json.loads(
+        (Path(config.runtime.state_root) / "diagnostics" / "latest_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert persisted_diagnostics["release"]["generated_at"] == artifact["generated_at"]
+    assert persisted_diagnostics["release"]["status"] == artifact["verdict"]["status"]
+
+
+def test_release_gate_refreshes_diagnostics_after_writing_operation_summary(sample_config_path: Path):
+    summary = run_release_gate(config_path=sample_config_path, run_pytest=False, run_acceptance=False)
+    config = load_config(sample_config_path)
+
+    latest_release = json.loads(
+        (Path(config.runtime.state_root) / "release" / "latest_release_readiness.json").read_text(encoding="utf-8")
+    )
+    latest_diagnostics = json.loads(
+        (Path(config.runtime.state_root) / "diagnostics" / "latest_diagnostics.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["status"] == "success"
+    assert latest_release["diagnostics_snapshot"]["release"]["generated_at"] == latest_release["generated_at"]
+    assert latest_release["diagnostics_snapshot"]["operations"]["latest_run_timestamp"] == summary["completed_at"]
+    assert latest_diagnostics["release"]["generated_at"] == latest_release["generated_at"]
+    assert latest_diagnostics["operations"]["latest_run_timestamp"] == summary["completed_at"]
 
 
 def test_diagnostics_surface_exposes_version_and_release_status(sample_config_path: Path):

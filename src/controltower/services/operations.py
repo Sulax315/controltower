@@ -12,6 +12,7 @@ from controltower.services.identity_reconciliation import RegistryDocument
 from controltower.services.release import (
     build_release_readiness,
     collect_operator_diagnostics,
+    refresh_release_readiness_diagnostics,
     verify_export_record,
     verify_live_routes,
 )
@@ -174,6 +175,12 @@ def _run_operation(
             summary["retention"] = result["retention"]
         summary["completed_at"] = utc_now_iso()
         write_operation_summary(state_root, summary)
+        if operation_type == "release_readiness":
+            refreshed_release = refresh_release_readiness_diagnostics(config)
+            if refreshed_release is not None:
+                summary["artifacts"]["latest_diagnostics"] = refreshed_release["latest_diagnostics_path"]
+                summary["artifacts"]["diagnostics_snapshot"] = refreshed_release["diagnostics_snapshot_path"]
+                write_operation_summary(state_root, summary)
         return summary
     except Exception as exc:  # pragma: no cover - exercised via script subprocesses and negative tests
         exit_code, error_type, action = _classify_exception(exc)

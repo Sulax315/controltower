@@ -456,14 +456,21 @@ def _cross_surface_finish_driver_semantics_align(root_answer, arena_primary, roo
 
 def _challenge_statement_is_source_backed(root_answer, arena_answers, artifact_text: str) -> bool:
     answers = [answer for answer in [root_answer, *arena_answers] if answer is not None]
+    artifact_lower = artifact_text.lower()
     for answer in answers:
         if not answer.challenge_next:
             continue
+        challenge_lower = answer.challenge_next.lower()
         backed = (
             answer.finish_driver.comparison_state == "changed"
             or (answer.movement_days == 0 and answer.change_intelligence.risk.state == "changed")
             or (answer.movement_days == 0 and "cycle" in answer.finish_driver.driver_type)
             or (answer.movement_days == 0 and answer.risk_level == "HIGH")
+            or (
+                answer.movement_days == 0
+                and "cycles remain unresolved" in challenge_lower
+                and ("circular schedule logic:" in artifact_lower or "cycle(s) remain" in artifact_lower)
+            )
         )
         if not backed:
             return False
