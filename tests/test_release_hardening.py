@@ -136,6 +136,11 @@ def test_release_readiness_writes_json_and_markdown_artifacts(sample_config_path
     assert "gate_results" in artifact
     assert "latest_evidence" in artifact
     assert artifact["verdict"]["operator_recommendation"]
+    assert artifact["stage_results"]["readiness"]["status"] == "pass"
+    assert artifact["stage_results"]["deploy"]["status"] == "pass"
+    assert artifact["next_recommended_action"] == "Approve next Codex lane"
+    assert artifact["awaiting_approval"] is True
+    assert artifact["failure_reason"] is None
     assert artifact["route_checks"]["status"] == "pass"
     assert artifact["export_checks"]["status"] == "pass"
     assert artifact["route_checks"]["checks"]["/arena"] == 200
@@ -167,6 +172,13 @@ def test_release_readiness_writes_json_and_markdown_artifacts(sample_config_path
     )
     assert persisted_diagnostics["release"]["generated_at"] == artifact["generated_at"]
     assert persisted_diagnostics["release"]["status"] == artifact["verdict"]["status"]
+    orchestration_root = Path(config.runtime.state_root).resolve().parent / "ops" / "orchestration"
+    pending = json.loads((orchestration_root / "pending_approval.json").read_text(encoding="utf-8"))
+    run_state = json.loads((orchestration_root / "run_state.json").read_text(encoding="utf-8"))
+    assert pending["status"] == "awaiting_approval"
+    assert pending["latest_release_json_path"] == artifact["artifact_paths"]["latest_json"]
+    assert run_state["status"] == "awaiting_approval"
+    assert run_state["pending_run_id"] == pending["run_id"]
 
 
 def test_release_gate_refreshes_diagnostics_after_writing_operation_summary(sample_config_path: Path):
@@ -343,6 +355,7 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     repo_root = Path(__file__).resolve().parents[1]
     deploy_update = (repo_root / "infra" / "deploy" / "controltower" / "deploy_update.sh").read_text(encoding="utf-8")
     python_wrapper = (repo_root / "scripts" / "release_controltower.py").read_text(encoding="utf-8")
+    powershell_wrapper = (repo_root / "scripts" / "release_controltower.ps1").read_text(encoding="utf-8")
     linux_wrapper = (repo_root / "ops" / "linux" / "release_controltower.sh").read_text(encoding="utf-8")
     windows_wrapper = (repo_root / "ops" / "windows" / "Invoke-ControlTowerRelease.ps1").read_text(encoding="utf-8")
 
@@ -351,10 +364,14 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     assert "rsync -a --delete" not in deploy_update
     assert "deprecated" in python_wrapper
     assert "deploy_update_controltower.py" in python_wrapper
+    assert "compatibility wrapper" in powershell_wrapper
+    assert "release_controltower.py" in powershell_wrapper
+    assert "controltower.services.notifications" in powershell_wrapper
+    assert "Notification attempt:" in powershell_wrapper
     assert "deprecated" in linux_wrapper
     assert "infra/deploy/controltower/deploy_update.sh" in linux_wrapper
     assert "compatibility wrapper" in windows_wrapper
-    assert "deploy_update_controltower.py" in windows_wrapper
+    assert "release_controltower.ps1" in windows_wrapper
 
 
 def test_remote_release_copies_script_then_executes_absolute_bash_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

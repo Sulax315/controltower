@@ -13,6 +13,7 @@ from controltower.config import ControlTowerConfig
 from controltower.domain.models import ExportRecord, utc_now_iso
 from controltower.obsidian.exporter import load_latest_export
 from controltower.render.markdown import REQUIRED_MARKDOWN_TEMPLATES, validate_markdown_templates
+from controltower.services.approval_ingest import sync_pending_release_approval
 from controltower.services.build_info import current_build_info, workspace_root
 from controltower.services.controltower import ControlTowerService
 from controltower.services.identity_reconciliation import RegistryDocument
@@ -239,6 +240,7 @@ def build_release_readiness(
     }
     failing_checks = _failing_gate_checks(gate_results)
     ready = not failing_checks
+    stage_results = _build_stage_results(gate_results, ready=ready)
     remaining_risks = list(validation_issues)
     if pytest_result.get("status") not in {"pass", "not_run"}:
         remaining_risks.append("Pytest did not pass in the release-readiness run.")
@@ -253,6 +255,12 @@ def build_release_readiness(
         "Proceed with live daily/weekly operation; continue monitoring diagnostics and scheduled summaries."
         if ready
         else "Do not proceed with live operation changes until the failing gates and remaining risks are resolved."
+    )
+    awaiting_approval = ready
+    next_recommended_action = (
+        "Approve next Codex lane"
+        if awaiting_approval
+        else "Check latest_release_readiness.md"
     )
     verdict = {
         "status": "ready" if ready else "not_ready",
@@ -281,13 +289,18 @@ def build_release_readiness(
             "registry_path": str(config.identity.registry_path),
             "vault_root": str(config.obsidian.vault_root),
             "state_root": str(config.runtime.state_root),
+            "public_base_url": config.app.public_base_url,
         },
         "gate_results": gate_results,
+        "stage_results": stage_results,
         "pytest": pytest_result,
         "acceptance": acceptance_result,
         "route_checks": route_checks,
         "export_checks": export_checks,
         "source_validation": gate_results["source_validation"],
+        "failure_reason": _notification_failure_reason(gate_results, failing_checks),
+        "next_recommended_action": next_recommended_action,
+        "awaiting_approval": awaiting_approval,
         "latest_export": {
             "run_id": export_record.run_id,
             "status": export_record.status,
@@ -323,6 +336,7 @@ def build_release_readiness(
     json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     refresh_artifact_index(config.runtime.state_root)
+    _sync_release_approval_state(config.runtime.state_root)
     return artifact
 
 
@@ -346,6 +360,7 @@ def refresh_release_readiness_diagnostics(config: ControlTowerConfig) -> dict[st
     }
     latest_json_path = _release_root(config.runtime.state_root) / LATEST_RELEASE_JSON
     latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+    _sync_release_approval_state(config.runtime.state_root)
     return {
         "artifact": artifact,
         "diagnostics_snapshot_path": str(diagnostics_history_path),
@@ -380,6 +395,7 @@ def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict
             history_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
 
     refresh_artifact_index(state_root)
+    _sync_release_approval_state(state_root)
     return artifact
 
 
@@ -648,6 +664,14 @@ def _release_root(state_root: Path) -> Path:
     return Path(state_root) / RELEASE_ROOT_NAME
 
 
+def _sync_release_approval_state(state_root: Path) -> None:
+    latest_json_path = _release_root(state_root) / LATEST_RELEASE_JSON
+    if not latest_json_path.exists():
+        return
+    orchestration_root = Path(state_root).resolve().parent / "ops" / "orchestration"
+    sync_pending_release_approval(latest_json_path, orchestration_root=orchestration_root)
+
+
 def _load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -756,3 +780,70 @@ def _failing_gate_checks(gate_results: dict[str, Any]) -> list[str]:
     if gate_results["source_validation"].get("status") != "pass":
         failing.append("source_validation")
     return failing
+
+
+def _build_stage_results(gate_results: dict[str, Any], *, ready: bool) -> dict[str, dict[str, str]]:
+    stage_results: dict[str, dict[str, str]] = {
+        "pytest": {"status": gate_results["pytest"].get("status") or "not_run"},
+        "readiness": {"status": "pass" if ready else "fail"},
+        "acceptance": {"status": gate_results["acceptance"].get("status") or "not_run"},
+        "deploy": {"status": gate_results["route_checks"].get("status") or "not_run"},
+    }
+    if gate_results["export_checks"].get("status") != "pass":
+        stage_results["export"] = {"status": gate_results["export_checks"].get("status") or "fail"}
+    if gate_results["source_validation"].get("status") != "pass":
+        stage_results["source_validation"] = {"status": gate_results["source_validation"].get("status") or "fail"}
+    return stage_results
+
+
+def _notification_failure_reason(gate_results: dict[str, Any], failing_checks: list[str]) -> str | None:
+    if not failing_checks:
+        return None
+    failed_stage = failing_checks[0]
+    if failed_stage == "pytest":
+        return _tail_reason(gate_results["pytest"])
+    if failed_stage == "acceptance":
+        return _tail_reason(gate_results["acceptance"])
+    if failed_stage == "route_checks":
+        return _route_failure_reason(gate_results["route_checks"])
+    if failed_stage == "export_checks":
+        return _named_failure_reason(gate_results["export_checks"].get("checks"), prefix="Failed export check")
+    if failed_stage == "source_validation":
+        issues = gate_results["source_validation"].get("issues") or []
+        return str(issues[0]) if issues else "Source validation failed."
+    return "Release readiness failed."
+
+
+def _tail_reason(result: dict[str, Any]) -> str:
+    for key in ("stderr_tail", "stdout_tail"):
+        tail = result.get(key) or []
+        if tail:
+            return str(tail[-1])
+    if summary := result.get("summary"):
+        return str(summary)
+    return f"Stage reported status {result.get('status') or 'unknown'}."
+
+
+def _route_failure_reason(route_checks: dict[str, Any]) -> str:
+    for path, status_code in (route_checks.get("checks") or {}).items():
+        if status_code != 200:
+            return f"HTTP {status_code} from {path}"
+    if reason := _named_failure_reason(route_checks.get("visibility_checks"), prefix="Failed visibility check"):
+        return reason
+    if reason := _named_failure_reason(route_checks.get("auth_checks"), prefix="Failed auth check"):
+        return reason
+    meeting_readiness = route_checks.get("meeting_readiness") or {}
+    if meeting_readiness.get("status") != "pass":
+        if reason := _named_failure_reason(meeting_readiness.get("checks"), prefix="Failed readiness check"):
+            return reason
+        return "Meeting readiness checks failed."
+    return "Route checks failed."
+
+
+def _named_failure_reason(checks: dict[str, Any] | None, *, prefix: str) -> str | None:
+    if not checks:
+        return None
+    for name, value in checks.items():
+        if value is not True:
+            return f"{prefix}: {name}"
+    return None

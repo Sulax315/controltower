@@ -10,6 +10,7 @@ import uvicorn
 from controltower.acceptance.harness import run_acceptance
 from controltower.api.app import create_app
 from controltower.config import load_config
+from controltower.services.approval_ingest import ingest_approval_inbox, sync_pending_release_approval
 from controltower.services.controltower import ControlTowerService
 from controltower.services.operations import (
     run_daily,
@@ -128,6 +129,19 @@ def build_parser() -> argparse.ArgumentParser:
     execution_result.add_argument("--external-reference", default=None)
     execution_result.add_argument("--logs-excerpt", default=None)
 
+    approval_sync = subparsers.add_parser(
+        "approval-sync-release",
+        help="Create or refresh the pending approval state from a release-readiness artifact.",
+    )
+    approval_sync.add_argument("--status-path", type=Path, default=None)
+    approval_sync.add_argument("--orchestration-root", type=Path, default=None)
+
+    approval_ingest = subparsers.add_parser(
+        "approval-ingest",
+        help="Consume file-based inbound approval messages from ops/orchestration/inbox.",
+    )
+    approval_ingest.add_argument("--orchestration-root", type=Path, default=None)
+
     serve = subparsers.add_parser("serve", help="Launch the browser UI.")
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
@@ -171,6 +185,23 @@ def main() -> int:
         )
         print(json.dumps(result, indent=2))
         return result["exit_code"]
+
+    if args.command == "approval-sync-release":
+        try:
+            result = sync_pending_release_approval(
+                status_path=args.status_path,
+                orchestration_root=args.orchestration_root,
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            print(json.dumps({"status": "error", "message": str(exc)}, indent=2))
+            return 1
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "approval-ingest":
+        result = ingest_approval_inbox(orchestration_root=args.orchestration_root)
+        print(json.dumps(result, indent=2))
+        return 0
 
     config = load_config(args.config)
     service = ControlTowerService(config)

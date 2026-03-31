@@ -1,0 +1,12 @@
+{
+  "approved_at": null,
+  "command": null,
+  "target_run_id": null,
+  "next_action": "await_operator_input",
+  "next_prompt_path": "C:/Dev/ControlTower/ops/orchestration/next_prompt.md",
+  "ready_for_operator_launch": false,
+  "release_status_path": null,
+  "release_generated_at": null,
+  "updated_at": "1970-01-01T00:00:00Z",
+  "reason": null
+}

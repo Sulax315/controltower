@@ -1,0 +1,28 @@
+{
+  "status": "idle",
+  "pending": false,
+  "run_id": null,
+  "created_at": "1970-01-01T00:00:00Z",
+  "updated_at": "1970-01-01T00:00:00Z",
+  "source_channel": null,
+  "source_release_status_path": null,
+  "release_generated_at": null,
+  "release_verdict": null,
+  "release_summary": null,
+  "operator_recommendation": null,
+  "next_recommended_action": null,
+  "latest_export_run_id": null,
+  "latest_export_manifest_path": null,
+  "latest_release_markdown_path": null,
+  "latest_release_json_path": null,
+  "latest_diagnostics_path": null,
+  "diagnostics_snapshot_path": null,
+  "latest_run_path": null,
+  "failure_reason": null,
+  "failed_stage": null,
+  "allowed_commands": [
+    "APPROVE",
+    "HOLD",
+    "RETRY"
+  ]
+}
