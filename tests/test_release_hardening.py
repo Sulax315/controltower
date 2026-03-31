@@ -362,6 +362,42 @@ def test_release_artifact_records_local_remote_and_deployed_commit_metadata(samp
     assert "- Verification status: pass" in markdown
 
 
+def test_stamp_release_trace_returns_none_when_release_artifact_is_not_writable(
+    sample_config_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config = load_config(sample_config_path)
+    build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+
+    latest_json_path = Path(config.runtime.state_root) / "release" / "latest_release_readiness.json"
+    original_write_text = Path.write_text
+
+    def _guarded_write_text(self: Path, *args, **kwargs):
+        if self == latest_json_path:
+            raise PermissionError("read-only artifact")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", _guarded_write_text)
+
+    stamped = stamp_release_trace(
+        Path(config.runtime.state_root),
+        {
+            "generated_at": "2026-03-31T19:00:00Z",
+            "local_head_commit": "abc123",
+            "remote_origin_main_commit": "abc123",
+            "deployed_git_commit": "abc123",
+            "verification_status": "pass",
+            "push_status": "up_to_date",
+        },
+    )
+
+    assert stamped is None
+
+
 def test_release_entrypoints_delegate_to_single_authoritative_flow():
     repo_root = Path(__file__).resolve().parents[1]
     deploy_update = (repo_root / "infra" / "deploy" / "controltower" / "deploy_update.sh").read_text(encoding="utf-8")

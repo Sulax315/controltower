@@ -381,21 +381,24 @@ def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict
     )
     rendered = _render_release_summary(artifact)
     latest_markdown_path = _release_root(state_root) / LATEST_RELEASE_MD
-    latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    latest_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
+    try:
+        latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        latest_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
 
-    generated_at = artifact.get("generated_at")
-    if generated_at:
-        safe_stamp = str(generated_at).replace(":", "-")
-        history_json_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.json"
-        history_markdown_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.md"
-        if history_json_path.exists():
-            history_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-        if history_markdown_path.exists():
-            history_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
+        generated_at = artifact.get("generated_at")
+        if generated_at:
+            safe_stamp = str(generated_at).replace(":", "-")
+            history_json_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.json"
+            history_markdown_path = _release_root(state_root) / f"release_readiness_{safe_stamp}.md"
+            if history_json_path.exists():
+                history_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+            if history_markdown_path.exists():
+                history_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
 
-    refresh_artifact_index(state_root)
-    _sync_release_approval_state(state_root)
+        refresh_artifact_index(state_root)
+        _sync_release_approval_state(state_root)
+    except OSError:
+        return None
     return artifact
 
 
