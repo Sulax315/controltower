@@ -19,6 +19,7 @@ BACKEND_BASE_URL=""
 PUBLIC_BASE_URL=""
 GIT_REMOTE_NAME="origin"
 SOURCE_TRACE_B64=""
+SERVICE_ACTIVE_TIMEOUT_SECONDS=30
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -119,6 +120,10 @@ service_main_pid() {
   systemctl show -p MainPID --value "$SERVICE_NAME" 2>/dev/null || echo 0
 }
 
+service_state() {
+  systemctl is-active "$SERVICE_NAME" 2>/dev/null || true
+}
+
 restart_service() {
   if have_passwordless_sudo; then
     "${SUDO[@]}" systemctl restart "$SERVICE_NAME"
@@ -134,6 +139,20 @@ restart_service() {
     fail "Passwordless sudo is unavailable and the current $SERVICE_NAME PID $pid could not be terminated for a restart." "Grant the deploy user passwordless sudo for systemctl or restart the service manually as root."
   fi
   sleep 2
+}
+
+wait_for_service_active() {
+  local deadline=$((SECONDS + SERVICE_ACTIVE_TIMEOUT_SECONDS))
+  local current_state=""
+  while (( SECONDS < deadline )); do
+    current_state="$(service_state)"
+    if [[ "$current_state" == "active" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Service $SERVICE_NAME did not reach active state within ${SERVICE_ACTIVE_TIMEOUT_SECONDS}s (last state: ${current_state:-unknown})." >&2
+  return 1
 }
 
 fail() {
@@ -287,7 +306,7 @@ else
   run_step "service_restart" "Inspect systemctl status and journal output for the service before retrying." restart_service
 fi
 
-run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." systemctl is-active --quiet "$SERVICE_NAME"
+run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." wait_for_service_active
 run_step "backend_health" "Inspect the service logs and backend listener if loopback health is still failing." verify_health_status "$BACKEND_BASE_URL/healthz"
 run_step "production_verify" "Use the verifier JSON above plus systemctl status to resolve the failing route, auth, or freshness check before retrying." env CONTROLTOWER_ENV_FILE="$ENV_FILE" bash "$APP_ROOT/ops/linux/verify_controltower_production.sh" --config "$CONFIG_PATH" --public-base-url "$PUBLIC_BASE_URL" --backend-base-url "$BACKEND_BASE_URL" --expected-commit "$COMMIT" --skip-smoke --skip-release-readiness
 

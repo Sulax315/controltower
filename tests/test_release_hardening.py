@@ -420,6 +420,15 @@ def test_release_entrypoints_delegate_to_single_authoritative_flow():
     assert "release_controltower.ps1" in windows_wrapper
 
 
+def test_remote_release_waits_for_service_to_become_active_after_restart():
+    repo_root = Path(__file__).resolve().parents[1]
+    remote_release = (repo_root / "infra" / "deploy" / "controltower" / "release_remote.sh").read_text(encoding="utf-8")
+
+    assert "wait_for_service_active()" in remote_release
+    assert "SERVICE_ACTIVE_TIMEOUT_SECONDS=30" in remote_release
+    assert 'run_step "systemd_active" "Inspect systemctl status and journal output for the service before retrying." wait_for_service_active' in remote_release
+
+
 def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
