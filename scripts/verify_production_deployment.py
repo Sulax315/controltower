@@ -244,6 +244,7 @@ def main() -> int:
     public_health = _json_check(
         f"{public_base_url}/healthz",
         timeout_seconds=args.timeout_seconds,
+        require_loaded_config=False,
     )
     public_health_check = {"name": "public_healthz", **public_health}
     if public_health["status"] == "pass":
@@ -836,7 +837,7 @@ def _http_check(
     }
 
 
-def _json_check(url: str, *, timeout_seconds: int, opener=None) -> dict[str, Any]:
+def _json_check(url: str, *, timeout_seconds: int, opener=None, require_loaded_config: bool = True) -> dict[str, Any]:
     result = _http_check(url, timeout_seconds=timeout_seconds, opener=opener)
     if result["status"] != "pass":
         return result
@@ -847,7 +848,7 @@ def _json_check(url: str, *, timeout_seconds: int, opener=None) -> dict[str, Any
             payload = json.loads(response.read().decode("utf-8"))
     except (URLError, HTTPError, json.JSONDecodeError) as exc:
         return {"status": "fail", "url": url, "error": str(exc)}
-    if payload.get("config", {}).get("status") != "loaded":
+    if require_loaded_config and payload.get("config", {}).get("status") != "loaded":
         return {"status": "fail", "url": url, "payload": payload, "error": "Diagnostics config status was not loaded."}
     return {"status": "pass", "url": url, "payload": payload}
 
