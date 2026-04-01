@@ -99,6 +99,102 @@ def sync_pending_release_approval(
     }
 
 
+def restore_pending_release_approval_from_events(
+    status_path: Path | None = None,
+    *,
+    orchestration_root: Path | None = None,
+    config: ControlTowerConfig | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    paths = ensure_approval_layout(orchestration_root)
+    resolved_status_path = Path(status_path) if status_path is not None else _default_release_status_path()
+    release_status = _load_release_status(resolved_status_path)
+    if release_status is None:
+        return {
+            "status": "missing_release_status",
+            "release_status_path": str(Path(resolved_status_path).resolve()),
+        }
+
+    target_run_id = run_id or _release_run_id(release_status)
+    event = _latest_applied_event(paths["approval_events"], run_id=target_run_id)
+    if event is None:
+        return {
+            "status": "no_matching_approval_event",
+            "run_id": target_run_id,
+            "approval_events_path": str(paths["approval_events"]),
+        }
+
+    command = str(event.get("normalized_command") or "").upper()
+    if command not in APPROVAL_COMMANDS:
+        return {
+            "status": "no_matching_approval_event",
+            "run_id": target_run_id,
+            "approval_events_path": str(paths["approval_events"]),
+        }
+
+    applied_at = str(event.get("timestamp") or event.get("ingested_at") or utc_now_iso())
+    created_at = _restored_pending_created_at(paths["pending_approval"], target_run_id, applied_at)
+    pending = _build_pending_approval(release_status, resolved_status_path, now=created_at)
+    pending.update(
+        {
+            "status": APPROVAL_COMMANDS[command],
+            "pending": False,
+            "created_at": created_at,
+            "updated_at": applied_at,
+            "applied_command": command,
+            "applied_at": applied_at,
+            "applied_source_channel": event.get("source_channel"),
+            "last_inbox_file": event.get("inbox_file"),
+            "last_message_id": event.get("message_id"),
+        }
+    )
+    run_state = _build_run_state(pending, last_event=event, now=applied_at, orchestration_root=paths["root"])
+    _write_json(paths["pending_approval"], pending)
+    _write_json(paths["run_state"], run_state)
+
+    release_status = _load_release_status(resolved_status_path)
+    if (
+        config is not None
+        and config.prompt_orchestration.enabled
+        and command in {"APPROVE", "RETRY"}
+    ):
+        orchestration_result = orchestrate_next_prompt(
+            config,
+            orchestration_root=paths["root"],
+            recent_approval_event=event,
+        )
+    else:
+        trigger_payload = _trigger_payload(pending, release_status=release_status, orchestration_root=paths["root"])
+        _write_text(paths["next_prompt"], _decision_prompt_markdown(pending, release_status=release_status))
+        _write_next_prompt_placeholder_json(
+            paths=paths,
+            pending=pending,
+            trigger_payload=trigger_payload,
+            orchestration_status="manual_handoff",
+            reason="Approval state restored from recorded approval event.",
+            model_name=config.prompt_orchestration.model if config is not None else None,
+        )
+        orchestration_result = {
+            "status": "manual_handoff",
+            "ready_for_operator_launch": bool(trigger_payload.get("ready_for_operator_launch")),
+            "gate_failure": None,
+        }
+
+    return {
+        "status": "restored",
+        "run_id": pending["run_id"],
+        "event_id": event.get("event_id"),
+        "pending_approval_path": str(paths["pending_approval"]),
+        "run_state_path": str(paths["run_state"]),
+        "next_prompt_path": str(paths["next_prompt"]),
+        "next_prompt_json_path": str(paths["next_prompt_json"]),
+        "trigger_path": str(paths["trigger_next_run"]),
+        "orchestration_status": orchestration_result["status"],
+        "ready_for_operator_launch": orchestration_result["ready_for_operator_launch"],
+        "gate_failure": orchestration_result.get("gate_failure"),
+    }
+
+
 def ingest_approval_inbox(
     *,
     orchestration_root: Path | None = None,
@@ -712,6 +808,30 @@ def _load_release_status(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def _latest_applied_event(path: Path, *, run_id: str) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    lines = [line for line in path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+    for line in reversed(lines):
+        event = json.loads(line)
+        if not event.get("applied"):
+            continue
+        if str(event.get("normalized_command") or "").upper() not in APPROVAL_COMMANDS:
+            continue
+        applied_run_id = event.get("applied_run_id") or event.get("referenced_run_id")
+        if applied_run_id != run_id:
+            continue
+        return event
+    return None
+
+
+def _restored_pending_created_at(path: Path, run_id: str, fallback: str) -> str:
+    existing = _read_json(path) or {}
+    if existing.get("run_id") == run_id and existing.get("created_at"):
+        return str(existing["created_at"])
+    return fallback
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

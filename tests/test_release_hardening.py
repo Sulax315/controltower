@@ -13,6 +13,7 @@ import yaml
 from controltower.api.app import create_app
 from controltower.config import load_config
 from controltower.domain.models import ProjectIdentity
+from controltower.services.approval_ingest import ingest_approval_inbox, sync_pending_release_approval
 from controltower.services.operations import run_release_gate
 from controltower.services.controltower import ControlTowerService
 from controltower.services.delta import build_project_delta
@@ -240,6 +241,123 @@ def test_release_gate_refreshes_diagnostics_after_writing_operation_summary(samp
     assert latest_diagnostics["operations"]["latest_run_timestamp"] == summary["completed_at"]
 
 
+def test_release_refresh_preserves_existing_launchable_orchestration_state(
+    sample_config_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config = _enable_prompt_orchestration(sample_config_path)
+    artifact = build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+    orchestration_root = Path(config.runtime.state_root).resolve().parent / "ops" / "orchestration"
+    _write_continuity_bundle(config)
+    _stub_prompt_generation(monkeypatch)
+    monkeypatch.setattr("controltower.services.approval_ingest.send_operator_notification", lambda *args, **kwargs: None)
+    (orchestration_root / "inbox" / "approve.json").write_text(
+        json.dumps({"source_channel": "signal", "message": "APPROVE"}),
+        encoding="utf-8",
+    )
+
+    result = ingest_approval_inbox(orchestration_root=orchestration_root, config=config)
+    trigger_before = json.loads((orchestration_root / "trigger_next_run.json").read_text(encoding="utf-8"))
+    next_prompt_before = json.loads((orchestration_root / "next_prompt.json").read_text(encoding="utf-8"))
+
+    assert result["events"][0]["prompt_orchestration_status"] == "generated"
+    assert trigger_before["ready_for_operator_launch"] is True
+    assert trigger_before["launch_gate_status"] == "launchable"
+    assert next_prompt_before["orchestration_status"] == "generated"
+
+    stamp_release_trace(
+        Path(config.runtime.state_root),
+        {
+            "generated_at": "2026-03-31T19:00:00Z",
+            "local_head_commit": "abc123",
+            "remote_origin_main_commit": "abc123",
+            "deployed_git_commit": "abc123",
+            "verification_status": "pass",
+            "push_status": "up_to_date",
+        },
+        config=config,
+    )
+
+    pending_after = json.loads((orchestration_root / "pending_approval.json").read_text(encoding="utf-8"))
+    run_state_after = json.loads((orchestration_root / "run_state.json").read_text(encoding="utf-8"))
+    next_prompt_after = json.loads((orchestration_root / "next_prompt.json").read_text(encoding="utf-8"))
+    trigger_after = json.loads((orchestration_root / "trigger_next_run.json").read_text(encoding="utf-8"))
+
+    assert pending_after["status"] == "approved"
+    assert run_state_after["status"] == "approved"
+    assert next_prompt_after["orchestration_status"] == "generated"
+    assert next_prompt_after["approval_status"] == "approved"
+    assert trigger_after["target_run_id"] == pending_after["run_id"] == f"release_review_{artifact['latest_export']['run_id']}"
+    assert trigger_after["next_action"] == "launch_next_codex_lane"
+    assert trigger_after["ready_for_operator_launch"] is True
+    assert trigger_after["launch_gate_status"] == "launchable"
+
+
+def test_release_refresh_restores_regressed_state_from_recorded_approval_event(
+    sample_config_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config = _enable_prompt_orchestration(sample_config_path)
+    artifact = build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+    orchestration_root = Path(config.runtime.state_root).resolve().parent / "ops" / "orchestration"
+    _write_continuity_bundle(config)
+    _stub_prompt_generation(monkeypatch)
+    monkeypatch.setattr("controltower.services.approval_ingest.send_operator_notification", lambda *args, **kwargs: None)
+    (orchestration_root / "inbox" / "approve.json").write_text(
+        json.dumps({"source_channel": "signal", "message": "APPROVE"}),
+        encoding="utf-8",
+    )
+
+    ingest_approval_inbox(orchestration_root=orchestration_root, config=config)
+    sync_pending_release_approval(
+        Path(artifact["artifact_paths"]["latest_json"]),
+        orchestration_root=orchestration_root,
+        config=config,
+    )
+
+    regressed_pending = json.loads((orchestration_root / "pending_approval.json").read_text(encoding="utf-8"))
+    regressed_trigger = json.loads((orchestration_root / "trigger_next_run.json").read_text(encoding="utf-8"))
+
+    assert regressed_pending["status"] == "awaiting_approval"
+    assert regressed_trigger["next_action"] == "await_operator_input"
+    assert regressed_trigger["ready_for_operator_launch"] is False
+
+    stamp_release_trace(
+        Path(config.runtime.state_root),
+        {
+            "generated_at": "2026-03-31T19:05:00Z",
+            "local_head_commit": "abc123",
+            "remote_origin_main_commit": "abc123",
+            "deployed_git_commit": "abc123",
+            "verification_status": "pass",
+            "push_status": "up_to_date",
+        },
+        config=config,
+    )
+
+    pending_after = json.loads((orchestration_root / "pending_approval.json").read_text(encoding="utf-8"))
+    run_state_after = json.loads((orchestration_root / "run_state.json").read_text(encoding="utf-8"))
+    next_prompt_after = json.loads((orchestration_root / "next_prompt.json").read_text(encoding="utf-8"))
+    trigger_after = json.loads((orchestration_root / "trigger_next_run.json").read_text(encoding="utf-8"))
+
+    assert pending_after["status"] == "approved"
+    assert run_state_after["status"] == "approved"
+    assert next_prompt_after["orchestration_status"] == "generated"
+    assert next_prompt_after["approval_status"] == "approved"
+    assert trigger_after["target_run_id"] == pending_after["run_id"] == f"release_review_{artifact['latest_export']['run_id']}"
+    assert trigger_after["next_action"] == "launch_next_codex_lane"
+    assert trigger_after["ready_for_operator_launch"] is True
+    assert trigger_after["launch_gate_status"] == "launchable"
+
+
 def test_diagnostics_surface_exposes_version_and_release_status(sample_config_path: Path):
     config = load_config(sample_config_path)
     build_release_readiness(
@@ -437,6 +555,112 @@ def test_stamp_release_trace_returns_none_when_release_artifact_is_not_writable(
     )
 
     assert stamped is None
+
+
+def _enable_prompt_orchestration(config_path: Path):
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["prompt_orchestration"] = {
+        "enabled": True,
+        "obsidian_gating_enabled": True,
+        "model": "gpt-5-test",
+        "openai_api_key": "test-key",
+    }
+    payload.setdefault("obsidian", {})
+    payload["obsidian"]["continuity_root"] = "continuity"
+    payload["obsidian"]["checkout_notes"] = ["active_control.md", "supplement.md"]
+    payload["obsidian"]["active_control_note"] = "active_control.md"
+    payload["obsidian"]["session_log_dir"] = "session_logs"
+    payload["obsidian"]["active_control_section_heading"] = "## Active Lane Check-In"
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return load_config(config_path)
+
+
+def _write_continuity_bundle(config) -> None:
+    continuity_root = Path(config.obsidian.continuity_root)
+    continuity_root.mkdir(parents=True, exist_ok=True)
+    (continuity_root / "active_control.md").write_text(
+        """---
+phase: Prompt Orchestration
+current_objective: Restore the approved next-lane handoff without losing approval integrity
+why_this_matters: Release refresh must never silently erase a valid approval.
+in_scope:
+  - approval restoration
+  - prompt regeneration
+out_of_scope:
+  - architecture redesign
+known_risks:
+  - missing continuity notes
+acceptance_bar:
+  - refresh keeps approved launchable state intact
+last_accepted_release: 2026-03-31-ready
+---
+""",
+        encoding="utf-8",
+    )
+    (continuity_root / "supplement.md").write_text(
+        """## Next Strategic Target
+
+- Use the approved release artifact together with normalized Obsidian continuity context.
+""",
+        encoding="utf-8",
+    )
+
+
+def _stub_prompt_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "model": "gpt-5-test",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": json.dumps(_fake_next_prompt_payload()),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ).encode("utf-8")
+
+    monkeypatch.setattr("controltower.services.prompt_orchestration.urlopen", lambda request, timeout=0: _Response())
+
+
+def _fake_next_prompt_payload() -> dict[str, object]:
+    return {
+        "objective": "Restore the approved launchable lane without weakening fail-closed gates.",
+        "scope": [
+            "Preserve the approved release handoff.",
+            "Regenerate prompt orchestration artifacts deterministically from recorded approval state.",
+        ],
+        "constraints": [
+            "Do not redesign the release or approval architecture.",
+            "Do not launch the lane in this step.",
+        ],
+        "stop_condition": "Stop after the orchestration artifacts show approved and launchable state.",
+        "deliverable_format": [
+            "UNDERSTANDING",
+            "COMMANDS RUN",
+            "FILES MODIFIED",
+            "ARTIFACTS VERIFIED",
+            "RESULT",
+            "NEXT OPERATOR ACTION",
+        ],
+        "recommended_commands": ["python .\\run_controltower.py prompt-orchestrate-next"],
+        "prompt_markdown": "Use the approved release artifact together with normalized Obsidian continuity context.",
+        "requires_operator_approval_after_release": True,
+        "continuation_mode": "manual_approval_after_release",
+        "strategic_alignment_summary": "The restored lane keeps approval truth and orchestration truth in lockstep.",
+    }
 
 
 def test_release_entrypoints_delegate_to_single_authoritative_flow():

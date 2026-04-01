@@ -13,7 +13,10 @@ from controltower.config import ControlTowerConfig
 from controltower.domain.models import ExportRecord, utc_now_iso
 from controltower.obsidian.exporter import load_latest_export
 from controltower.render.markdown import REQUIRED_MARKDOWN_TEMPLATES, validate_markdown_templates
-from controltower.services.approval_ingest import sync_pending_release_approval
+from controltower.services.approval_ingest import (
+    restore_pending_release_approval_from_events,
+    sync_pending_release_approval,
+)
 from controltower.services.build_info import current_build_info, workspace_root
 from controltower.services.controltower import ControlTowerService
 from controltower.services.identity_reconciliation import RegistryDocument
@@ -345,7 +348,7 @@ def build_release_readiness(
         json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
         (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
         refresh_artifact_index(config.runtime.state_root)
-        _sync_release_approval_state(config.runtime.state_root)
+        _sync_release_approval_state(config.runtime.state_root, config=config)
         _notify_verification_event(
             config,
             event="VERIFICATION_PASS" if ready else "VERIFICATION_FAIL",
@@ -393,7 +396,7 @@ def refresh_release_readiness_diagnostics(config: ControlTowerConfig) -> dict[st
     }
     latest_json_path = _release_root(config.runtime.state_root) / LATEST_RELEASE_JSON
     latest_json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    _sync_release_approval_state(config.runtime.state_root)
+    _sync_release_approval_state(config.runtime.state_root, config=config)
     return {
         "artifact": artifact,
         "diagnostics_snapshot_path": str(diagnostics_history_path),
@@ -401,7 +404,12 @@ def refresh_release_readiness_diagnostics(config: ControlTowerConfig) -> dict[st
     }
 
 
-def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict[str, Any] | None:
+def stamp_release_trace(
+    state_root: Path,
+    release_trace: dict[str, Any],
+    *,
+    config: ControlTowerConfig | None = None,
+) -> dict[str, Any] | None:
     latest_json_path = _release_root(state_root) / LATEST_RELEASE_JSON
     if not latest_json_path.exists():
         return None
@@ -429,7 +437,7 @@ def stamp_release_trace(state_root: Path, release_trace: dict[str, Any]) -> dict
                 history_markdown_path.write_text(rendered, encoding="utf-8", newline="\n")
 
         refresh_artifact_index(state_root)
-        _sync_release_approval_state(state_root)
+        _sync_release_approval_state(state_root, config=config)
     except OSError:
         return None
     return artifact
@@ -723,18 +731,81 @@ def _release_root(state_root: Path) -> Path:
     return Path(state_root) / RELEASE_ROOT_NAME
 
 
-def _sync_release_approval_state(state_root: Path) -> None:
+def _sync_release_approval_state(state_root: Path, *, config: ControlTowerConfig | None = None) -> dict[str, Any]:
     latest_json_path = _release_root(state_root) / LATEST_RELEASE_JSON
     if not latest_json_path.exists():
-        return
+        return {"status": "missing_release_artifact", "release_status_path": str(latest_json_path)}
     orchestration_root = Path(state_root).resolve().parent / "ops" / "orchestration"
-    sync_pending_release_approval(latest_json_path, orchestration_root=orchestration_root)
+    release_status = _load_json(latest_json_path) or {}
+    release_run_id = _release_review_run_id(release_status)
+    existing = _load_orchestration_sync_state(orchestration_root)
+    if _orchestration_state_is_protected(existing, release_run_id):
+        return {
+            "status": "preserved_existing_approval",
+            "run_id": release_run_id,
+            "orchestration_root": str(orchestration_root),
+        }
+    restored = restore_pending_release_approval_from_events(
+        latest_json_path,
+        orchestration_root=orchestration_root,
+        config=config,
+        run_id=release_run_id,
+    )
+    if restored.get("status") == "restored":
+        return restored
+    return sync_pending_release_approval(latest_json_path, orchestration_root=orchestration_root, config=config)
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _release_review_run_id(status: dict[str, Any]) -> str | None:
+    latest_export = status.get("latest_export") or {}
+    if latest_export.get("run_id"):
+        return f"release_review_{latest_export['run_id']}"
+    generated_at = status.get("generated_at")
+    if generated_at:
+        return f"release_review_{str(generated_at).replace(':', '-')}"
+    return None
+
+
+def _load_orchestration_sync_state(orchestration_root: Path) -> dict[str, Any]:
+    root = Path(orchestration_root)
+    return {
+        "pending_approval": _load_json(root / "pending_approval.json") or {},
+        "run_state": _load_json(root / "run_state.json") or {},
+        "next_prompt": _load_json(root / "next_prompt.json") or {},
+        "trigger_next_run": _load_json(root / "trigger_next_run.json") or {},
+    }
+
+
+def _orchestration_state_is_protected(snapshot: dict[str, Any], release_run_id: str | None) -> bool:
+    if not release_run_id:
+        return False
+    pending = snapshot.get("pending_approval") or {}
+    run_state = snapshot.get("run_state") or {}
+    next_prompt = snapshot.get("next_prompt") or {}
+    trigger = snapshot.get("trigger_next_run") or {}
+    current_run_id = (
+        pending.get("run_id")
+        or run_state.get("active_run_id")
+        or next_prompt.get("pending_run_id")
+        or trigger.get("target_run_id")
+    )
+    if current_run_id != release_run_id:
+        return False
+    protected_statuses = {"approved", "held", "retry_requested"}
+    observed_statuses = {
+        pending.get("status"),
+        run_state.get("status"),
+        next_prompt.get("approval_status"),
+    }
+    if observed_statuses & protected_statuses:
+        return True
+    return bool(trigger.get("ready_for_operator_launch")) or trigger.get("launch_gate_status") == "launchable"
 
 def _tail_lines(text: str, count: int = 20) -> list[str]:
     return [line for line in text.splitlines()[-count:] if line.strip()]
