@@ -122,6 +122,7 @@ systemctl daemon-reload
 systemctl enable --now "$CONTROLTOWER_SERVICE_NAME.service"
 nginx -t
 systemctl reload nginx
+bash "$CONTROLTOWER_APP_ROOT/ops/linux/harden_controltower_host.sh" "$ENV_FILE"
 
 echo "Installed systemd unit: $CONTROLTOWER_SYSTEMD_UNIT_DIR/$CONTROLTOWER_SERVICE_NAME.service"
 echo "Installed cron file: /etc/cron.d/controltower"

@@ -6,7 +6,13 @@ import subprocess
 
 import pytest
 
-from controltower.services.notifications import format_release_message, load_notification_environment, send_release_notification
+from controltower.services.notifications import (
+    format_controltower_event_message,
+    format_release_message,
+    load_notification_environment,
+    notify_controltower_event,
+    send_release_notification,
+)
 
 
 @pytest.fixture
@@ -38,23 +44,15 @@ def test_format_release_message_success_is_operator_grade(sample_release_status:
     message = format_release_message(sample_release_status)
 
     assert message == (
-        "Control Tower Release PASS\n"
+        "[CONTROL TOWER]\n"
+        "Event: RELEASE_SUCCESS\n"
+        "Project: Control Tower\n"
         "Commit: 875a092\n"
+        "Status: PASS\n"
         "Branch: main\n"
-        "\n"
-        "Stages:\n"
-        "- pytest: PASS\n"
-        "- readiness: PASS\n"
-        "- acceptance: PASS\n"
-        "- deploy: PASS\n"
-        "\n"
-        "Live:\n"
-        "https://controltower.bratek.io\n"
-        "\n"
-        "Awaiting approval before next step\n"
-        "\n"
-        "Next:\n"
-        "Approve next Codex lane"
+        "Live URL: https://controltower.bratek.io\n"
+        "Next Action: Approve next Codex lane\n"
+        "Approval State: awaiting_approval"
     )
 
 
@@ -75,17 +73,14 @@ def test_format_release_message_failure_highlights_stage_reason_and_action():
     message = format_release_message(status)
 
     assert message == (
-        "Control Tower Release FAIL\n"
+        "[CONTROL TOWER]\n"
+        "Event: RELEASE_FAILURE\n"
+        "Project: Control Tower\n"
         "Commit: 875a092\n"
-        "\n"
-        "Failed Stage:\n"
-        "readiness\n"
-        "\n"
-        "Reason:\n"
-        "HTTP 500 from /api/health\n"
-        "\n"
-        "Action:\n"
-        "Check latest_release_log.txt"
+        "Status: FAIL\n"
+        "Error Summary: HTTP 500 from /api/health\n"
+        "Failing Step: readiness\n"
+        "Recommended Action: Check latest_release_log.txt"
     )
 
 
@@ -105,18 +100,15 @@ def test_format_release_message_handles_authoritative_release_failure_summary():
     message = format_release_message(status)
 
     assert message == (
-        "Control Tower Release FAIL\n"
+        "[CONTROL TOWER]\n"
+        "Event: RELEASE_FAILURE\n"
+        "Project: Control Tower\n"
         "Commit: f3ca503\n"
+        "Status: FAIL\n"
+        "Error Summary: Working tree is dirty.\n"
+        "Failing Step: git_state\n"
         "Branch: main\n"
-        "\n"
-        "Failed Stage:\n"
-        "git_state\n"
-        "\n"
-        "Reason:\n"
-        "Working tree is dirty.\n"
-        "\n"
-        "Action:\n"
-        "Commit or stash local changes before running the authoritative release handoff."
+        "Recommended Action: Commit or stash local changes before running the authoritative release handoff."
     )
 
 
@@ -259,8 +251,62 @@ def test_send_release_notification_falls_back_to_console_without_config(
     send_release_notification(sample_release_status)
 
     captured = capsys.readouterr()
-    assert "Control Tower Release PASS" in captured.out
+    assert "Event: RELEASE_SUCCESS" in captured.out
     assert "Approve next Codex lane" in captured.out
+
+
+def test_format_controltower_event_message_uses_strict_operator_shape():
+    message = format_controltower_event_message(
+        event="APPROVAL_REQUIRED",
+        project="Control Tower",
+        commit="875a092abcdef",
+        status="action_required",
+        instruction="Reply YES to approve or NO to reject",
+    )
+
+    assert message == (
+        "[CONTROL TOWER]\n"
+        "Event: APPROVAL_REQUIRED\n"
+        "Project: Control Tower\n"
+        "Commit: 875a092\n"
+        "Status: ACTION_REQUIRED\n"
+        "Instruction: Reply YES to approve or NO to reject"
+    )
+
+
+def test_notify_controltower_event_writes_delivery_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    notification_artifact_env: Path,
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, input=None, capture_output=None, text=None, check=None, timeout=None):
+        captured["command"] = command
+        captured["input"] = input
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setenv("SIGNAL_CLI_PATH", "/usr/local/bin/signal-cli")
+    monkeypatch.setenv("SIGNAL_SENDER", "+15551230000")
+    monkeypatch.setenv("SIGNAL_RECIPIENT", "+15557654321")
+    monkeypatch.setattr("controltower.services.notifications.subprocess.run", _fake_run)
+    monkeypatch.setattr("controltower.services.notifications._resolve_command_path", lambda command_path: command_path)
+
+    result = notify_controltower_event(
+        "APPROVAL_REQUIRED",
+        project="Control Tower",
+        commit="875a092abcdef",
+        status="ACTION_REQUIRED",
+        instruction="Reply YES to approve or NO to reject",
+    )
+
+    assert captured["command"][0] == "/usr/local/bin/signal-cli"
+    assert captured["command"][5].startswith("[CONTROL TOWER]\nEvent: APPROVAL_REQUIRED")
+    artifact = json.loads(notification_artifact_env.read_text(encoding="utf-8"))
+    assert artifact["event"] == "APPROVAL_REQUIRED"
+    assert artifact["project"] == "Control Tower"
+    assert artifact["notification_status"] == "ACTION_REQUIRED"
+    assert artifact["success"] is True
+    assert result["delivery"]["delivery_state"] == "send_succeeded"
 
 
 def test_send_release_notification_does_not_raise_on_signal_failure(

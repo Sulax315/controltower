@@ -123,6 +123,25 @@ def test_medium_risk_run_remains_pending_review_with_policy_metadata(sample_conf
     assert any(entry.event_type == "policy_evaluated" for entry in persisted.audit_trail)
 
 
+def test_manual_review_emits_approval_required_notification(sample_config_path, monkeypatch):
+    config = load_config(sample_config_path)
+    orchestration = OrchestrationService(config)
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "controltower.services.orchestration.notify_controltower_event",
+        lambda event, **kwargs: events.append({"event": event, **kwargs})
+        or {"message": "ok", "artifact_path": "artifact.json", "delivery": {"success": True, "selected_channel": "console"}},
+    )
+
+    review = _create_review(orchestration, config)
+
+    assert review.state == "pending_review"
+    assert events[0]["event"] == "APPROVAL_REQUIRED"
+    assert events[0]["status"] == "ACTION_REQUIRED"
+    assert events[0]["instruction"] == "Reply YES to approve or NO to reject"
+
+
 def test_low_risk_run_auto_approves_once_and_writes_policy_to_continuity(sample_config_path):
     config = load_config(sample_config_path)
     config.trigger.provider = "file"
@@ -484,6 +503,35 @@ def test_result_ingest_updates_originating_run(sample_config_path):
     continuity_body = Path(updated.continuity.runtime_markdown_path).read_text(encoding="utf-8")
     assert "Status: succeeded" in continuity_body
     assert "closeout.md" in continuity_body
+
+
+def test_result_ingest_emits_release_outcome_notification(sample_config_path, monkeypatch):
+    config = load_config(sample_config_path)
+    config.trigger.provider = "file"
+    orchestration = OrchestrationService(config)
+    review = orchestration.simulate_execution_event(profile="medium", provider_override="file")
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "controltower.services.orchestration.notify_controltower_event",
+        lambda event, **kwargs: events.append({"event": event, **kwargs})
+        or {"message": "ok", "artifact_path": "artifact.json", "delivery": {"success": True, "selected_channel": "console"}},
+    )
+
+    orchestration.ingest_execution_result(
+        {
+            "event_id": review.execution_event.event_id,
+            "run_id": review.run_id,
+            "pack_id": review.execution_pack.pack_id,
+            "status": "failed",
+            "summary": "Downstream deploy verification failed.",
+        }
+    )
+
+    assert events[-1]["event"] == "RELEASE_FAILURE"
+    assert events[-1]["status"] == "FAIL"
+    assert events[-1]["failing_step"] == "execution_result"
+    assert events[-1]["error_summary"] == "Downstream deploy verification failed."
 
 
 def test_result_ingest_rejects_event_run_mismatch(sample_config_path):

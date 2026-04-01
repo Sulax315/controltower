@@ -18,6 +18,7 @@ from controltower.services.build_info import current_build_info, workspace_root
 from controltower.services.controltower import ControlTowerService
 from controltower.services.identity_reconciliation import RegistryDocument
 from controltower.services.meeting_readiness import verify_meeting_readiness
+from controltower.services.notifications import notify_controltower_event
 from controltower.services.runtime_state import (
     ACCEPTANCE_REPORT_NAME,
     ARTIFACT_INDEX_NAME,
@@ -199,145 +200,177 @@ def build_release_readiness(
     acceptance_result: dict[str, Any] | None = None,
     export_record: ExportRecord | None = None,
     release_trace: dict[str, Any] | None = None,
+    notify_exception: bool = True,
 ) -> dict[str, Any]:
-    service = ControlTowerService(config)
-    validation_issues = service.validate_sources()
-    export_record = export_record or service.export_notes(preview_only=False)
-
-    if pytest_result is None:
-        pytest_result = run_pytest_suite() if run_pytest else {"status": "not_run", "command": "pytest -q", "exit_code": None}
-    if acceptance_result is None:
-        if run_acceptance_check:
-            from controltower.acceptance.harness import run_acceptance
-
-            acceptance_result = run_acceptance(config)
-        else:
-            acceptance_result = _load_json(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME) or {"status": "not_run"}
-    if acceptance_result.get("status") != "not_run":
-        acceptance_report_path = Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME
-        acceptance_report_path.parent.mkdir(parents=True, exist_ok=True)
-        acceptance_report_path.write_text(json.dumps(acceptance_result, indent=2), encoding="utf-8")
-
-    route_checks = verify_live_routes(config, export_record)
-    export_checks = verify_export_record(export_record)
-    generated_at = utc_now_iso()
     build_info = current_build_info()
-    release_trace_payload = _normalize_release_trace(
-        release_trace,
-        generated_at=generated_at,
-        deployed_git_commit=build_info["git_commit"],
+    _notify_verification_event(
+        config,
+        event="VERIFICATION_START",
+        commit=build_info["git_commit"],
+        status="STARTED",
     )
+    try:
+        service = ControlTowerService(config)
+        validation_issues = service.validate_sources()
+        export_record = export_record or service.export_notes(preview_only=False)
 
-    gate_results = {
-        "pytest": pytest_result,
-        "acceptance": acceptance_result,
-        "route_checks": route_checks,
-        "export_checks": export_checks,
-        "source_validation": {
-            "status": "pass" if not validation_issues else "fail",
-            "issues": validation_issues,
-        },
-    }
-    failing_checks = _failing_gate_checks(gate_results)
-    ready = not failing_checks
-    stage_results = _build_stage_results(gate_results, ready=ready)
-    remaining_risks = list(validation_issues)
-    if pytest_result.get("status") not in {"pass", "not_run"}:
-        remaining_risks.append("Pytest did not pass in the release-readiness run.")
-    if acceptance_result.get("status") not in {"pass", "not_run"}:
-        remaining_risks.append("Acceptance harness did not pass in the release-readiness run.")
-    if route_checks.get("status") != "pass":
-        remaining_risks.append("One or more live route checks failed.")
-    if export_checks.get("status") != "pass":
-        remaining_risks.append("One or more export verification checks failed.")
+        if pytest_result is None:
+            pytest_result = run_pytest_suite() if run_pytest else {"status": "not_run", "command": "pytest -q", "exit_code": None}
+        if acceptance_result is None:
+            if run_acceptance_check:
+                from controltower.acceptance.harness import run_acceptance
 
-    operator_recommendation = (
-        "Proceed with live daily/weekly operation; continue monitoring diagnostics and scheduled summaries."
-        if ready
-        else "Do not proceed with live operation changes until the failing gates and remaining risks are resolved."
-    )
-    awaiting_approval = ready
-    next_recommended_action = (
-        "Approve next Codex lane"
-        if awaiting_approval
-        else "Check latest_release_readiness.md"
-    )
-    verdict = {
-        "status": "ready" if ready else "not_ready",
-        "ready_for_live_operations": ready,
-        "summary": (
-            "Control Tower v2 is ready for live daily/weekly operation."
+                acceptance_result = run_acceptance(config)
+            else:
+                acceptance_result = _load_json(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME) or {"status": "not_run"}
+        if acceptance_result.get("status") != "not_run":
+            acceptance_report_path = Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME
+            acceptance_report_path.parent.mkdir(parents=True, exist_ok=True)
+            acceptance_report_path.write_text(json.dumps(acceptance_result, indent=2), encoding="utf-8")
+
+        route_checks = verify_live_routes(config, export_record)
+        export_checks = verify_export_record(export_record)
+        generated_at = utc_now_iso()
+        release_trace_payload = _normalize_release_trace(
+            release_trace,
+            generated_at=generated_at,
+            deployed_git_commit=build_info["git_commit"],
+        )
+
+        gate_results = {
+            "pytest": pytest_result,
+            "acceptance": acceptance_result,
+            "route_checks": route_checks,
+            "export_checks": export_checks,
+            "source_validation": {
+                "status": "pass" if not validation_issues else "fail",
+                "issues": validation_issues,
+            },
+        }
+        failing_checks = _failing_gate_checks(gate_results)
+        ready = not failing_checks
+        stage_results = _build_stage_results(gate_results, ready=ready)
+        remaining_risks = list(validation_issues)
+        if pytest_result.get("status") not in {"pass", "not_run"}:
+            remaining_risks.append("Pytest did not pass in the release-readiness run.")
+        if acceptance_result.get("status") not in {"pass", "not_run"}:
+            remaining_risks.append("Acceptance harness did not pass in the release-readiness run.")
+        if route_checks.get("status") != "pass":
+            remaining_risks.append("One or more live route checks failed.")
+        if export_checks.get("status") != "pass":
+            remaining_risks.append("One or more export verification checks failed.")
+
+        operator_recommendation = (
+            "Proceed with live daily/weekly operation; continue monitoring diagnostics and scheduled summaries."
             if ready
-            else "Control Tower v2 is not ready for live daily/weekly operation."
-        ),
-        "remaining_risks": remaining_risks,
-        "failing_checks": failing_checks,
-        "operator_recommendation": operator_recommendation,
-    }
+            else "Do not proceed with live operation changes until the failing gates and remaining risks are resolved."
+        )
+        awaiting_approval = ready
+        next_recommended_action = (
+            "Approve next Codex lane"
+            if awaiting_approval
+            else "Check latest_release_readiness.md"
+        )
+        verdict = {
+            "status": "ready" if ready else "not_ready",
+            "ready_for_live_operations": ready,
+            "summary": (
+                "Control Tower v2 is ready for live daily/weekly operation."
+                if ready
+                else "Control Tower v2 is not ready for live daily/weekly operation."
+            ),
+            "remaining_risks": remaining_risks,
+            "failing_checks": failing_checks,
+            "operator_recommendation": operator_recommendation,
+        }
 
-    artifact = {
-        "schema_version": RELEASE_SCHEMA_VERSION,
-        "generated_at": generated_at,
-        "product": {
-            "name": config.app.product_name,
-            "environment": config.app.environment,
-            "version": build_info["version"],
-            "git_commit": build_info["git_commit"],
-            "git_commit_available": build_info["git_commit_available"],
-        },
-        "config": {
-            "registry_path": str(config.identity.registry_path),
-            "vault_root": str(config.obsidian.vault_root),
-            "state_root": str(config.runtime.state_root),
-            "public_base_url": config.app.public_base_url,
-        },
-        "gate_results": gate_results,
-        "stage_results": stage_results,
-        "pytest": pytest_result,
-        "acceptance": acceptance_result,
-        "route_checks": route_checks,
-        "export_checks": export_checks,
-        "source_validation": gate_results["source_validation"],
-        "failure_reason": _notification_failure_reason(gate_results, failing_checks),
-        "next_recommended_action": next_recommended_action,
-        "awaiting_approval": awaiting_approval,
-        "latest_export": {
-            "run_id": export_record.run_id,
-            "status": export_record.status,
-            "note_count": len(export_record.notes),
-            "previous_run_id": export_record.previous_run_id,
-            "manifest_path": str(Path(config.runtime.state_root) / "runs" / export_record.run_id / "manifest.json"),
-        },
-        "latest_evidence": {
-            "acceptance_report_path": str(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME),
-            "diagnostics_snapshot_path": None,
-            "latest_diagnostics_path": None,
-            "latest_run_path": str(Path(config.runtime.state_root) / "latest_run.json"),
-            "artifact_index_path": str(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME),
-        },
-        "diagnostics_snapshot": None,
-        "release_trace": release_trace_payload,
-        "verdict": verdict,
-    }
+        artifact = {
+            "schema_version": RELEASE_SCHEMA_VERSION,
+            "generated_at": generated_at,
+            "product": {
+                "name": config.app.product_name,
+                "environment": config.app.environment,
+                "version": build_info["version"],
+                "git_commit": build_info["git_commit"],
+                "git_commit_available": build_info["git_commit_available"],
+            },
+            "config": {
+                "registry_path": str(config.identity.registry_path),
+                "vault_root": str(config.obsidian.vault_root),
+                "state_root": str(config.runtime.state_root),
+                "public_base_url": config.app.public_base_url,
+            },
+            "gate_results": gate_results,
+            "stage_results": stage_results,
+            "pytest": pytest_result,
+            "acceptance": acceptance_result,
+            "route_checks": route_checks,
+            "export_checks": export_checks,
+            "source_validation": gate_results["source_validation"],
+            "failure_reason": _notification_failure_reason(gate_results, failing_checks),
+            "next_recommended_action": next_recommended_action,
+            "awaiting_approval": awaiting_approval,
+            "latest_export": {
+                "run_id": export_record.run_id,
+                "status": export_record.status,
+                "note_count": len(export_record.notes),
+                "previous_run_id": export_record.previous_run_id,
+                "manifest_path": str(Path(config.runtime.state_root) / "runs" / export_record.run_id / "manifest.json"),
+            },
+            "latest_evidence": {
+                "acceptance_report_path": str(Path(config.runtime.state_root) / ACCEPTANCE_REPORT_NAME),
+                "diagnostics_snapshot_path": None,
+                "latest_diagnostics_path": None,
+                "latest_run_path": str(Path(config.runtime.state_root) / "latest_run.json"),
+                "artifact_index_path": str(Path(config.runtime.state_root) / ARTIFACT_INDEX_NAME),
+            },
+            "diagnostics_snapshot": None,
+            "release_trace": release_trace_payload,
+            "verdict": verdict,
+        }
 
-    diagnostics_snapshot = collect_operator_diagnostics(config, latest_release_override=artifact)
-    diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
-    artifact["latest_evidence"]["diagnostics_snapshot_path"] = str(diagnostics_history_path)
-    artifact["latest_evidence"]["latest_diagnostics_path"] = str(diagnostics_latest_path)
-    artifact["diagnostics_snapshot"] = diagnostics_snapshot
+        diagnostics_snapshot = collect_operator_diagnostics(config, latest_release_override=artifact)
+        diagnostics_history_path, diagnostics_latest_path = write_diagnostics_snapshot(config.runtime.state_root, diagnostics_snapshot)
+        artifact["latest_evidence"]["diagnostics_snapshot_path"] = str(diagnostics_history_path)
+        artifact["latest_evidence"]["latest_diagnostics_path"] = str(diagnostics_latest_path)
+        artifact["diagnostics_snapshot"] = diagnostics_snapshot
 
-    json_path, markdown_path = write_release_readiness_artifacts(config.runtime.state_root, artifact)
-    artifact["artifact_paths"] = {
-        "json": str(json_path),
-        "markdown": str(markdown_path),
-        "latest_json": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON),
-        "latest_markdown": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_MD),
-    }
-    json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    refresh_artifact_index(config.runtime.state_root)
-    _sync_release_approval_state(config.runtime.state_root)
-    return artifact
+        json_path, markdown_path = write_release_readiness_artifacts(config.runtime.state_root, artifact)
+        artifact["artifact_paths"] = {
+            "json": str(json_path),
+            "markdown": str(markdown_path),
+            "latest_json": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON),
+            "latest_markdown": str(_release_root(config.runtime.state_root) / LATEST_RELEASE_MD),
+        }
+        json_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        (_release_root(config.runtime.state_root) / LATEST_RELEASE_JSON).write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        refresh_artifact_index(config.runtime.state_root)
+        _sync_release_approval_state(config.runtime.state_root)
+        _notify_verification_event(
+            config,
+            event="VERIFICATION_PASS" if ready else "VERIFICATION_FAIL",
+            commit=build_info["git_commit"],
+            status="PASS" if ready else "FAIL",
+            error_summary=None if ready else artifact["failure_reason"],
+            failing_step=None if ready else (failing_checks[0] if failing_checks else "verification"),
+            extra_lines=[
+                f"Environment: {config.app.environment}",
+                f"Release Artifact: {artifact['artifact_paths']['latest_json']}",
+            ],
+        )
+        return artifact
+    except Exception as exc:
+        if notify_exception:
+            _notify_verification_event(
+                config,
+                event="EXCEPTION_CRASH",
+                commit=build_info["git_commit"],
+                status="FAIL",
+                error_summary=str(exc),
+                failing_step="build_release_readiness",
+                extra_lines=["Context: verification"],
+            )
+        raise
 
 
 def refresh_release_readiness_diagnostics(config: ControlTowerConfig) -> dict[str, Any] | None:
@@ -562,6 +595,29 @@ def load_latest_release_readiness(state_root: Path) -> dict[str, Any] | None:
     if not latest_path.exists():
         return None
     return json.loads(latest_path.read_text(encoding="utf-8"))
+
+
+def _notify_verification_event(
+    config: ControlTowerConfig,
+    *,
+    event: str,
+    commit: str | None,
+    status: str,
+    error_summary: str | None = None,
+    failing_step: str | None = None,
+    extra_lines: list[str] | None = None,
+) -> None:
+    notify_controltower_event(
+        event,
+        project=config.app.product_name,
+        commit=commit,
+        status=status,
+        error_summary=error_summary,
+        failing_step=failing_step,
+        runtime_root=config.runtime.state_root,
+        extra_fields={"environment": config.app.environment},
+        extra_lines=extra_lines,
+    )
 
 
 def write_release_readiness_artifacts(state_root: Path, artifact: dict[str, Any]) -> tuple[Path, Path]:

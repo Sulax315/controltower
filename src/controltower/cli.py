@@ -12,7 +12,9 @@ from controltower.acceptance.harness import run_acceptance
 from controltower.api.app import create_app
 from controltower.config import load_config
 from controltower.services.approval_ingest import ingest_approval_inbox, sync_pending_release_approval
+from controltower.services.build_info import current_build_info
 from controltower.services.controltower import ControlTowerService
+from controltower.services.notifications import notify_controltower_event
 from controltower.services.operations import (
     run_daily,
     run_diagnostics_snapshot,
@@ -22,6 +24,7 @@ from controltower.services.operations import (
     run_weekly,
 )
 from controltower.services.orchestration import OrchestrationService
+from controltower.services.prompt_orchestration import orchestrate_next_prompt
 from controltower.services.release import build_release_readiness
 from controltower.services.signal_receive_adapter import adapt_signal_receive_text
 
@@ -143,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Consume file-based inbound approval messages from ops/orchestration/inbox.",
     )
     approval_ingest.add_argument("--orchestration-root", type=Path, default=None)
+    prompt_orchestration = subparsers.add_parser(
+        "prompt-orchestrate-next",
+        help="Generate the machine-usable next prompt artifact from current approval, release, and Obsidian context.",
+    )
+    prompt_orchestration.add_argument("--orchestration-root", type=Path, default=None)
     signal_receive = subparsers.add_parser(
         "approval-adapt-signal-receive",
         help="Convert one-shot signal-cli receive payloads into inbox files for the existing approval ingest loop.",
@@ -159,7 +167,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    try:
+        return _run_main(args, parser)
+    except Exception as exc:
+        _notify_cli_exception(args, exc)
+        raise
 
+
+def _run_main(args, parser: argparse.ArgumentParser) -> int:
     if args.command == "preflight":
         result = run_preflight(config_path=args.config, retention_dry_run=args.retention_dry_run)
         print(json.dumps(result, indent=2))
@@ -196,9 +211,11 @@ def main() -> int:
 
     if args.command == "approval-sync-release":
         try:
+            config = load_config(args.config) if args.config or _default_config_path() else None
             result = sync_pending_release_approval(
                 status_path=args.status_path,
                 orchestration_root=args.orchestration_root,
+                config=config,
             )
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
             print(json.dumps({"status": "error", "message": str(exc)}, indent=2))
@@ -207,7 +224,14 @@ def main() -> int:
         return 0
 
     if args.command == "approval-ingest":
-        result = ingest_approval_inbox(orchestration_root=args.orchestration_root)
+        config = load_config(args.config) if args.config or _default_config_path() else None
+        result = ingest_approval_inbox(orchestration_root=args.orchestration_root, config=config)
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "prompt-orchestrate-next":
+        config = load_config(args.config)
+        result = orchestrate_next_prompt(config, orchestration_root=args.orchestration_root)
         print(json.dumps(result, indent=2))
         return 0
 
@@ -421,6 +445,24 @@ def _review_action_payload(result) -> dict[str, object]:
         "trigger_emitted": result.trigger_emitted,
         "review": result.review.model_dump(mode="json") if result.review is not None else None,
     }
+
+
+def _notify_cli_exception(args, exc: Exception) -> None:
+    try:
+        config = load_config(args.config) if getattr(args, "config", None) else None
+    except Exception:
+        config = None
+    build_info = current_build_info()
+    notify_controltower_event(
+        "EXCEPTION_CRASH",
+        project=config.app.product_name if config is not None else "Control Tower",
+        commit=build_info["git_commit"],
+        status="FAIL",
+        error_summary=str(exc),
+        failing_step=getattr(args, "command", None) or "cli",
+        runtime_root=config.runtime.state_root if config is not None else None,
+        extra_lines=[f"CLI Command: {getattr(args, 'command', None) or 'unknown'}"],
+    )
 
 
 def _execution_result_payload(orchestration: OrchestrationService, args) -> dict[str, object]:

@@ -23,6 +23,13 @@ obsidian:
   rolling_portfolio_note_name: "Portfolio Weekly Summary"
   rolling_project_brief_name: "Weekly Brief"
   canonical_dossier_suffix: "Dossier"
+  continuity_root: ./20 Control Tower
+  checkout_notes:
+    - active_control.md
+    - supplement.md
+  active_control_note: active_control.md
+  session_log_dir: session_logs
+  active_control_section_heading: "## Active Lane Check-In"
 
 runtime:
   state_root: ./.controltower_runtime
@@ -78,3 +85,9 @@ autonomy:
   escalate_high_risk: true
   policy_version: v1
   notify_on_auto_approve: false
+
+prompt_orchestration:
+  enabled: false
+  obsidian_gating_enabled: true
+  model: gpt-5
+  openai_api_key:

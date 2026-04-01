@@ -34,6 +34,35 @@ def test_signal_receive_adapter_writes_file_drop_payload(tmp_path: Path):
     assert written_payload["source_identity"] == "+***4321"
 
 
+def test_signal_receive_adapter_reads_sync_sent_message_payload(tmp_path: Path):
+    orchestration_root = tmp_path / "ops" / "orchestration"
+    payload = json.dumps(
+        {
+            "envelope": {
+                "sourceNumber": "+15557654321",
+                "sourceDevice": 3,
+                "timestamp": 1774960496000,
+                "syncMessage": {
+                    "sentMessage": {
+                        "timestamp": 1774960496123,
+                        "message": "APPROVE release_review_run_2026_03_31",
+                    }
+                },
+            }
+        }
+    )
+
+    result = adapt_signal_receive_text(payload, orchestration_root=orchestration_root)
+
+    assert result["status"] == "ok"
+    assert result["written_file_count"] == 1
+    inbox_file = Path(result["written"][0]["inbox_file"])
+    written_payload = json.loads(inbox_file.read_text(encoding="utf-8"))
+    assert written_payload["message"] == "APPROVE release_review_run_2026_03_31"
+    assert written_payload["timestamp"] == "2026-03-31T12:34:56Z"
+    assert written_payload["message_id"] == "1774960496123"
+
+
 def test_signal_receive_adapter_preserves_file_drop_inbox_flow(tmp_path: Path, monkeypatch):
     orchestration_root = tmp_path / "ops" / "orchestration"
     status_path = _write_release_status(tmp_path)
@@ -73,6 +102,46 @@ def test_cli_signal_receive_adapter_reads_payload_file(tmp_path: Path, monkeypat
             }
         ),
         encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "controltower",
+            "approval-adapt-signal-receive",
+            "--payload-file",
+            str(payload_file),
+            "--orchestration-root",
+            str(orchestration_root),
+        ],
+    )
+
+    assert main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["written_file_count"] == 1
+    assert Path(result["written"][0]["inbox_file"]).exists()
+
+
+def test_cli_signal_receive_adapter_reads_utf8_bom_payload_file(tmp_path: Path, monkeypatch, capsys):
+    orchestration_root = tmp_path / "ops" / "orchestration"
+    payload_file = tmp_path / "signal_receive_bom.jsonl"
+    payload_file.write_text(
+        json.dumps(
+            {
+                "envelope": {
+                    "sourceNumber": "+15557654321",
+                    "timestamp": 1774960496000,
+                    "syncMessage": {
+                        "sentMessage": {
+                            "timestamp": 1774960496123,
+                            "message": "APPROVE release_review_run_2026_03_31",
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8-sig",
     )
 
     monkeypatch.setattr(

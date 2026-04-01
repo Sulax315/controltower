@@ -10,7 +10,7 @@ from controltower.services.approval_ingest import ensure_approval_layout
 
 
 def parse_signal_receive_text(raw_text: str) -> list[Any]:
-    stripped = raw_text.strip()
+    stripped = raw_text.lstrip("\ufeff").strip()
     if not stripped:
         return []
 
@@ -19,7 +19,7 @@ def parse_signal_receive_text(raw_text: str) -> list[Any]:
     except json.JSONDecodeError:
         records: list[Any] = []
         for line_number, line in enumerate(raw_text.splitlines(), start=1):
-            candidate = line.strip()
+            candidate = line.lstrip("\ufeff").strip()
             if not candidate:
                 continue
             try:
@@ -128,6 +128,12 @@ def _envelope(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _message_text(payload: dict[str, Any]) -> str | None:
     envelope = _envelope(payload)
+    sent_message = _sent_message(payload)
+    if isinstance(sent_message, dict):
+        for key in ("message", "body", "text"):
+            value = sent_message.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     data_message = envelope.get("dataMessage")
     if isinstance(data_message, dict):
         for key in ("message", "body", "text"):
@@ -142,7 +148,12 @@ def _message_text(payload: dict[str, Any]) -> str | None:
 
 
 def _message_timestamp(payload: dict[str, Any]) -> str:
-    raw_value = _message_value(payload, "timestamp", "received_at", "sent_at", "message_timestamp")
+    sent_message = _sent_message(payload)
+    raw_value = None
+    if isinstance(sent_message, dict):
+        raw_value = sent_message.get("timestamp")
+    if raw_value is None:
+        raw_value = _message_value(payload, "timestamp", "received_at", "sent_at", "message_timestamp")
     if raw_value is None:
         return utc_now_iso()
     if isinstance(raw_value, str):
@@ -162,7 +173,12 @@ def _timestamp_from_epoch(value: int) -> str:
 
 
 def _message_id(payload: dict[str, Any], *, index: int) -> str:
-    value = _message_value(payload, "message_id", "envelope_id", "timestamp", "id")
+    sent_message = _sent_message(payload)
+    value = None
+    if isinstance(sent_message, dict):
+        value = sent_message.get("timestamp") or sent_message.get("id")
+    if value is None:
+        value = _message_value(payload, "message_id", "envelope_id", "timestamp", "id")
     if value is None:
         return f"signal-receive-{index}"
     return str(value)
@@ -183,6 +199,15 @@ def _message_value(payload: dict[str, Any], *keys: str) -> Any:
         if key in envelope and envelope[key] is not None and envelope[key] != "":
             return envelope[key]
     return None
+
+
+def _sent_message(payload: dict[str, Any]) -> dict[str, Any] | None:
+    envelope = _envelope(payload)
+    sync_message = envelope.get("syncMessage")
+    if not isinstance(sync_message, dict):
+        return None
+    sent_message = sync_message.get("sentMessage")
+    return sent_message if isinstance(sent_message, dict) else None
 
 
 def _mask_phone_like(value: str) -> str:

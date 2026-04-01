@@ -20,6 +20,7 @@ DEFAULT_SIGNAL_TIMEOUT_SECONDS = 15
 DEFAULT_WEBHOOK_TIMEOUT_SECONDS = 10
 DEFAULT_ENV_FILE_NAME = "controltower.env"
 DEFAULT_DELIVERY_ARTIFACT_NAME = "latest_delivery_attempt.json"
+DEFAULT_PROJECT_NAME = "Control Tower"
 
 
 def send_release_notification(status: dict[str, Any], *, status_path: Path | None = None) -> None:
@@ -33,48 +34,15 @@ def send_release_notification(status: dict[str, Any], *, status_path: Path | Non
 
 def format_release_message(status: dict[str, Any]) -> str:
     release_passed = _release_passed(status)
-    title = "Control Tower Release PASS" if release_passed else "Control Tower Release FAIL"
-    lines = [title]
-
-    commit = _commit_from_status(status)
-    if commit:
-        lines.append(f"Commit: {commit}")
-
-    branch = _branch_from_status(status)
-    if branch:
-        lines.append(f"Branch: {branch}")
-
-    if release_passed:
-        stages = _stage_rows(status)
-        if stages:
-            lines.extend(["", "Stages:"])
-            lines.extend(f"- {name}: {_display_status(stage_status)}" for name, stage_status in stages)
-        live_url = _live_url(status)
-        if live_url:
-            lines.extend(["", "Live:", live_url])
-        if _awaiting_approval(status):
-            lines.extend(["", "Awaiting approval before next step"])
-        next_action = _next_action(status, release_passed=release_passed)
-        if next_action:
-            lines.extend(["", "Next:", next_action])
-        return "\n".join(lines)
-
-    failed_stage = _failed_stage(status)
-    if failed_stage:
-        lines.extend(["", "Failed Stage:", failed_stage])
-
-    reason = _failure_reason(status)
-    if reason:
-        lines.extend(["", "Reason:", reason])
-
-    if _awaiting_approval(status):
-        lines.extend(["", "Awaiting approval before next step"])
-
-    action = _next_action(status, release_passed=release_passed)
-    if action:
-        lines.extend(["", "Action:", action])
-
-    return "\n".join(lines)
+    return format_controltower_event_message(
+        event="RELEASE_SUCCESS" if release_passed else "RELEASE_FAILURE",
+        project=_project_from_status(status),
+        commit=_commit_from_status(status),
+        status="PASS" if release_passed else "FAIL",
+        error_summary=None if release_passed else _failure_reason(status),
+        failing_step=None if release_passed else _failed_stage(status),
+        extra_lines=_release_context_lines(status, release_passed=release_passed),
+    )
 
 
 def notify_release_status_file(status_path: Path) -> None:
@@ -98,6 +66,110 @@ def send_operator_notification(message: str, *, status: dict[str, Any] | None = 
         LOGGER.warning("Operator notification via %s failed: %s", channel, _mask_sensitive_text(str(exc)))
 
 
+def format_controltower_event_message(
+    *,
+    event: str,
+    project: str,
+    commit: str | None = None,
+    status: str,
+    error_summary: str | None = None,
+    failing_step: str | None = None,
+    instruction: str | None = None,
+    extra_lines: list[str] | None = None,
+) -> str:
+    lines = [
+        "[CONTROL TOWER]",
+        f"Event: {str(event).strip().upper() or 'UNKNOWN'}",
+        f"Project: {project.strip() or DEFAULT_PROJECT_NAME}",
+        f"Commit: {_short_commit(commit)}",
+        f"Status: {status.strip().upper() or 'UNKNOWN'}",
+    ]
+    if error_summary:
+        lines.append(f"Error Summary: {str(error_summary).strip()}")
+    if failing_step:
+        lines.append(f"Failing Step: {str(failing_step).strip()}")
+    if instruction:
+        lines.append(f"Instruction: {str(instruction).strip()}")
+    for line in extra_lines or []:
+        stripped = str(line).strip()
+        if stripped:
+            lines.append(stripped)
+    return "\n".join(lines)
+
+
+def notify_controltower_event(
+    event: str,
+    *,
+    project: str = DEFAULT_PROJECT_NAME,
+    commit: str | None = None,
+    status: str = "INFO",
+    error_summary: str | None = None,
+    failing_step: str | None = None,
+    instruction: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+    extra_lines: list[str] | None = None,
+    status_path: Path | None = None,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "event": str(event).strip().upper(),
+        "project": project.strip() or DEFAULT_PROJECT_NAME,
+        "commit": _short_commit(commit),
+        "status": status.strip().upper() or "UNKNOWN",
+        "error_summary": error_summary,
+        "failing_step": failing_step,
+        "instruction": instruction,
+    }
+    if extra_fields:
+        payload.update(extra_fields)
+    message = format_controltower_event_message(
+        event=payload["event"],
+        project=payload["project"],
+        commit=payload["commit"],
+        status=payload["status"],
+        error_summary=error_summary,
+        failing_step=failing_step,
+        instruction=instruction,
+        extra_lines=extra_lines,
+    )
+    artifact_path = delivery_artifact_path(environ=os.environ, status_path=status_path, runtime_root=runtime_root)
+    LOGGER.info(
+        "Sending Control Tower notification event=%s project=%s status=%s.",
+        payload["event"],
+        payload["project"],
+        payload["status"],
+    )
+    try:
+        dispatch_notification_message(
+            message,
+            status=payload,
+            status_path=status_path,
+            runtime_root=runtime_root,
+        )
+    except Exception as exc:  # pragma: no cover - exercised through callers
+        channel = _selected_channel(os.environ)
+        LOGGER.warning(
+            "Control Tower notification event=%s via %s failed: %s",
+            payload["event"],
+            channel,
+            _mask_sensitive_text(str(exc)),
+        )
+    delivery = _read_delivery_artifact(artifact_path)
+    LOGGER.info(
+        "Control Tower notification event=%s delivery_state=%s success=%s artifact=%s",
+        payload["event"],
+        (delivery or {}).get("delivery_state"),
+        (delivery or {}).get("success"),
+        artifact_path,
+    )
+    return {
+        "event": payload["event"],
+        "message": message,
+        "artifact_path": str(artifact_path),
+        "delivery": delivery,
+    }
+
+
 def dispatch_notification_message(
     message: str,
     *,
@@ -105,6 +177,7 @@ def dispatch_notification_message(
     environ: dict[str, str] | None = None,
     require_channel: str | None = None,
     status_path: Path | None = None,
+    runtime_root: Path | None = None,
 ) -> str:
     current_environ = os.environ if environ is None else environ
     if environ is None:
@@ -116,6 +189,8 @@ def dispatch_notification_message(
         environ=current_environ,
         require_channel=require_channel,
         signal_config=signal_config,
+        status=status,
+        message=message,
     )
     LOGGER.info("Dispatching notification via %s.", channel)
     try:
@@ -140,9 +215,9 @@ def dispatch_notification_message(
             signal_config=signal_config,
         )
         attempt["failure_reason"] = _mask_sensitive_text(str(exc))
-        _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path)
+        _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path, runtime_root=runtime_root)
         raise
-    _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path)
+    _write_delivery_artifact(attempt, environ=current_environ, status_path=status_path, runtime_root=runtime_root)
     return channel
 
 
@@ -178,14 +253,15 @@ def delivery_artifact_path(
     environ: dict[str, str] | None = None,
     *,
     status_path: Path | None = None,
+    runtime_root: Path | None = None,
 ) -> Path:
     current_environ = os.environ if environ is None else environ
     explicit = _env_value(current_environ, "CONTROLTOWER_NOTIFICATION_ARTIFACT_PATH")
     if explicit:
         return Path(explicit)
 
-    runtime_root = _runtime_root_for_delivery(current_environ, status_path=status_path)
-    return runtime_root / "notifications" / DEFAULT_DELIVERY_ARTIFACT_NAME
+    resolved_runtime_root = _runtime_root_for_delivery(current_environ, status_path=status_path, runtime_root=runtime_root)
+    return resolved_runtime_root / "notifications" / DEFAULT_DELIVERY_ARTIFACT_NAME
 
 
 def load_notification_environment(
@@ -375,6 +451,17 @@ def _awaiting_approval(status: dict[str, Any]) -> bool:
     return bool(status.get("awaiting_approval"))
 
 
+def _project_from_status(status: dict[str, Any]) -> str:
+    product = status.get("product") or {}
+    if isinstance(product, dict):
+        for key in ("name", "product_name"):
+            if value := product.get(key):
+                return str(value)
+    if value := status.get("project"):
+        return str(value)
+    return DEFAULT_PROJECT_NAME
+
+
 def _commit_from_status(status: dict[str, Any]) -> str | None:
     product = status.get("product") or {}
     if isinstance(product, dict) and product.get("git_commit"):
@@ -413,6 +500,23 @@ def _live_url(status: dict[str, Any]) -> str | None:
     if isinstance(deployment, dict) and deployment.get("public_base_url"):
         return str(deployment["public_base_url"])
     return None
+
+
+def _release_context_lines(status: dict[str, Any], *, release_passed: bool) -> list[str]:
+    lines: list[str] = []
+    if branch := _branch_from_status(status):
+        lines.append(f"Branch: {branch}")
+    if release_passed:
+        if live_url := _live_url(status):
+            lines.append(f"Live URL: {live_url}")
+        if next_action := _next_action(status, release_passed=True):
+            lines.append(f"Next Action: {next_action}")
+    else:
+        if next_action := _next_action(status, release_passed=False):
+            lines.append(f"Recommended Action: {next_action}")
+    if _awaiting_approval(status):
+        lines.append("Approval State: awaiting_approval")
+    return lines
 
 
 def _stage_status(stage: Any) -> str:
@@ -493,6 +597,8 @@ def _delivery_attempt_record(
     environ: dict[str, str],
     require_channel: str | None,
     signal_config: dict[str, Any],
+    status: dict[str, Any] | None,
+    message: str,
 ) -> dict[str, Any]:
     selected_channel = require_channel or channel
     configuration_present = False
@@ -515,6 +621,10 @@ def _delivery_attempt_record(
         "command_path": command_path,
         "sender": sender,
         "recipient": recipient,
+        "event": (status or {}).get("event"),
+        "project": (status or {}).get("project"),
+        "notification_status": (status or {}).get("status"),
+        "message_preview": _message_preview(message),
         "success": False,
         "delivery_state": "pending",
         "failure_reason": None,
@@ -526,14 +636,22 @@ def _write_delivery_artifact(
     *,
     environ: dict[str, str],
     status_path: Path | None,
+    runtime_root: Path | None,
 ) -> Path:
-    artifact_path = delivery_artifact_path(environ, status_path=status_path)
+    artifact_path = delivery_artifact_path(environ, status_path=status_path, runtime_root=runtime_root)
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return artifact_path
 
 
-def _runtime_root_for_delivery(environ: dict[str, str], *, status_path: Path | None) -> Path:
+def _runtime_root_for_delivery(
+    environ: dict[str, str],
+    *,
+    status_path: Path | None,
+    runtime_root: Path | None,
+) -> Path:
+    if runtime_root is not None:
+        return Path(runtime_root)
     if status_path is not None:
         resolved_status_path = Path(status_path).resolve()
         if resolved_status_path.parent.name == "release":
@@ -546,6 +664,26 @@ def _runtime_root_for_delivery(environ: dict[str, str], *, status_path: Path | N
         return Path(runtime_root)
     repo_root = Path(__file__).resolve().parents[3]
     return repo_root / ".controltower_runtime"
+
+
+def _read_delivery_artifact(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _message_preview(message: str, *, limit: int = 200) -> str:
+    normalized = " ".join(message.split())
+    return normalized[:limit]
+
+
+def _short_commit(commit: str | None) -> str:
+    value = str(commit or "").strip()
+    return value[:7] if value else "unknown"
 
 
 def _mask_phone_number(value: str | None) -> str | None:

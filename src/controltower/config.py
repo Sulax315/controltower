@@ -51,6 +51,27 @@ class ObsidianConfig(BaseModel):
     rolling_portfolio_note_name: str = "Portfolio Weekly Summary"
     rolling_project_brief_name: str = "Weekly Brief"
     canonical_dossier_suffix: str = "Dossier"
+    continuity_root: Path | None = None
+    checkout_notes: list[str] = Field(default_factory=lambda: ["active_control.md"])
+    active_control_note: str = "active_control.md"
+    session_log_dir: str = "session_logs"
+    active_control_section_heading: str = "## Active Lane Check-In"
+
+    @model_validator(mode="after")
+    def normalize_continuity(self) -> "ObsidianConfig":
+        if self.continuity_root is None:
+            self.continuity_root = self.vault_root / "20 Control Tower"
+        normalized_notes = [str(item).strip().replace("\\", "/") for item in self.checkout_notes if str(item).strip()]
+        if not normalized_notes:
+            normalized_notes = [self.active_control_note]
+        active_control_note = str(self.active_control_note).strip().replace("\\", "/") or "active_control.md"
+        if active_control_note not in normalized_notes:
+            normalized_notes.insert(0, active_control_note)
+        self.checkout_notes = normalized_notes[:5]
+        self.active_control_note = active_control_note
+        self.session_log_dir = str(self.session_log_dir).strip().replace("\\", "/") or "session_logs"
+        self.active_control_section_heading = str(self.active_control_section_heading).strip() or "## Active Lane Check-In"
+        return self
 
 
 class RetentionConfig(BaseModel):
@@ -149,6 +170,13 @@ class AutonomyConfig(BaseModel):
     notify_on_auto_approve: bool = False
 
 
+class PromptOrchestrationConfig(BaseModel):
+    enabled: bool = False
+    obsidian_gating_enabled: bool = True
+    model: str = "gpt-5"
+    openai_api_key: str | None = None
+
+
 class AppConfig(BaseModel):
     product_name: str = "Control Tower"
     environment: str = "local"
@@ -167,6 +195,7 @@ class ControlTowerConfig(BaseModel):
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
+    prompt_orchestration: PromptOrchestrationConfig = Field(default_factory=PromptOrchestrationConfig)
 
     @model_validator(mode="after")
     def normalize_paths(self) -> "ControlTowerConfig":
@@ -179,6 +208,7 @@ class ControlTowerConfig(BaseModel):
             self.sources.schedulelab.published_root,
             self.sources.profitintel.database_path,
             self.obsidian.vault_root,
+            self.obsidian.continuity_root,
             self.runtime.state_root,
         ]:
             path_value.parent.mkdir(parents=True, exist_ok=True)
@@ -231,6 +261,9 @@ def _resolve_payload_paths(payload: dict[str, Any], base_dir: Path) -> dict[str,
         identity["registry_path"] = _resolve_path(identity.get("registry_path"), base_dir)
     if "vault_root" in obsidian:
         obsidian["vault_root"] = _resolve_path(obsidian.get("vault_root"), base_dir)
+    if "continuity_root" in obsidian:
+        vault_root = _resolve_path(obsidian.get("vault_root"), base_dir)
+        obsidian["continuity_root"] = _resolve_path(obsidian.get("continuity_root"), vault_root or base_dir)
     if "state_root" in runtime:
         runtime["state_root"] = _resolve_path(runtime.get("state_root"), base_dir)
     if "file_dir" in execution:
@@ -266,6 +299,7 @@ def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
     review = dict(copied.get("review") or {})
     auth = dict(copied.get("auth") or {})
     autonomy = dict(copied.get("autonomy") or {})
+    prompt_orchestration = dict(copied.get("prompt_orchestration") or {})
 
     if value := os.getenv("CONTROLTOWER_PUBLIC_BASE_URL") or os.getenv("CODEX_PUBLIC_BASE_URL"):
         app["public_base_url"] = value
@@ -330,11 +364,25 @@ def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
     if (value := _env_bool("CODEX_NOTIFY_ON_AUTO_APPROVE")) is not None:
         autonomy["notify_on_auto_approve"] = value
 
+    if value := os.getenv("OPENAI_API_KEY") or os.getenv("CONTROLTOWER_OPENAI_API_KEY"):
+        prompt_orchestration["openai_api_key"] = value
+    if value := os.getenv("CONTROLTOWER_ORCHESTRATION_MODEL") or os.getenv("CODEX_ORCHESTRATION_MODEL"):
+        prompt_orchestration["model"] = value.strip() or "gpt-5"
+    if (value := _env_bool("CONTROLTOWER_PROMPT_ORCHESTRATION_ENABLED")) is not None:
+        prompt_orchestration["enabled"] = value
+    elif (value := _env_bool("CODEX_PROMPT_ORCHESTRATION_ENABLED")) is not None:
+        prompt_orchestration["enabled"] = value
+    if (value := _env_bool("CONTROLTOWER_OBSIDIAN_GATING_ENABLED")) is not None:
+        prompt_orchestration["obsidian_gating_enabled"] = value
+    elif (value := _env_bool("CODEX_OBSIDIAN_GATING_ENABLED")) is not None:
+        prompt_orchestration["obsidian_gating_enabled"] = value
+
     copied["app"] = app
     copied["execution"] = execution
     copied["review"] = review
     copied["auth"] = auth
     copied["autonomy"] = autonomy
+    copied["prompt_orchestration"] = prompt_orchestration
     return copied
 
 

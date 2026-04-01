@@ -28,7 +28,9 @@ from controltower.domain.models import (
     ReviewRun,
     utc_now_iso,
 )
+from controltower.obsidian.continuity import ObsidianContinuityError, ObsidianLaneCheckin, write_lane_checkin
 from controltower.services.autonomy_policy import PolicyEvaluationInput, evaluate_review_policy
+from controltower.services.notifications import notify_controltower_event
 from controltower.services.runtime_state import read_json, write_json
 
 
@@ -317,6 +319,15 @@ class OrchestrationService:
             )
             review = self._write_closeout(review)
             review = self._write_continuity(review)
+            review = self._emit_lifecycle_notification(
+                review,
+                event="RELEASE_FAILURE",
+                status="FAIL",
+                error_summary=validation_message,
+                failing_step="pack_validation",
+                audit_event_type="release_failure_notification",
+                audit_message="Release failure notification dispatched after pack validation blocked execution.",
+            )
             self._write_review(review)
             return ReviewActionResult(
                 status="validation_failed",
@@ -370,6 +381,15 @@ class OrchestrationService:
             )
             review = self._write_closeout(review)
             review = self._write_continuity(review)
+            review = self._emit_lifecycle_notification(
+                review,
+                event="RELEASE_FAILURE",
+                status="FAIL",
+                error_summary=guard_message,
+                failing_step="pack_guard",
+                audit_event_type="release_failure_notification",
+                audit_message="Release failure notification dispatched after guarded execution policy blocked the run.",
+            )
             self._write_review(review)
             return ReviewActionResult(
                 status="dispatch_blocked",
@@ -377,6 +397,14 @@ class OrchestrationService:
                 review=review,
             )
 
+        review = self._emit_lifecycle_notification(
+            review,
+            event="RELEASE_START",
+            status="STARTED",
+            audit_event_type="release_start_notification",
+            audit_message="Release start notification dispatched after approval and before downstream trigger emission.",
+        )
+        self._write_review(review)
         try:
             trigger = self._emit_trigger(review)
         except TriggerEmissionError as exc:
@@ -426,6 +454,15 @@ class OrchestrationService:
             )
             review = self._write_closeout(review)
             review = self._write_continuity(review)
+            review = self._emit_lifecycle_notification(
+                review,
+                event="RELEASE_FAILURE",
+                status="FAIL",
+                error_summary=str(exc),
+                failing_step="trigger_emission",
+                audit_event_type="release_failure_notification",
+                audit_message="Release failure notification dispatched after trigger emission failed.",
+            )
             self._write_review(review)
             return ReviewActionResult(
                 status="trigger_failed",
@@ -759,6 +796,8 @@ class OrchestrationService:
                     title="Control Tower Run Auto-Approved",
                     body="Low-risk run auto-approved through deterministic policy and fully audited.",
                     signal_level="quiet",
+                    event="AUTO_APPROVED",
+                    status="PASS",
                     event_type="notification_sent",
                 )
             return self._record_notification(
@@ -766,6 +805,8 @@ class OrchestrationService:
                 title="Control Tower Run Auto-Approved",
                 body="Auto-approved runs can suppress operator notification when configured to stay quiet.",
                 signal_level="quiet",
+                event="AUTO_APPROVED",
+                status="PASS",
                 suppressed=True,
             )
 
@@ -781,6 +822,10 @@ class OrchestrationService:
                 title="Control Tower Run Escalated",
                 body="High-risk or critical scope detected. Operator review should treat this run as escalated.",
                 signal_level="high",
+                event="APPROVAL_REQUIRED",
+                status="ACTION_REQUIRED",
+                instruction="Reply YES to approve or NO to reject",
+                extra_lines=[f"State: {review.state}", f"Risk Level: {review.risk_level}"],
                 event_type="notification_sent",
             )
 
@@ -789,6 +834,10 @@ class OrchestrationService:
             title="Control Tower Run Ready for Review",
             body="Deterministic policy kept this completed run in manual review.",
             signal_level="normal",
+            event="APPROVAL_REQUIRED",
+            status="ACTION_REQUIRED",
+            instruction="Reply YES to approve or NO to reject",
+            extra_lines=[f"State: {review.state}", f"Risk Level: {review.risk_level}"],
             event_type="notification_sent",
         )
 
@@ -1151,8 +1200,59 @@ class OrchestrationService:
                 "result_path": str(result_path),
             },
         )
+        checkin_failure: ReviewFailure | None = None
+        if self.config.prompt_orchestration.enabled:
+            try:
+                review = self._write_obsidian_strategic_checkin(review)
+            except ObsidianContinuityError as exc:
+                if self.config.prompt_orchestration.obsidian_gating_enabled:
+                    checkin_failure = ReviewFailure(
+                        recorded_at=utc_now_iso(),
+                        phase="obsidian_checkin",
+                        message=str(exc),
+                        details={"run_id": review.run_id},
+                    )
+                    review = review.model_copy(update={"state": "failed", "last_error": checkin_failure})
+                    review = self._append_audit(
+                        review,
+                        event_type="obsidian_checkin_failed",
+                        message="Lane closeout was blocked because the Obsidian strategic check-in did not complete.",
+                        request_id=review.reviewer.request_id,
+                        correlation_id=review.reviewer.correlation_id,
+                        details={"error": str(exc)},
+                    )
+                else:
+                    review = self._append_audit(
+                        review,
+                        event_type="obsidian_checkin_bypassed",
+                        message="Obsidian strategic check-in failed, but closeout continued because the gate is disabled.",
+                        request_id=review.reviewer.request_id,
+                        correlation_id=review.reviewer.correlation_id,
+                        details={"error": str(exc)},
+                    )
         review = self._write_closeout(review)
         review = self._write_continuity(review)
+        review = self._emit_lifecycle_notification(
+            review,
+            event="RELEASE_SUCCESS" if status == "succeeded" and checkin_failure is None else "RELEASE_FAILURE",
+            status="PASS" if status == "succeeded" and checkin_failure is None else "FAIL",
+            error_summary=(
+                None
+                if status == "succeeded" and checkin_failure is None
+                else (
+                    checkin_failure.message
+                    if checkin_failure is not None
+                    else (result_record["summary"] or result_record["logs_excerpt"])
+                )
+            ),
+            failing_step=None if status == "succeeded" and checkin_failure is None else (checkin_failure.phase if checkin_failure else "execution_result"),
+            extra_lines=[
+                f"Downstream Status: {status}",
+                f"External Reference: {result_record['external_reference'] or 'unavailable'}",
+            ],
+            audit_event_type="release_outcome_notification",
+            audit_message="Release outcome notification dispatched after downstream execution closeout was recorded.",
+        )
         self._write_review(review)
         return review
 
@@ -1819,6 +1919,8 @@ class OrchestrationService:
         return self._replace_decision_artifact(review, markdown_artifact)
 
     def _closeout_status(self, review: ReviewRun) -> str:
+        if review.last_error is not None and review.last_error.phase == "obsidian_checkin":
+            return "failed"
         if review.execution_result.status in {"succeeded", "failed", "partial"}:
             return review.execution_result.status
         if review.trigger.status in {"blocked", "validation_failed", "failed"} or review.trigger.delivery_status == "dead_lettered":
@@ -1826,6 +1928,8 @@ class OrchestrationService:
         return "pending"
 
     def _closeout_summary(self, review: ReviewRun) -> str:
+        if review.last_error is not None and review.last_error.phase == "obsidian_checkin":
+            return review.last_error.message
         if review.execution_result.summary:
             return review.execution_result.summary
         if review.execution_pack.validation_status != "valid":
@@ -1921,10 +2025,12 @@ class OrchestrationService:
         review = self._replace_decision_artifact(review, artifact)
         review = review.model_copy(
             update={
-                "continuity": ReviewContinuityRecord(
-                    written_at=written_at,
-                    runtime_markdown_path=str(runtime_path),
-                    vault_markdown_path=str(vault_path),
+                "continuity": review.continuity.model_copy(
+                    update={
+                        "written_at": written_at,
+                        "runtime_markdown_path": str(runtime_path),
+                        "vault_markdown_path": str(vault_path),
+                    }
                 )
             }
         )
@@ -1934,6 +2040,110 @@ class OrchestrationService:
             message="Continuity markdown updated for operator history and Obsidian ingestion.",
             details={"runtime_path": str(runtime_path), "vault_path": str(vault_path)},
         )
+
+    def _write_obsidian_strategic_checkin(self, review: ReviewRun) -> ReviewRun:
+        checkin_payload = ObsidianLaneCheckin(
+            run_id=review.run_id,
+            lane_summary=review.execution_result.summary or review.summary,
+            files_or_surfaces_changed=self._changed_surfaces(review),
+            release_result=self._release_result_line(review),
+            approval_result=self._approval_result_line(review),
+            open_risks=self._open_risks(review),
+            next_recommended_lane=self._next_recommended_lane(review),
+            strategic_alignment_note=self._strategic_alignment_note(review),
+            completed_at=review.execution_result.completed_at or review.execution_result.recorded_at,
+        )
+        try:
+            result = write_lane_checkin(
+                continuity_root=Path(self.config.obsidian.continuity_root),
+                active_control_note=self.config.obsidian.active_control_note,
+                session_log_dir=self.config.obsidian.session_log_dir,
+                active_control_section_heading=self.config.obsidian.active_control_section_heading,
+                payload=checkin_payload,
+            )
+        except OSError as exc:
+            raise ObsidianContinuityError(f"Obsidian strategic check-in write failed: {exc}") from exc
+
+        review = review.model_copy(
+            update={
+                "continuity": review.continuity.model_copy(
+                    update={
+                        "strategic_checkin_written_at": result.written_at,
+                        "session_log_note_path": result.session_log_path,
+                        "active_control_note_path": result.active_control_note_path,
+                    }
+                )
+            }
+        )
+        return self._append_audit(
+            review,
+            event_type="obsidian_checkin_written",
+            message="Structured Obsidian strategic check-in was written for lane closeout.",
+            request_id=review.reviewer.request_id,
+            correlation_id=review.reviewer.correlation_id,
+            details={
+                "session_log_path": result.session_log_path,
+                "active_control_note_path": result.active_control_note_path,
+            },
+        )
+
+    def _changed_surfaces(self, review: ReviewRun) -> list[str]:
+        surfaces: list[str] = []
+        for artifact in review.execution_result.output_artifacts:
+            candidate = artifact.path or artifact.external_url
+            if candidate:
+                surfaces.append(candidate)
+        for artifact in review.artifacts:
+            if artifact.source_path:
+                surfaces.append(artifact.source_path)
+            elif artifact.path:
+                surfaces.append(artifact.path)
+        deduped: list[str] = []
+        for item in surfaces:
+            if item not in deduped:
+                deduped.append(item)
+        return deduped or ["No changed files or surfaces were reported by the lane artifacts."]
+
+    def _release_result_line(self, review: ReviewRun) -> str:
+        summary = review.execution_result.summary or review.execution_result.logs_excerpt or "No downstream summary was recorded."
+        return f"{review.execution_result.status}: {summary}"
+
+    def _approval_result_line(self, review: ReviewRun) -> str:
+        return (
+            f"{review.reviewer.reviewer_action or review.state} | "
+            f"pack={review.execution_pack.pack_type} | provider={review.trigger.provider}"
+        )
+
+    def _open_risks(self, review: ReviewRun) -> list[str]:
+        risks: list[str] = []
+        if review.execution_result.status in {"failed", "partial"}:
+            risks.append(review.execution_result.summary or "Downstream execution did not complete cleanly.")
+        if review.last_error is not None:
+            risks.append(review.last_error.message)
+        risks.extend(review.execution_pack.validation_errors)
+        risks.extend(review.execution_pack.guard_reasons)
+        if review.trigger.last_error:
+            risks.append(review.trigger.last_error)
+        deduped: list[str] = []
+        for item in risks:
+            normalized = str(item).strip()
+            if normalized and normalized not in deduped:
+                deduped.append(normalized)
+        return deduped
+
+    def _next_recommended_lane(self, review: ReviewRun) -> str:
+        if review.last_error is not None and review.last_error.phase == "obsidian_checkin":
+            return "Repair the Obsidian strategic check-in paths, then re-run lane closeout without expanding scope."
+        if review.execution_result.status == "succeeded":
+            return "Refresh the Obsidian checkout bundle and generate the next prompt from the updated release and approval artifacts."
+        return "Repair the failing lane within the existing Control Tower architecture, re-close the lane, and then regenerate the next prompt."
+
+    def _strategic_alignment_note(self, review: ReviewRun) -> str:
+        if review.last_error is not None and review.last_error.phase == "obsidian_checkin":
+            return "The lane result exists, but strategic continuity is not authoritative until the Obsidian check-in gate is satisfied."
+        if review.execution_result.status == "succeeded":
+            return "The lane stayed within the approved execution path and produced a bounded closeout for the next strategic checkout."
+        return "The lane did not meet the acceptance bar cleanly, so the next step should remain a repair lane instead of widening scope."
 
     def _render_continuity_markdown(self, review: ReviewRun, *, runtime_path: Path, vault_path: Path) -> str:
         approved_next_prompt = review.reviewer.approved_next_prompt or review.proposed_next_prompt
@@ -2044,6 +2254,8 @@ class OrchestrationService:
                 f"- Closeout Markdown: {closeout_markdown}",
                 f"- Continuity Runtime Path: {runtime_path}",
                 f"- Continuity Vault Path: {vault_path}",
+                f"- Strategic Session Log Note: {review.continuity.session_log_note_path or 'Not written'}",
+                f"- Active Control Note: {review.continuity.active_control_note_path or 'Not written'}",
                 "",
                 "## Trigger Result",
                 "",
@@ -2233,6 +2445,12 @@ class OrchestrationService:
         title: str,
         body: str,
         signal_level: str,
+        event: str,
+        status: str,
+        instruction: str | None = None,
+        error_summary: str | None = None,
+        failing_step: str | None = None,
+        extra_lines: list[str] | None = None,
         event_type: str | None = None,
         suppressed: bool = False,
     ) -> ReviewRun:
@@ -2251,41 +2469,83 @@ class OrchestrationService:
                 message="Operator notification was intentionally suppressed for this policy outcome.",
                 details={"notification_status": notification.status, "signal_level": signal_level},
             )
-        notification = self._send_notification(review, title=title, body=body, signal_level=signal_level)
+        notification = self._send_notification(
+            review,
+            title=title,
+            body=body,
+            signal_level=signal_level,
+            event=event,
+            status=status,
+            instruction=instruction,
+            error_summary=error_summary,
+            failing_step=failing_step,
+            extra_lines=extra_lines,
+        )
         review = review.model_copy(update={"notification": notification})
         return self._append_audit(
             review,
             event_type=event_type or "notification_sent",
             message="Review notification recorded.",
             details={
+                "event": event,
+                "status": status,
                 "notification_status": notification.status,
                 "provider": notification.provider,
                 "signal_level": notification.signal_level,
             },
         )
 
-    def _send_notification(self, review: ReviewRun, *, title: str, body: str, signal_level: str) -> ReviewNotification:
-        provider = self.config.notifications.provider
-        if provider != "runtime_log":
-            return ReviewNotification(
-                provider=provider,
-                status="failed",
-                signal_level=signal_level,
-                title=title,
-                body=body,
-            )
-
+    def _send_notification(
+        self,
+        review: ReviewRun,
+        *,
+        title: str,
+        body: str,
+        signal_level: str,
+        event: str,
+        status: str,
+        instruction: str | None = None,
+        error_summary: str | None = None,
+        failing_step: str | None = None,
+        extra_lines: list[str] | None = None,
+    ) -> ReviewNotification:
         sent_at = utc_now_iso()
         notification_id = f"notification_{sent_at.replace(':', '-')}"
+        result = notify_controltower_event(
+            event,
+            project=self.config.app.product_name,
+            commit=self._git_commit(),
+            status=status,
+            error_summary=error_summary,
+            failing_step=failing_step,
+            instruction=instruction,
+            runtime_root=self.config.runtime.state_root,
+            extra_fields={
+                "run_id": review.run_id,
+                "review_url": review.review_url,
+                "signal_level": signal_level,
+            },
+            extra_lines=(extra_lines or []) + [f"Run ID: {review.run_id}", f"Review URL: {review.review_url}"],
+        )
+        delivery = result.get("delivery") if isinstance(result.get("delivery"), dict) else {}
+        provider = str(delivery.get("selected_channel") or self.config.notifications.provider)
+        notification_status = "sent" if delivery.get("success") is True else "failed"
         record = {
             "notification_id": notification_id,
             "provider": provider,
+            "event": event,
+            "status": status,
             "title": title,
             "body": body,
+            "instruction": instruction,
+            "error_summary": error_summary,
+            "failing_step": failing_step,
             "signal_level": signal_level,
             "run_id": review.run_id,
             "review_url": review.review_url,
             "sent_at": sent_at,
+            "delivery": delivery,
+            "delivery_artifact_path": result.get("artifact_path"),
         }
         notifications_root = self._notifications_root()
         record_path = notifications_root / f"{notification_id}.json"
@@ -2293,13 +2553,52 @@ class OrchestrationService:
         write_json(self._orchestration_root() / LATEST_NOTIFICATION_NAME, record)
         return ReviewNotification(
             provider=provider,
-            status="sent",
+            status=notification_status,
             signal_level=signal_level,
             title=title,
-            body=body,
+            body=str(result.get("message") or body),
             notification_id=notification_id,
             sent_at=sent_at,
             record_path=str(record_path),
+        )
+
+    def _emit_lifecycle_notification(
+        self,
+        review: ReviewRun,
+        *,
+        event: str,
+        status: str,
+        error_summary: str | None = None,
+        failing_step: str | None = None,
+        instruction: str | None = None,
+        extra_lines: list[str] | None = None,
+        audit_event_type: str,
+        audit_message: str,
+    ) -> ReviewRun:
+        result = notify_controltower_event(
+            event,
+            project=self.config.app.product_name,
+            commit=self._git_commit(),
+            status=status,
+            error_summary=error_summary,
+            failing_step=failing_step,
+            instruction=instruction,
+            runtime_root=self.config.runtime.state_root,
+            extra_fields={"run_id": review.run_id, "review_url": review.review_url},
+            extra_lines=(extra_lines or []) + [f"Run ID: {review.run_id}", f"Review URL: {review.review_url}"],
+        )
+        delivery = result.get("delivery") if isinstance(result.get("delivery"), dict) else {}
+        return self._append_audit(
+            review,
+            event_type=audit_event_type,
+            message=audit_message,
+            details={
+                "event": event,
+                "status": status,
+                "delivery_success": delivery.get("success"),
+                "delivery_state": delivery.get("delivery_state"),
+                "delivery_artifact_path": result.get("artifact_path"),
+            },
         )
 
     def _review_url(self, run_id: str) -> str:

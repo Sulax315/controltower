@@ -5,8 +5,13 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from controltower.config import ControlTowerConfig
 from controltower.domain.models import utc_now_iso
 from controltower.services.notifications import send_operator_notification
+from controltower.services.prompt_orchestration import (
+    build_next_prompt_placeholder,
+    orchestrate_next_prompt,
+)
 
 
 APPROVAL_COMMANDS = {
@@ -18,6 +23,7 @@ APPROVAL_EVENT_LOG_NAME = "approval_events.jsonl"
 PENDING_APPROVAL_NAME = "pending_approval.json"
 RUN_STATE_NAME = "run_state.json"
 NEXT_PROMPT_NAME = "next_prompt.md"
+NEXT_PROMPT_JSON_NAME = "next_prompt.json"
 TRIGGER_NEXT_RUN_NAME = "trigger_next_run.json"
 
 
@@ -25,6 +31,7 @@ def sync_pending_release_approval(
     status_path: Path | None = None,
     *,
     orchestration_root: Path | None = None,
+    config: ControlTowerConfig | None = None,
 ) -> dict[str, Any]:
     paths = ensure_approval_layout(orchestration_root)
     resolved_status_path = Path(status_path) if status_path is not None else _default_release_status_path()
@@ -51,12 +58,20 @@ def sync_pending_release_approval(
         _write_json(paths["pending_approval"], pending)
         _write_json(paths["run_state"], run_state)
         _write_text(paths["next_prompt"], _awaiting_prompt_markdown(pending, status=None))
-        _write_json(paths["trigger_next_run"], _idle_trigger_payload(now, pending, orchestration_root=paths["root"]))
+        _write_next_prompt_placeholder_json(
+            paths=paths,
+            pending=pending,
+            trigger_payload=_idle_trigger_payload(now, pending, orchestration_root=paths["root"]),
+            orchestration_status="idle",
+            reason="Latest release artifact is not awaiting approval.",
+            model_name=config.prompt_orchestration.model if config is not None else None,
+        )
         return {
             "status": "no_pending_approval",
             "pending_approval_path": str(paths["pending_approval"]),
             "run_state_path": str(paths["run_state"]),
             "next_prompt_path": str(paths["next_prompt"]),
+            "next_prompt_json_path": str(paths["next_prompt_json"]),
             "trigger_path": str(paths["trigger_next_run"]),
         }
 
@@ -65,23 +80,35 @@ def sync_pending_release_approval(
     _write_json(paths["pending_approval"], pending)
     _write_json(paths["run_state"], run_state)
     _write_text(paths["next_prompt"], _awaiting_prompt_markdown(pending, status=status))
-    _write_json(paths["trigger_next_run"], _idle_trigger_payload(now, pending, orchestration_root=paths["root"]))
+    _write_next_prompt_placeholder_json(
+        paths=paths,
+        pending=pending,
+        trigger_payload=_idle_trigger_payload(now, pending, orchestration_root=paths["root"]),
+        orchestration_status="awaiting_approval",
+        reason="Awaiting operator approval before next prompt generation.",
+        model_name=config.prompt_orchestration.model if config is not None else None,
+    )
     return {
         "status": "awaiting_approval",
         "run_id": pending["run_id"],
         "pending_approval_path": str(paths["pending_approval"]),
         "run_state_path": str(paths["run_state"]),
         "next_prompt_path": str(paths["next_prompt"]),
+        "next_prompt_json_path": str(paths["next_prompt_json"]),
         "trigger_path": str(paths["trigger_next_run"]),
     }
 
 
-def ingest_approval_inbox(*, orchestration_root: Path | None = None) -> dict[str, Any]:
+def ingest_approval_inbox(
+    *,
+    orchestration_root: Path | None = None,
+    config: ControlTowerConfig | None = None,
+) -> dict[str, Any]:
     paths = ensure_approval_layout(orchestration_root)
     inbox_files = sorted(path for path in paths["inbox"].glob("*.json") if path.is_file())
     results: list[dict[str, Any]] = []
     for inbox_file in inbox_files:
-        results.append(_ingest_single_file(inbox_file, paths=paths))
+        results.append(_ingest_single_file(inbox_file, paths=paths, config=config))
     return {
         "status": "ok",
         "processed_file_count": len(results),
@@ -90,6 +117,7 @@ def ingest_approval_inbox(*, orchestration_root: Path | None = None) -> dict[str
         "pending_approval_path": str(paths["pending_approval"]),
         "run_state_path": str(paths["run_state"]),
         "next_prompt_path": str(paths["next_prompt"]),
+        "next_prompt_json_path": str(paths["next_prompt_json"]),
         "trigger_path": str(paths["trigger_next_run"]),
     }
 
@@ -104,6 +132,7 @@ def ensure_approval_layout(orchestration_root: Path | None = None) -> dict[str, 
         "pending_approval": root / PENDING_APPROVAL_NAME,
         "run_state": root / RUN_STATE_NAME,
         "next_prompt": root / NEXT_PROMPT_NAME,
+        "next_prompt_json": root / NEXT_PROMPT_JSON_NAME,
         "trigger_next_run": root / TRIGGER_NEXT_RUN_NAME,
     }
     for key in ("root", "inbox", "processed_inbox"):
@@ -116,19 +145,37 @@ def ensure_approval_layout(orchestration_root: Path | None = None) -> dict[str, 
         _write_json(paths["run_state"], _base_run_state(utc_now_iso(), orchestration_root=paths["root"]))
     if not paths["next_prompt"].exists():
         _write_text(paths["next_prompt"], "# Control Tower Next Prompt\n\nNo approval state has been recorded yet.\n")
-    if not paths["trigger_next_run"].exists():
+    if not paths["next_prompt_json"].exists():
         _write_json(
-            paths["trigger_next_run"],
-            _idle_trigger_payload(
+            paths["next_prompt_json"],
+            build_next_prompt_placeholder(
+                generated_at=utc_now_iso(),
+                orchestration_status="idle",
+                pending_approval=_base_pending_approval(utc_now_iso()),
+                reason="No approval state has been recorded yet.",
+            ),
+        )
+    if not paths["trigger_next_run"].exists():
+        _write_next_prompt_placeholder_json(
+            paths=paths,
+            pending=_base_pending_approval(utc_now_iso()),
+            trigger_payload=_idle_trigger_payload(
                 utc_now_iso(),
                 _base_pending_approval(utc_now_iso()),
                 orchestration_root=paths["root"],
             ),
+            orchestration_status="idle",
+            reason="No approval state has been recorded yet.",
         )
     return paths
 
 
-def _ingest_single_file(inbox_file: Path, *, paths: dict[str, Path]) -> dict[str, Any]:
+def _ingest_single_file(
+    inbox_file: Path,
+    *,
+    paths: dict[str, Path],
+    config: ControlTowerConfig | None,
+) -> dict[str, Any]:
     ingested_at = utc_now_iso()
     try:
         payload = json.loads(inbox_file.read_text(encoding="utf-8-sig"))
@@ -151,7 +198,7 @@ def _ingest_single_file(inbox_file: Path, *, paths: dict[str, Path]) -> dict[str
         return event
 
     event = _parse_payload(payload, inbox_file=inbox_file, ingested_at=ingested_at)
-    event = _apply_event(event, payload=payload, paths=paths)
+    event = _apply_event(event, payload=payload, paths=paths, config=config)
     _append_event(paths["approval_events"], event)
     _archive_inbox_file(inbox_file, paths["processed_inbox"])
 
@@ -184,7 +231,13 @@ def _parse_payload(payload: dict[str, Any], *, inbox_file: Path, ingested_at: st
     }
 
 
-def _apply_event(event: dict[str, Any], *, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def _apply_event(
+    event: dict[str, Any],
+    *,
+    payload: dict[str, Any],
+    paths: dict[str, Path],
+    config: ControlTowerConfig | None,
+) -> dict[str, Any]:
     if event["parse_status"] != "parsed":
         return event
 
@@ -225,11 +278,29 @@ def _apply_event(event: dict[str, Any], *, payload: dict[str, Any], paths: dict[
     current_state = _build_run_state(pending, last_event=event, now=applied_at, orchestration_root=paths["root"])
     _write_json(paths["pending_approval"], pending)
     _write_json(paths["run_state"], current_state)
-    _write_text(paths["next_prompt"], _decision_prompt_markdown(pending, release_status=release_status))
-    _write_json(
-        paths["trigger_next_run"],
-        _trigger_payload(pending, release_status=release_status, orchestration_root=paths["root"]),
-    )
+    if (
+        config is not None
+        and config.prompt_orchestration.enabled
+        and command in {"APPROVE", "RETRY"}
+    ):
+        orchestration_result = orchestrate_next_prompt(
+            config,
+            orchestration_root=paths["root"],
+            recent_approval_event=event,
+        )
+        event["prompt_orchestration_status"] = orchestration_result["status"]
+        event["prompt_orchestration_gate_failure"] = orchestration_result.get("gate_failure")
+    else:
+        trigger_payload = _trigger_payload(pending, release_status=release_status, orchestration_root=paths["root"])
+        _write_text(paths["next_prompt"], _decision_prompt_markdown(pending, release_status=release_status))
+        _write_next_prompt_placeholder_json(
+            paths=paths,
+            pending=pending,
+            trigger_payload=trigger_payload,
+            orchestration_status="manual_handoff",
+            reason="Prompt orchestration is disabled. Static next prompt artifact was written.",
+            model_name=config.prompt_orchestration.model if config is not None else None,
+        )
     return event
 
 
@@ -246,9 +317,12 @@ def _write_current_state(
     _write_json(paths["run_state"], current_state)
     _write_json(paths["pending_approval"], pending)
     _write_text(paths["next_prompt"], _ignored_prompt_markdown(pending, event, release_status=release_status))
-    _write_json(
-        paths["trigger_next_run"],
-        _idle_trigger_payload(event["ingested_at"], pending, orchestration_root=paths["root"], event=event),
+    _write_next_prompt_placeholder_json(
+        paths=paths,
+        pending=pending,
+        trigger_payload=_idle_trigger_payload(event["ingested_at"], pending, orchestration_root=paths["root"], event=event),
+        orchestration_status="approval_ignored",
+        reason=event.get("reason") or "Approval event was ignored.",
     )
     return event
 
@@ -654,3 +728,46 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8", newline="\n")
+
+
+def _write_next_prompt_placeholder_json(
+    *,
+    paths: dict[str, Path],
+    pending: dict[str, Any],
+    trigger_payload: dict[str, Any],
+    orchestration_status: str,
+    reason: str,
+    model_name: str | None = None,
+) -> None:
+    payload = build_next_prompt_placeholder(
+        generated_at=utc_now_iso(),
+        orchestration_status=orchestration_status,
+        pending_approval=pending,
+        reason=reason,
+        source_artifacts_used=[
+            str(path.resolve())
+            for path in (
+                paths["pending_approval"],
+                paths["run_state"],
+                paths["trigger_next_run"],
+            )
+            if path.exists()
+        ],
+        model_name=model_name,
+    )
+    _write_json(paths["next_prompt_json"], payload)
+    updated_trigger = dict(trigger_payload)
+    updated_trigger.update(
+        {
+            "next_prompt_path": str(paths["next_prompt"].resolve()),
+            "next_prompt_json_path": str(paths["next_prompt_json"].resolve()),
+            "generated_at": payload["generated_at"],
+            "source_artifacts_used": payload["source_artifacts_used"],
+            "obsidian_context_used": payload["obsidian_context_used"],
+            "model_name": payload["model_name"],
+            "orchestration_status": payload["orchestration_status"],
+            "gate_failure": payload["gate_failure"],
+            "reason": reason,
+        }
+    )
+    _write_json(paths["trigger_next_run"], updated_trigger)

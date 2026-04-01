@@ -1048,6 +1048,9 @@ class ReviewContinuityRecord(BaseModel):
     written_at: str | None = None
     runtime_markdown_path: str | None = None
     vault_markdown_path: str | None = None
+    strategic_checkin_written_at: str | None = None
+    session_log_note_path: str | None = None
+    active_control_note_path: str | None = None
 
 
 class ReviewRun(BaseModel):

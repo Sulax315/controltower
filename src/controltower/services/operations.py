@@ -6,9 +6,11 @@ from typing import Any
 from controltower.config import ControlTowerConfig, load_config
 from controltower.domain.models import ExportRecord, utc_now_iso
 from controltower.render.markdown import validate_markdown_templates
+from controltower.services.build_info import current_build_info
 from controltower.services.controltower import ControlTowerService
 from controltower.services.delta import load_latest_run_record
 from controltower.services.identity_reconciliation import RegistryDocument
+from controltower.services.notifications import notify_controltower_event
 from controltower.services.release import (
     build_release_readiness,
     collect_operator_diagnostics,
@@ -144,6 +146,7 @@ def _run_operation(
 ) -> dict[str, Any]:
     started_at = utc_now_iso()
     state_root = _default_state_root()
+    config: ControlTowerConfig | None = None
     summary = _base_summary(
         operation_type=operation_type,
         started_at=started_at,
@@ -157,6 +160,12 @@ def _run_operation(
         config = load_config(config_path)
         state_root = Path(config.runtime.state_root)
         ensure_runtime_layout(state_root)
+        if operation_type == "release_readiness":
+            _notify_release_event(
+                config,
+                event="RELEASE_START",
+                status="STARTED",
+            )
         summary["config"] = {
             "config_path": str(Path(config_path).resolve()) if config_path else None,
             "registry_path": str(config.identity.registry_path),
@@ -181,6 +190,7 @@ def _run_operation(
                 summary["artifacts"]["latest_diagnostics"] = refreshed_release["latest_diagnostics_path"]
                 summary["artifacts"]["diagnostics_snapshot"] = refreshed_release["diagnostics_snapshot_path"]
                 write_operation_summary(state_root, summary)
+            _notify_release_outcome(config, summary)
         return summary
     except Exception as exc:  # pragma: no cover - exercised via script subprocesses and negative tests
         exit_code, error_type, action = _classify_exception(exc)
@@ -196,6 +206,8 @@ def _run_operation(
         ensure_runtime_layout(state_root)
         summary["artifacts"]["summary_json"] = str(_summary_path(state_root, summary["operation_id"]))
         write_operation_summary(state_root, summary)
+        if operation_type == "release_readiness":
+            _notify_release_exception(summary, exc, config=config)
         return summary
 
 
@@ -416,6 +428,7 @@ def _release_gate_operation(config: ControlTowerConfig, *, run_pytest: bool, run
         config,
         run_pytest=run_pytest,
         run_acceptance_check=run_acceptance,
+        notify_exception=False,
     )
     artifact_index_path = refresh_artifact_index(config.runtime.state_root)
     if release_artifact["verdict"]["ready_for_live_operations"] is not True:
@@ -569,3 +582,102 @@ def _summary_path(state_root: Path, operation_id: str) -> Path:
 
 def _default_state_root() -> Path:
     return Path(__file__).resolve().parents[3] / ".controltower_runtime"
+
+
+def _notify_release_event(
+    config: ControlTowerConfig,
+    *,
+    event: str,
+    status: str,
+    error_summary: str | None = None,
+    failing_step: str | None = None,
+    extra_lines: list[str] | None = None,
+) -> None:
+    build_info = current_build_info()
+    notify_controltower_event(
+        event,
+        project=config.app.product_name,
+        commit=build_info["git_commit"],
+        status=status,
+        error_summary=error_summary,
+        failing_step=failing_step,
+        runtime_root=config.runtime.state_root,
+        extra_fields={"environment": config.app.environment},
+        extra_lines=extra_lines,
+    )
+
+
+def _notify_release_outcome(config: ControlTowerConfig, summary: dict[str, Any]) -> None:
+    if summary.get("status") == "success":
+        _notify_release_event(
+            config,
+            event="RELEASE_SUCCESS",
+            status="PASS",
+            extra_lines=[
+                f"Operation ID: {summary['operation_id']}",
+                f"Release Artifact: {summary.get('artifacts', {}).get('release_json') or 'unavailable'}",
+            ],
+        )
+        return
+    failing_step, error_summary = _release_failure_details(summary)
+    _notify_release_event(
+        config,
+        event="RELEASE_FAILURE",
+        status="FAIL",
+        error_summary=error_summary,
+        failing_step=failing_step,
+        extra_lines=[
+            f"Operation ID: {summary['operation_id']}",
+            f"Release Artifact: {summary.get('artifacts', {}).get('release_json') or 'unavailable'}",
+        ],
+    )
+
+
+def _notify_release_exception(
+    summary: dict[str, Any],
+    exc: Exception,
+    *,
+    config: ControlTowerConfig | None,
+) -> None:
+    runtime_root = config.runtime.state_root if config is not None else _default_state_root()
+    project = config.app.product_name if config is not None else "Control Tower"
+    commit = current_build_info()["git_commit"]
+    notify_controltower_event(
+        "EXCEPTION_CRASH",
+        project=project,
+        commit=commit,
+        status="FAIL",
+        error_summary=str(exc),
+        failing_step=summary.get("operation_type") or "release_readiness",
+        runtime_root=runtime_root,
+        extra_lines=[f"Operation ID: {summary['operation_id']}"],
+    )
+
+
+def _release_failure_details(summary: dict[str, Any]) -> tuple[str | None, str | None]:
+    checks = summary.get("checks") or {}
+    gate_results = checks.get("gate_results") or {}
+    for name in ("pytest", "acceptance", "route_checks", "export_checks", "source_validation"):
+        result = gate_results.get(name) or {}
+        if result.get("status") not in {"pass", "not_run"}:
+            return name, _gate_failure_reason(name, result)
+    error = summary.get("error") or {}
+    if isinstance(error, dict):
+        return "release_readiness", error.get("message")
+    return "release_readiness", summary.get("summary")
+
+
+def _gate_failure_reason(name: str, result: dict[str, Any]) -> str | None:
+    if name in {"pytest", "acceptance"}:
+        tail = result.get("stderr_tail") or result.get("stdout_tail") or []
+        if tail:
+            return str(tail[-1])
+    if name == "route_checks":
+        for path, status_code in (result.get("checks") or {}).items():
+            if status_code != 200:
+                return f"HTTP {status_code} from {path}"
+    if name in {"export_checks", "source_validation"}:
+        issues = result.get("issues") or []
+        if issues:
+            return str(issues[0])
+    return result.get("summary") or f"{name} reported status {result.get('status') or 'unknown'}."

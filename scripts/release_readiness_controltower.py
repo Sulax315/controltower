@@ -6,7 +6,6 @@ from pathlib import Path
 from _controltower_ops_common import build_parser, log_paths_from_env, print_summary
 from controltower.services.approval_ingest import sync_pending_release_approval
 from controltower.services.operations import run_release_gate
-from controltower.services.notifications import notify_release_status_file
 
 
 def main() -> int:
@@ -28,9 +27,8 @@ def main() -> int:
     )
     print_summary(summary)
     release_json = summary.get("artifacts", {}).get("release_json")
-    print(f"Notification attempt: {release_json or 'release artifact unavailable'}", file=sys.stderr)
     if release_json:
-        notify_release_status_file(Path(release_json))
+        print(f"Notification flow handled inside release-gate: {release_json}", file=sys.stderr)
         try:
             sync_result = sync_pending_release_approval(Path(release_json))
             print(

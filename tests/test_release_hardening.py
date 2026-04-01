@@ -181,6 +181,47 @@ def test_release_readiness_writes_json_and_markdown_artifacts(sample_config_path
     assert run_state["pending_run_id"] == pending["run_id"]
 
 
+def test_release_readiness_emits_verification_start_and_pass(sample_config_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config = load_config(sample_config_path)
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "controltower.services.release.notify_controltower_event",
+        lambda event, **kwargs: events.append({"event": event, **kwargs}) or {"delivery": {"success": True}},
+    )
+
+    build_release_readiness(
+        config,
+        pytest_result={"status": "pass", "command": "pytest -q", "exit_code": 0},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+
+    assert [item["event"] for item in events] == ["VERIFICATION_START", "VERIFICATION_PASS"]
+    assert events[0]["status"] == "STARTED"
+    assert events[1]["status"] == "PASS"
+
+
+def test_release_readiness_emits_verification_fail(sample_config_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config = load_config(sample_config_path)
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "controltower.services.release.notify_controltower_event",
+        lambda event, **kwargs: events.append({"event": event, **kwargs}) or {"delivery": {"success": True}},
+    )
+
+    build_release_readiness(
+        config,
+        pytest_result={"status": "fail", "command": "pytest -q", "exit_code": 1, "stderr_tail": ["tests failed"]},
+        acceptance_result={"status": "pass", "executed_at": "2026-03-27T15:30:00Z"},
+    )
+
+    assert [item["event"] for item in events] == ["VERIFICATION_START", "VERIFICATION_FAIL"]
+    assert events[1]["status"] == "FAIL"
+    assert events[1]["failing_step"] == "pytest"
+    assert events[1]["error_summary"] == "tests failed"
+
+
 def test_release_gate_refreshes_diagnostics_after_writing_operation_summary(sample_config_path: Path):
     summary = run_release_gate(config_path=sample_config_path, run_pytest=False, run_acceptance=False)
     config = load_config(sample_config_path)
@@ -434,7 +475,7 @@ def test_remote_release_waits_for_service_to_become_active_after_restart():
     assert 'write_deployment_manifest "pass" "true"' in remote_release
 
 
-def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
+def test_release_readiness_entrypoint_relies_on_release_gate_notification_flow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -454,8 +495,6 @@ def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
     release_json = tmp_path / "release" / "release_readiness_test.json"
     release_json.parent.mkdir(parents=True, exist_ok=True)
     release_json.write_text('{"status": "ready"}', encoding="utf-8")
-    notified: list[Path] = []
-
     def _build_parser(*args, **kwargs):
         parser = argparse.ArgumentParser()
         parser.add_argument("--config", default=None)
@@ -472,7 +511,6 @@ def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
         },
     )
     monkeypatch.setattr(module, "print_summary", lambda summary: None)
-    monkeypatch.setattr(module, "notify_release_status_file", lambda path: notified.append(path))
     monkeypatch.setattr(
         module,
         "sync_pending_release_approval",
@@ -481,7 +519,6 @@ def test_release_readiness_entrypoint_attempts_notification_on_release_artifact(
     monkeypatch.setattr(sys, "argv", ["release_readiness_controltower.py"])
 
     assert module.main() == 0
-    assert notified == [release_json]
 
 
 def test_authoritative_release_writes_summary_and_attempts_notification_on_failure(
