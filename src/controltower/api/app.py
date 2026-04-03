@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import os
 import secrets
+from typing import Any
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
@@ -13,11 +14,13 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from controltower.config import load_config
+from controltower.config import default_orchestrator_mcp_service_root, load_config
 from controltower.obsidian.exporter import load_latest_export
 from controltower.services.build_info import current_build_info
+from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.services.controltower import ControlTowerService
 from controltower.services.orchestration import OrchestrationService, ReviewActorContext
+from controltower.services.orchestrator_panel import build_orchestrator_publish_panel, mutation_query_notices
 from controltower.services.release import collect_operator_diagnostics
 
 
@@ -38,13 +41,14 @@ REQUIRED_UI_TEMPLATES = (
     "run_detail.html",
     "review_detail.html",
     "diagnostics.html",
+    "_orchestrator_execution_section.html",
 )
 
 AUTH_SESSION_KEY = "controltower_auth"
 AUTH_CSRF_SESSION_KEY = "controltower_csrf_token"
 DEFAULT_DEV_SESSION_SECRET = "controltower-dev-session"
 PUBLIC_PATH_PREFIXES = ("/login", "/logout", "/reviews/login", "/reviews/logout", "/static")
-PUBLIC_EXACT_PATHS = {"/favicon.ico", "/healthz"}
+PUBLIC_EXACT_PATHS = {"/favicon.ico", "/healthz", "/api/orchestrator/status"}
 
 
 class AppAuthGuardMiddleware(BaseHTTPMiddleware):
@@ -88,6 +92,7 @@ def create_app_from_config(config) -> FastAPI:
         max_age=60 * 60 * 12,
     )
     templates = Jinja2Templates(directory=str(TEMPLATE_ROOT))
+    templates.env.filters["urlquote"] = lambda value: quote(str(value or ""), safe="")
     app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
     def _template_payload(request: Request, **context: object) -> dict[str, object]:
@@ -453,6 +458,17 @@ def create_app_from_config(config) -> FastAPI:
             ),
         )
 
+    def _orch_publish_redirect_url(*, orch_wf: str, notice: str, err: str | None) -> str:
+        params: list[tuple[str, str]] = []
+        if orch_wf.strip():
+            params.append(("orch_wf", orch_wf.strip()))
+        if notice.strip():
+            params.append(("orch_notice", notice.strip()))
+        if err and err.strip():
+            params.append(("orch_err", err.strip()[:600]))
+        tail = urlencode(params) if params else ""
+        return f"/publish?{tail}" if tail else "/publish"
+
     @app.get("/publish", response_class=HTMLResponse)
     def publish_view(
         request: Request,
@@ -460,22 +476,232 @@ def create_app_from_config(config) -> FastAPI:
         artifact: str | None = None,
         project: str | None = None,
         print: int = 0,
+        orch_wf: str | None = None,
+        orch_notice: str | None = None,
+        orch_err: str | None = None,
     ):
         try:
             publish = service.build_publish_view(run_id=run, artifact_id=artifact, project_code=project)
         except KeyError:
             raise HTTPException(status_code=404, detail="Run not found")
+        orch_panel = build_orchestrator_publish_panel(
+            config,
+            workflow_id=orch_wf,
+            action_notice=orch_notice,
+            action_error=orch_err,
+        )
         return templates.TemplateResponse(
             request,
             "publish.html",
             _template_payload(
                 request,
                 publish=publish,
+                orch_panel=orch_panel,
+                review_auth=_review_auth_context(orchestration, request),
                 auto_print=bool(print),
                 page_title="Publish",
                 page_kicker="Meeting-ready command brief and deliverable workspace",
                 page_mode="publish",
             ),
+        )
+
+    def _require_orchestrator_substrate_enabled() -> None:
+        if not config.orchestrator_substrate.enabled:
+            raise HTTPException(
+                status_code=404,
+                detail="Orchestrator substrate is not enabled for this Control Tower deployment.",
+            )
+
+    @app.get("/api/orchestrator/status")
+    def api_orchestrator_status():
+        """
+        Runtime snapshot for orchestrator substrate binding. Always JSON; does not 404 when disabled.
+        Uses the same config flags and path resolution as other orchestrator routes.
+        """
+        enabled = bool(config.orchestrator_substrate.enabled)
+        body: dict[str, Any] = {"enabled": enabled}
+        try:
+            root = (config.orchestrator_substrate.mcp_service_root or default_orchestrator_mcp_service_root()).resolve()
+            runtime_dir = (config.orchestrator_substrate.runtime_dir or (root / "runtime")).resolve()
+            body["service_root"] = str(root)
+            body["runtime_dir"] = str(runtime_dir)
+        except Exception as exc:  # noqa: BLE001 — status must never fail closed
+            body["service_root"] = None
+            body["runtime_dir"] = None
+            body["status"] = "error"
+            body["error"] = str(exc)
+            return JSONResponse(content=body)
+
+        if not enabled:
+            body["status"] = "ok"
+            return JSONResponse(content=body)
+
+        try:
+            bind_err = orch_substrate.ensure_substrate_bound(config)
+        except Exception as exc:  # noqa: BLE001
+            body["status"] = "degraded"
+            body["bind_error"] = str(exc)
+            return JSONResponse(content=body)
+
+        if bind_err:
+            body["status"] = "degraded"
+            body["bind_error"] = bind_err
+        else:
+            body["status"] = "ok"
+        return JSONResponse(content=body)
+
+    @app.post("/publish/orchestrator/approve-approval")
+    async def publish_orch_approve_approval(
+        request: Request,
+        approval_request_id: str = Form(""),
+        reason: str = Form(""),
+        orch_wf: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _require_orchestrator_substrate_enabled()
+        actor = _require_review_actor(orchestration, request, csrf_token)
+        aid = approval_request_id.strip()
+        if not aid:
+            raise HTTPException(status_code=400, detail="approval_request_id is required.")
+        result = orch_substrate.approve_approval_request(
+            config,
+            approval_request_id=aid,
+            actor=str(actor.identity),
+            reason=reason or None,
+        )
+        notice, err = mutation_query_notices(result)
+        return RedirectResponse(
+            url=_orch_publish_redirect_url(orch_wf=orch_wf, notice=notice, err=err),
+            status_code=303,
+        )
+
+    @app.post("/publish/orchestrator/deny-approval")
+    async def publish_orch_deny_approval(
+        request: Request,
+        approval_request_id: str = Form(""),
+        reason: str = Form(""),
+        orch_wf: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _require_orchestrator_substrate_enabled()
+        actor = _require_review_actor(orchestration, request, csrf_token)
+        aid = approval_request_id.strip()
+        if not aid:
+            raise HTTPException(status_code=400, detail="approval_request_id is required.")
+        result = orch_substrate.deny_approval_request(
+            config,
+            approval_request_id=aid,
+            actor=str(actor.identity),
+            reason=reason or None,
+        )
+        notice, err = mutation_query_notices(result)
+        return RedirectResponse(
+            url=_orch_publish_redirect_url(orch_wf=orch_wf, notice=notice, err=err),
+            status_code=303,
+        )
+
+    @app.post("/publish/orchestrator/promote-publish")
+    async def publish_orch_promote_publish(
+        request: Request,
+        publish_request_id: str = Form(""),
+        reason: str = Form(""),
+        orch_wf: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _require_orchestrator_substrate_enabled()
+        actor = _require_review_actor(orchestration, request, csrf_token)
+        pid = publish_request_id.strip()
+        if not pid:
+            raise HTTPException(status_code=400, detail="publish_request_id is required.")
+        result = orch_substrate.promote_publish_packet(
+            config,
+            publish_request_id=pid,
+            actor=str(actor.identity),
+            reason=reason or None,
+        )
+        notice, err = mutation_query_notices(result)
+        return RedirectResponse(
+            url=_orch_publish_redirect_url(orch_wf=orch_wf, notice=notice, err=err),
+            status_code=303,
+        )
+
+    @app.post("/publish/orchestrator/execute-release")
+    async def publish_orch_execute_release(
+        request: Request,
+        release_request_id: str = Form(""),
+        reason: str = Form(""),
+        orch_wf: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _require_orchestrator_substrate_enabled()
+        actor = _require_review_actor(orchestration, request, csrf_token)
+        rid = release_request_id.strip()
+        if not rid:
+            raise HTTPException(status_code=400, detail="release_request_id is required.")
+        result = orch_substrate.execute_release_request(
+            config,
+            release_request_id=rid,
+            actor=str(actor.identity),
+            reason=reason or None,
+        )
+        notice, err = mutation_query_notices(result)
+        return RedirectResponse(
+            url=_orch_publish_redirect_url(orch_wf=orch_wf, notice=notice, err=err),
+            status_code=303,
+        )
+
+    @app.get("/api/orchestrator/workflow/{workflow_id}")
+    def api_orchestrator_workflow(workflow_id: str):
+        _require_orchestrator_substrate_enabled()
+        return orch_substrate.get_schedule_publish_workflow(config, workflow_id)
+
+    @app.get("/api/orchestrator/approval-requests")
+    def api_orchestrator_approval_requests(
+        limit: int = 50,
+        state: str | None = None,
+        approval_type: str | None = None,
+        target_id: str | None = None,
+    ):
+        _require_orchestrator_substrate_enabled()
+        lim = max(1, min(limit, 500))
+        return orch_substrate.list_approval_requests(
+            config,
+            limit=lim,
+            state=state,
+            approval_type=approval_type,
+            target_id=target_id,
+        )
+
+    @app.get("/api/orchestrator/publish-packets")
+    def api_orchestrator_publish_packets(
+        limit: int = 50,
+        state: str | None = None,
+        publish_target: str | None = None,
+    ):
+        _require_orchestrator_substrate_enabled()
+        lim = max(1, min(limit, 500))
+        return orch_substrate.list_publish_packets(
+            config,
+            limit=lim,
+            state=state,
+            publish_target=publish_target,
+        )
+
+    @app.get("/api/orchestrator/release-requests")
+    def api_orchestrator_release_requests(
+        limit: int = 50,
+        state: str | None = None,
+        target_env: str | None = None,
+        release_type: str | None = None,
+    ):
+        _require_orchestrator_substrate_enabled()
+        lim = max(1, min(limit, 500))
+        return orch_substrate.list_release_requests(
+            config,
+            limit=lim,
+            state=state,
+            target_env=target_env,
+            release_type=release_type,
         )
 
     @app.get("/publish/present", response_class=HTMLResponse)

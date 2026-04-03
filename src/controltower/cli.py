@@ -23,6 +23,7 @@ from controltower.services.operations import (
     run_smoke,
     run_weekly,
 )
+from controltower.services.codex_executor import execute_next_codex_lane, watch_codex_lane_loop
 from controltower.services.orchestration import OrchestrationService
 from controltower.services.prompt_orchestration import orchestrate_next_prompt
 from controltower.services.release import build_release_readiness
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_show = subparsers.add_parser("review-show", help="Show one review run, including audit and trigger state.")
     review_show.add_argument("--run-id", required=True)
 
+    review_materialize = subparsers.add_parser(
+        "review-materialize-approved-handoff",
+        help="Materialize a persisted review binding from an already-approved manual handoff lane.",
+    )
+    review_materialize.add_argument("--run-id", required=True)
+
     review_approve = subparsers.add_parser("review-approve", help="Approve a review run and emit the configured downstream execution event.")
     review_approve.add_argument("--run-id", required=True)
     review_approve.add_argument("--approved-next-prompt", default=None)
@@ -133,6 +140,20 @@ def build_parser() -> argparse.ArgumentParser:
     execution_result.add_argument("--completed-at", default=None)
     execution_result.add_argument("--external-reference", default=None)
     execution_result.add_argument("--logs-excerpt", default=None)
+    codex_watcher_once = subparsers.add_parser(
+        "codex-watcher-once",
+        help="Execute the current approved launchable Codex lane once through the fail-closed executor.",
+    )
+    codex_watcher_once.add_argument("--run-id", default=None)
+    codex_watcher_once.add_argument("--orchestration-root", type=Path, default=None)
+    codex_watcher_loop = subparsers.add_parser(
+        "codex-watcher-loop",
+        help="Poll for approved launchable Codex lanes and execute them through the fail-closed executor.",
+    )
+    codex_watcher_loop.add_argument("--run-id", default=None)
+    codex_watcher_loop.add_argument("--orchestration-root", type=Path, default=None)
+    codex_watcher_loop.add_argument("--iterations", type=int, default=None)
+    codex_watcher_loop.add_argument("--sleep-seconds", type=int, default=None)
 
     approval_sync = subparsers.add_parser(
         "approval-sync-release",
@@ -345,6 +366,15 @@ def _run_main(args, parser: argparse.ArgumentParser) -> int:
         print(json.dumps(review.model_dump(mode="json"), indent=2))
         return 0
 
+    if args.command == "review-materialize-approved-handoff":
+        try:
+            review = orchestration.materialize_approved_handoff_review(args.run_id)
+        except ValueError as exc:
+            print(json.dumps({"status": "error", "message": str(exc), "run_id": args.run_id}, indent=2))
+            return 1
+        print(json.dumps(review.model_dump(mode="json"), indent=2))
+        return 0
+
     if args.command == "review-approve":
         result = orchestration.approve_review(
             args.run_id,
@@ -428,6 +458,28 @@ def _run_main(args, parser: argparse.ArgumentParser) -> int:
             print(json.dumps({"status": "error", "message": str(exc)}, indent=2))
             return 1
         print(json.dumps(review.model_dump(mode="json"), indent=2))
+        return 0
+
+    if args.command == "codex-watcher-once":
+        result = execute_next_codex_lane(
+            config,
+            config_path=args.config,
+            orchestration_root=args.orchestration_root,
+            run_id=args.run_id,
+        )
+        print(json.dumps(result, indent=2))
+        return 0 if result["status"] in {"executed", "skipped"} else 1
+
+    if args.command == "codex-watcher-loop":
+        result = watch_codex_lane_loop(
+            config,
+            config_path=args.config,
+            orchestration_root=args.orchestration_root,
+            run_id=args.run_id,
+            max_iterations=args.iterations,
+            sleep_seconds=args.sleep_seconds,
+        )
+        print(json.dumps(result, indent=2))
         return 0
 
     if args.command == "serve":

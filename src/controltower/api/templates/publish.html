@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <section class="publish-shell ct-publish-shell" {% if auto_print %}data-auto-print="true"{% endif %}>
+  {% include "_orchestrator_execution_section.html" %}
   {% if publish.available and publish.command_brief %}
   <textarea id="publish-brief-copy" class="copy-buffer" aria-hidden="true">{{ publish.command_brief_copy_text }}</textarea>
   {% if publish.selected_artifact %}

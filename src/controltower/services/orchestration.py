@@ -119,6 +119,117 @@ class OrchestrationService:
             return None
         return ReviewRun.model_validate(payload)
 
+    def materialize_approved_handoff_review(self, run_id: str) -> ReviewRun:
+        existing = self.get_review_run(run_id)
+        if existing is not None:
+            return existing
+
+        source = self._approved_handoff_materialization_source(run_id)
+        if source is None:
+            raise ValueError(
+                "No launchable approved manual handoff artifacts were found for this run_id. "
+                "Control Tower stays fail-closed for unknown or unapproved runs."
+            )
+
+        approved_at = source["approved_at"]
+        approved_prompt = source["approved_prompt"]
+        review = ReviewRun(
+            run_id=run_id,
+            title="Approved next-lane handoff",
+            workspace=DEFAULT_DEMO_WORKSPACE,
+            summary=(
+                "Approved manual handoff restored from authoritative orchestration artifacts "
+                "so execution closeout can bind deterministically."
+            ),
+            raw_output_excerpt=source["raw_output_excerpt"],
+            proposed_next_prompt=approved_prompt,
+            state="approved",
+            created_at=source["created_at"],
+            review_url=self._review_url(run_id),
+            detail_path=f"/reviews/{run_id}",
+            approve_path=f"/reviews/{run_id}/approve",
+            reject_path=f"/reviews/{run_id}/reject",
+            source_operation_id=source["source_operation_id"],
+            release_generated_at=source["release_generated_at"],
+            artifacts=self._attach_artifacts(run_id, source["artifact_paths"]),
+            risk_level="medium",
+            decision_mode="manual_review",
+            decision_reasons=[
+                "Approved manual handoff artifacts were present and launchable.",
+                "No persisted review root existed for this approved lane, so Control Tower materialized one for deterministic closeout.",
+            ],
+            policy_version="manual_handoff_binding_v1",
+            policy_evaluated_at=approved_at,
+            reviewer=ReviewDecisionMetadata(
+                reviewed_at=approved_at,
+                reviewer_action="approved",
+                approved_next_prompt=approved_prompt,
+            ),
+        )
+        execution_pack = self._apply_pack_policies(
+            review,
+            self._select_execution_pack(review, approved_next_prompt=approved_prompt, selected_at=approved_at),
+        )
+        event_id = self._deterministic_event_id(run_id)
+        trigger_id = self._deterministic_trigger_id(run_id)
+        review = review.model_copy(
+            update={
+                "trigger": review.trigger.model_copy(
+                    update={
+                        "provider": "none",
+                        "execution_event_id": event_id,
+                        "trigger_id": trigger_id,
+                        "event_id": event_id,
+                        "pack_id": execution_pack.pack_id,
+                        "pack_type": execution_pack.pack_type,
+                        "event_version": self.config.execution.event_version,
+                        "status": "skipped",
+                        "requested_at": approved_at,
+                        "target": source["trigger_target"],
+                    }
+                ),
+                "execution_pack": execution_pack,
+                "execution_result": review.execution_result.model_copy(
+                    update={
+                        "event_id": event_id,
+                        "run_id": run_id,
+                        "pack_id": execution_pack.pack_id,
+                        "pack_type": execution_pack.pack_type,
+                        "status": "not_started",
+                        "closeout_status": "pending",
+                    }
+                ),
+            }
+        )
+        review = review.model_copy(update={"execution_event": self._build_execution_event(review)})
+        review = self._append_audit(
+            review,
+            event_type="approved_handoff_materialized",
+            message="Persisted review binding restored from approved orchestration artifacts without replaying approval.",
+            details={
+                "source_root": source["orchestration_root"],
+                "event_id": event_id,
+                "pack_id": execution_pack.pack_id,
+                "artifact_count": len(review.artifacts),
+            },
+        )
+        review = self._append_audit(
+            review,
+            event_type="trigger_skipped",
+            message="Approved manual handoff relies on the operator-launched next prompt artifact, so no internal provider dispatch was emitted.",
+            details={
+                "provider": review.trigger.provider,
+                "event_id": event_id,
+                "pack_id": execution_pack.pack_id,
+                "trigger_target": source["trigger_target"],
+            },
+        )
+        review = self._write_approved_payload(review)
+        review = self._write_closeout(review)
+        review = self._write_continuity(review)
+        self._write_review(review)
+        return review
+
     def update_review_state(self, run_id: str, *, state: str) -> ReviewRun | None:
         review = self.get_review_run(run_id)
         if review is None:
@@ -2621,6 +2732,134 @@ class OrchestrationService:
 
     def _deterministic_event_id(self, run_id: str) -> str:
         return f"event_{self.config.execution.event_version}_{run_id}"
+
+    def _approved_handoff_materialization_source(self, run_id: str) -> dict[str, Any] | None:
+        root = self._approved_handoff_root()
+        pending = read_json(root / "pending_approval.json") or {}
+        run_state = read_json(root / "run_state.json") or {}
+        next_prompt = read_json(root / "next_prompt.json") or {}
+        trigger = read_json(root / "trigger_next_run.json") or {}
+        if not pending or not run_state or not next_prompt or not trigger:
+            return None
+        if pending.get("run_id") != run_id:
+            return None
+        if pending.get("status") != "approved":
+            return None
+        if run_state.get("status") != "approved":
+            return None
+        if run_state.get("active_run_id") != run_id:
+            return None
+        if next_prompt.get("pending_run_id") != run_id:
+            return None
+        if next_prompt.get("approval_status") != "approved":
+            return None
+        if next_prompt.get("orchestration_status") not in {"generated", "manual_handoff"}:
+            return None
+        if next_prompt.get("gate_failure") is not None:
+            return None
+        if trigger.get("target_run_id") != run_id:
+            return None
+        if trigger.get("next_action") != "launch_next_codex_lane":
+            return None
+        if trigger.get("ready_for_operator_launch") is not True:
+            return None
+        if trigger.get("launch_gate_status") != "launchable":
+            return None
+        if trigger.get("gate_failure") is not None:
+            return None
+
+        approved_prompt = self._approved_handoff_prompt_text(root=root, next_prompt=next_prompt)
+        if not approved_prompt:
+            return None
+
+        release_generated_at = str(pending.get("release_generated_at") or "").strip() or None
+        approved_at = (
+            str(next_prompt.get("approval_applied_at") or "").strip()
+            or str(pending.get("applied_at") or "").strip()
+            or str(pending.get("updated_at") or "").strip()
+            or str(trigger.get("approved_at") or "").strip()
+            or str(run_state.get("updated_at") or "").strip()
+            or utc_now_iso()
+        )
+        created_at = str(pending.get("created_at") or "").strip() or approved_at
+        next_prompt_payload = next_prompt.get("next_prompt") or {}
+        raw_output_excerpt = [
+            line
+            for line in [
+                str(next_prompt_payload.get("strategic_alignment_summary") or "").strip(),
+                str(next_prompt_payload.get("objective") or "").strip(),
+                *[item.strip() for item in approved_prompt.splitlines() if item.strip()][:4],
+            ]
+            if line
+        ]
+        return {
+            "orchestration_root": str(root),
+            "created_at": created_at,
+            "approved_at": approved_at,
+            "approved_prompt": approved_prompt,
+            "raw_output_excerpt": raw_output_excerpt,
+            "artifact_paths": self._approved_handoff_artifact_paths(root=root, pending=pending, next_prompt=next_prompt),
+            "source_operation_id": (
+                str(pending.get("latest_export_run_id") or "").strip()
+                or str(pending.get("run_id") or "").strip()
+                or None
+            ),
+            "release_generated_at": release_generated_at,
+            "trigger_target": str((root / "next_prompt.md").resolve()),
+        }
+
+    def _approved_handoff_root(self) -> Path:
+        return Path(self.config.runtime.state_root).resolve().parent / "ops" / "orchestration"
+
+    def _approved_handoff_prompt_text(self, *, root: Path, next_prompt: dict[str, Any]) -> str | None:
+        prompt_payload = next_prompt.get("next_prompt") or {}
+        prompt_markdown = str(prompt_payload.get("prompt_markdown") or "").strip()
+        if prompt_markdown:
+            return prompt_markdown
+        markdown_path = root / "next_prompt.md"
+        if not markdown_path.exists():
+            return None
+        text = markdown_path.read_text(encoding="utf-8").strip()
+        return text or None
+
+    def _approved_handoff_artifact_paths(self, *, root: Path, pending: dict[str, Any], next_prompt: dict[str, Any]) -> list[Path]:
+        candidates: list[str] = []
+        candidates.extend(str(item) for item in (next_prompt.get("source_artifacts_used") or []) if str(item).strip())
+        for key in (
+            "latest_release_json_path",
+            "latest_release_markdown_path",
+            "latest_diagnostics_path",
+            "latest_run_path",
+            "latest_export_manifest_path",
+            "source_release_status_path",
+            "diagnostics_snapshot_path",
+        ):
+            value = str(pending.get(key) or "").strip()
+            if value:
+                candidates.append(value)
+        candidates.extend(
+            [
+                str(root / "pending_approval.json"),
+                str(root / "run_state.json"),
+                str(root / "next_prompt.json"),
+                str(root / "next_prompt.md"),
+                str(root / "trigger_next_run.json"),
+            ]
+        )
+        seen: set[str] = set()
+        resolved_paths: list[Path] = []
+        for candidate in candidates:
+            path = Path(candidate)
+            if not path.is_absolute():
+                path = (root / path).resolve()
+            else:
+                path = path.resolve()
+            key = str(path).lower()
+            if key in seen or not path.exists() or not path.is_file():
+                continue
+            seen.add(key)
+            resolved_paths.append(path)
+        return resolved_paths
 
     def _write_text_atomic(self, path: Path, content: str) -> None:
         path = Path(path)

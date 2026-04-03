@@ -27,6 +27,7 @@ RUN_STATE_NAME = "run_state.json"
 TRIGGER_NEXT_RUN_NAME = "trigger_next_run.json"
 
 _RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses"
+_RESPONSES_TIMEOUT_SECONDS = 180
 _NEXT_PROMPT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -270,9 +271,10 @@ def write_placeholder_artifacts(
 
 
 class OpenAIResponsesClient:
-    def __init__(self, *, api_key: str, model_name: str) -> None:
+    def __init__(self, *, api_key: str, model_name: str, timeout_seconds: float = _RESPONSES_TIMEOUT_SECONDS) -> None:
         self.api_key = api_key
         self.model_name = model_name
+        self.timeout_seconds = max(float(timeout_seconds), 1.0)
 
     def generate_next_prompt(self, context_pack: dict[str, Any]) -> dict[str, Any]:
         request_payload = {
@@ -300,8 +302,14 @@ class OpenAIResponsesClient:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=30) as response:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
+        except TimeoutError as exc:
+            raise PromptOrchestrationError(
+                "OpenAI Responses API timed out waiting for a response.",
+                gate="openai_generation",
+                details={"reason": "timeout", "timeout_seconds": self.timeout_seconds},
+            ) from exc
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise PromptOrchestrationError(

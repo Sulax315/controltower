@@ -16,6 +16,11 @@ def _dev_root() -> Path:
     return _repo_root().parent
 
 
+def default_orchestrator_mcp_service_root() -> Path:
+    """Sibling checkout: ``Dev/mcp_gateway/services/controltower_orchestrator_mcp``."""
+    return _dev_root() / "mcp_gateway" / "services" / "controltower_orchestrator_mcp"
+
+
 def _default_registry_path() -> Path:
     return _repo_root() / "config" / "project_registry.yaml"
 
@@ -122,6 +127,10 @@ class ExecutionConfig(BaseModel):
     retry_backoff_multiplier: float = 2.0
     guarded_packs: list[str] = Field(default_factory=lambda: ["deploy_pack", "release_readiness_pack"])
     allow_guarded_in_prod: bool = False
+    codex_executor_command: str | None = None
+    codex_executor_workdir: Path | None = Field(default_factory=_repo_root)
+    codex_executor_timeout_seconds: int = 3600
+    codex_executor_poll_interval_seconds: int = 30
 
     @model_validator(mode="after")
     def validate_execution(self) -> "ExecutionConfig":
@@ -129,6 +138,9 @@ class ExecutionConfig(BaseModel):
         self.retry_backoff_ms = max(int(self.retry_backoff_ms), 0)
         self.retry_backoff_multiplier = max(float(self.retry_backoff_multiplier), 1.0)
         self.guarded_packs = [item.strip() for item in self.guarded_packs if str(item).strip()]
+        self.codex_executor_command = (self.codex_executor_command or "").strip() or None
+        self.codex_executor_timeout_seconds = max(int(self.codex_executor_timeout_seconds), 1)
+        self.codex_executor_poll_interval_seconds = max(int(self.codex_executor_poll_interval_seconds), 1)
         return self
 
     @property
@@ -177,6 +189,19 @@ class PromptOrchestrationConfig(BaseModel):
     openai_api_key: str | None = None
 
 
+class OrchestratorSubstrateConfig(BaseModel):
+    """
+    Read and mutate controltower_orchestrator_mcp durable stores in-process.
+
+    Control Tower does not own workflow state; it binds the orchestrator package to configured
+    JSON paths and forwards operator reads/actions through those seams.
+    """
+
+    enabled: bool = False
+    mcp_service_root: Path | None = None
+    runtime_dir: Path | None = None
+
+
 class AppConfig(BaseModel):
     product_name: str = "Control Tower"
     environment: str = "local"
@@ -196,6 +221,7 @@ class ControlTowerConfig(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
     prompt_orchestration: PromptOrchestrationConfig = Field(default_factory=PromptOrchestrationConfig)
+    orchestrator_substrate: OrchestratorSubstrateConfig = Field(default_factory=OrchestratorSubstrateConfig)
 
     @model_validator(mode="after")
     def normalize_paths(self) -> "ControlTowerConfig":
@@ -224,6 +250,14 @@ class ControlTowerConfig(BaseModel):
         if self.auth.mode is None:
             normalized_environment = self.app.environment.lower()
             self.auth.mode = "dev" if normalized_environment in local_environments else "prod"
+        if self.orchestrator_substrate.enabled:
+            root = self.orchestrator_substrate.mcp_service_root or default_orchestrator_mcp_service_root()
+            if not root.is_dir():
+                raise FileNotFoundError(
+                    f"Orchestrator substrate is enabled but mcp_service_root is missing: {root}"
+                )
+            rdir = self.orchestrator_substrate.runtime_dir or (root / "runtime")
+            rdir.mkdir(parents=True, exist_ok=True)
         return self
 
     @property
@@ -270,6 +304,8 @@ def _resolve_payload_paths(payload: dict[str, Any], base_dir: Path) -> dict[str,
         execution["file_dir"] = _resolve_path(execution.get("file_dir"), base_dir)
     if "dead_letter_dir" in execution:
         execution["dead_letter_dir"] = _resolve_path(execution.get("dead_letter_dir"), base_dir)
+    if "codex_executor_workdir" in execution:
+        execution["codex_executor_workdir"] = _resolve_path(execution.get("codex_executor_workdir"), base_dir)
 
     copied["sources"] = {**sources, "schedulelab": schedulelab, "profitintel": profitintel}
     copied["identity"] = identity
@@ -277,6 +313,16 @@ def _resolve_payload_paths(payload: dict[str, Any], base_dir: Path) -> dict[str,
     copied["runtime"] = runtime
     copied["execution"] = execution
     copied["review"] = review
+
+    orchestrator_substrate = dict(copied.get("orchestrator_substrate") or {})
+    if "mcp_service_root" in orchestrator_substrate:
+        orchestrator_substrate["mcp_service_root"] = _resolve_path(
+            orchestrator_substrate.get("mcp_service_root"), base_dir
+        )
+    if "runtime_dir" in orchestrator_substrate:
+        orchestrator_substrate["runtime_dir"] = _resolve_path(orchestrator_substrate.get("runtime_dir"), base_dir)
+
+    copied["orchestrator_substrate"] = orchestrator_substrate
     return copied
 
 
@@ -324,6 +370,14 @@ def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
         execution["guarded_packs"] = [item.strip() for item in value.split(",") if item.strip()]
     if (value := _env_bool("CODEX_EXECUTION_ALLOW_GUARDED_IN_PROD")) is not None:
         execution["allow_guarded_in_prod"] = value
+    if value := os.getenv("CODEX_EXECUTOR_COMMAND"):
+        execution["codex_executor_command"] = value
+    if value := os.getenv("CODEX_EXECUTOR_WORKDIR"):
+        execution["codex_executor_workdir"] = value
+    if value := os.getenv("CODEX_EXECUTOR_TIMEOUT_SECONDS"):
+        execution["codex_executor_timeout_seconds"] = max(int(float(value)), 1)
+    if value := os.getenv("CODEX_EXECUTOR_POLL_INTERVAL_SECONDS"):
+        execution["codex_executor_poll_interval_seconds"] = max(int(float(value)), 1)
     if (value := _env_bool("CODEX_RESULT_INGEST_ENABLED")) is not None:
         execution["result_ingest_enabled"] = value
     if value := os.getenv("CODEX_EVENT_VERSION"):
@@ -383,6 +437,16 @@ def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
     copied["auth"] = auth
     copied["autonomy"] = autonomy
     copied["prompt_orchestration"] = prompt_orchestration
+
+    orchestrator_substrate = dict(copied.get("orchestrator_substrate") or {})
+    if (value := _env_bool("CONTROLTOWER_ORCHESTRATOR_SUBSTRATE_ENABLED")) is not None:
+        orchestrator_substrate["enabled"] = value
+    if value := os.getenv("CONTROLTOWER_ORCHESTRATOR_MCP_SERVICE_ROOT"):
+        orchestrator_substrate["mcp_service_root"] = value
+    if value := os.getenv("CONTROLTOWER_ORCHESTRATOR_RUNTIME_DIR"):
+        orchestrator_substrate["runtime_dir"] = value
+    copied["orchestrator_substrate"] = orchestrator_substrate
+
     return copied
 
 

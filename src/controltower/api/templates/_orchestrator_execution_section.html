@@ -1,0 +1,155 @@
+{% if orch_panel %}
+<section class="ct-section ct-orch-band" id="ct-orch-execution-band" aria-label="Orchestrator workflow execution">
+  <form id="ct-orch-csrf-source" class="ct-orch-csrf-source" aria-hidden="true">
+    <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+  </form>
+  <div class="ct-section-header">
+    <div>
+      <div class="ct-section-kicker">Execution status</div>
+      <h3>Schedule publish workflow (orchestrator)</h3>
+    </div>
+    <div class="ct-section-meta">
+      <span>Source: controltower_orchestrator_mcp stores</span>
+      <span>Read-only lists + bounded mutations</span>
+    </div>
+  </div>
+
+  <p class="ct-orch-authority-note">{{ orch_panel.authority_note }}</p>
+
+  {% if orch_panel.action_notice == "ok" %}
+  <div class="ct-orch-banner ct-orch-banner-ok" id="ct-orch-banner-ok" role="status">Mutation completed. State below is refreshed from durable stores.</div>
+  {% endif %}
+  {% if orch_panel.action_error %}
+  <div class="ct-orch-banner ct-orch-banner-err" id="ct-orch-banner-err" role="alert">{{ orch_panel.action_error }}</div>
+  {% endif %}
+
+  {% if orch_panel.list_approvals.status != "ok" %}
+  <div class="ct-orch-banner ct-orch-banner-err">Approval queue read failed ({{ orch_panel.list_approvals.error.message or orch_panel.list_approvals.error.code or "unknown" }}).</div>
+  {% endif %}
+  {% if orch_panel.list_publish.status != "ok" %}
+  <div class="ct-orch-banner ct-orch-banner-err">Publish packet list failed ({{ orch_panel.list_publish.error.message or orch_panel.list_publish.error.code or "unknown" }}).</div>
+  {% endif %}
+  {% if orch_panel.list_release.status != "ok" %}
+  <div class="ct-orch-banner ct-orch-banner-err">Release request list failed ({{ orch_panel.list_release.error.message or orch_panel.list_release.error.code or "unknown" }}).</div>
+  {% endif %}
+
+  <div class="ct-orch-layout">
+    <div class="ct-orch-panel">
+      <h4 class="ct-orch-subhead">Schedule publish workflows</h4>
+      <div class="ct-orch-table-wrap">
+        <table class="ct-orch-table">
+          <thead>
+            <tr>
+              <th scope="col">workflow_id</th>
+              <th scope="col">approval</th>
+              <th scope="col">project</th>
+              <th scope="col">action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in orch_panel.schedule_workflow_rows %}
+            {% set pl = row.payload if row.payload is mapping else {} %}
+            {% set wid = pl.workflow_id %}
+            <tr>
+              <td><code>{{ wid }}</code></td>
+              <td>{{ row.state }}</td>
+              <td>{{ pl.project_id or "—" }}</td>
+              <td><a class="text-link" href="/publish?orch_wf={{ wid | urlquote }}">Inspect</a></td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="ct-orch-empty">No schedule_publish_workflow rows in durable approval queue.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if orch_panel.selected_workflow_id %}
+    <div class="ct-orch-panel ct-orch-panel-detail" id="ct-orch-workflow-detail">
+      <h4 class="ct-orch-subhead">Workflow detail</h4>
+      {% set d = orch_panel.workflow_detail %}
+      {% if not d %}
+      <p class="ct-orch-empty">No workflow payload returned.</p>
+      {% elif d.status == "not_found" %}
+      <p class="ct-orch-empty" id="ct-orch-wf-not-found">schedule_publish_workflow_not_found for <code>{{ orch_panel.selected_workflow_id }}</code>.</p>
+      {% elif d.status != "ok" %}
+      <div class="ct-orch-banner ct-orch-banner-err" id="ct-orch-wf-error">{{ d.error.message if d.error is mapping else d.status }}</div>
+      {% else %}
+      <dl class="ct-orch-dl">
+        <dt>workflow_id</dt><dd><code id="ct-orch-field-workflow-id">{{ d.workflow_id }}</code></dd>
+        <dt>current_derived_state</dt><dd id="ct-orch-field-derived">{{ d.current_derived_state }}</dd>
+        <dt>approval_state</dt><dd id="ct-orch-field-approval-state">{{ d.approval_state }}</dd>
+        <dt>publish_state</dt><dd id="ct-orch-field-publish-state">{{ d.publish_state }}</dd>
+        <dt>release_state</dt><dd id="ct-orch-field-release-state">{{ d.release_state }}</dd>
+        <dt>blocking_condition</dt><dd id="ct-orch-field-blocking">{{ d.blocking_condition }}</dd>
+        <dt>recommended_next_action</dt><dd id="ct-orch-field-next-action">{{ d.recommended_next_action }}</dd>
+        <dt>ready_for_operator_action</dt><dd id="ct-orch-field-ready">{{ d.ready_for_operator_action }}</dd>
+        <dt>final_outcome</dt><dd id="ct-orch-field-outcome">{{ d.final_outcome }}</dd>
+      </dl>
+
+      {% set la = d.linked_artifacts if d.linked_artifacts is mapping else {} %}
+      {% set appr = la.approval_request if la.approval_request is mapping else {} %}
+      {% set pub = la.publish_packet if la.publish_packet is mapping else {} %}
+      {% set rel = la.release_request if la.release_request is mapping else {} %}
+      <h4 class="ct-orch-subhead">Linked artifacts</h4>
+      <ul class="ct-orch-id-list">
+        <li>approval_request_id: <code>{{ appr.approval_request_id or "—" }}</code></li>
+        <li>publish_request_id: <code>{{ pub.publish_request_id or "—" }}</code></li>
+        <li>release_request_id: <code>{{ rel.release_request_id or "—" }}</code></li>
+      </ul>
+
+      {% if review_auth.can_mutate %}
+      <div class="ct-orch-mutations" id="ct-orch-mutations">
+        <h4 class="ct-orch-subhead">Operator actions</h4>
+        <p class="ct-orch-mutation-meta">Authenticated as <strong>{{ review_auth.identity }}</strong> · {{ review_auth.auth_mode }}</p>
+
+        {% if d.approval_state == "pending" and appr.approval_request_id %}
+        <div class="ct-orch-mutation-row">
+          <form method="post" action="/publish/orchestrator/approve-approval" class="ct-orch-form">
+            <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+            <input type="hidden" name="orch_wf" value="{{ orch_panel.selected_workflow_id }}">
+            <input type="hidden" name="approval_request_id" value="{{ appr.approval_request_id }}">
+            <label><span class="ct-orch-label">Reason</span><input type="text" name="reason" class="ct-orch-input" autocomplete="off"></label>
+            <button type="submit" class="ct-btn-secondary" id="ct-orch-btn-approve">Approve approval</button>
+          </form>
+          <form method="post" action="/publish/orchestrator/deny-approval" class="ct-orch-form">
+            <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+            <input type="hidden" name="orch_wf" value="{{ orch_panel.selected_workflow_id }}">
+            <input type="hidden" name="approval_request_id" value="{{ appr.approval_request_id }}">
+            <label><span class="ct-orch-label">Reason</span><input type="text" name="reason" class="ct-orch-input" autocomplete="off"></label>
+            <button type="submit" class="ct-btn-secondary" id="ct-orch-btn-deny">Deny approval</button>
+          </form>
+        </div>
+        {% endif %}
+
+        {% if d.publish_state == "accepted" and pub.publish_request_id %}
+        <form method="post" action="/publish/orchestrator/promote-publish" class="ct-orch-form">
+          <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+          <input type="hidden" name="orch_wf" value="{{ orch_panel.selected_workflow_id }}">
+          <input type="hidden" name="publish_request_id" value="{{ pub.publish_request_id }}">
+          <label><span class="ct-orch-label">Reason</span><input type="text" name="reason" class="ct-orch-input" autocomplete="off"></label>
+          <button type="submit" class="ct-btn-secondary" id="ct-orch-btn-promote">Promote publish packet</button>
+        </form>
+        {% endif %}
+
+        {% if d.release_state == "accepted" and rel.release_request_id %}
+        <form method="post" action="/publish/orchestrator/execute-release" class="ct-orch-form">
+          <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+          <input type="hidden" name="orch_wf" value="{{ orch_panel.selected_workflow_id }}">
+          <input type="hidden" name="release_request_id" value="{{ rel.release_request_id }}">
+          <label><span class="ct-orch-label">Reason</span><input type="text" name="reason" class="ct-orch-input" autocomplete="off"></label>
+          <button type="submit" class="ct-btn-secondary" id="ct-orch-btn-execute-release">Execute release</button>
+        </form>
+        {% endif %}
+      </div>
+      {% elif review_auth.required and not review_auth.authenticated %}
+      <p class="ct-orch-banner ct-orch-banner-warn">Sign in to run orchestrator mutations from Control Tower.</p>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
