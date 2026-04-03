@@ -358,8 +358,20 @@ def assert_public_health(
         )
 
 
+def _subprocess_run_text_kwargs() -> dict[str, Any]:
+    """Avoid UnicodeDecodeError when OpenSSH prints UTF-8 on Windows (cp1252 default)."""
+    return {"encoding": "utf-8", "errors": "replace"}
+
+
 def git_stdout(command: list[str]) -> str:
-    completed = subprocess.run(command, cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        **_subprocess_run_text_kwargs(),
+    )
     if completed.returncode != 0:
         raise ReleaseFailure(
             step="git_command",
@@ -384,6 +396,7 @@ def run_checked(
         capture_output=True,
         text=True,
         check=False,
+        **_subprocess_run_text_kwargs(),
     )
     summary["steps"].append(
         {
@@ -635,7 +648,9 @@ def _default_summary_path() -> Path:
     return REPO_ROOT / ".controltower_runtime" / "release" / "latest_release_status.json"
 
 
-def tail_lines(text: str, count: int = 20) -> list[str]:
+def tail_lines(text: str | None, count: int = 20) -> list[str]:
+    if not text:
+        return []
     return [line for line in text.splitlines()[-count:] if line.strip()]
 
 
