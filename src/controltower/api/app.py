@@ -7,6 +7,8 @@ from typing import Any
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
+from pydantic import ValidationError
+
 from fastapi import Body, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +21,14 @@ from controltower.obsidian.exporter import load_latest_export
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.services.controltower import ControlTowerService
+from controltower.services.intelligence_packets import (
+    GeneratePacketRequest,
+    export_markdown_bytes,
+    generate_weekly_schedule_intelligence_packet,
+    load_packet,
+    publish_packet,
+    write_packet_artifacts,
+)
 from controltower.services.orchestration import OrchestrationService, ReviewActorContext
 from controltower.services.orchestrator_panel import build_orchestrator_publish_panel, mutation_query_notices
 from controltower.services.release import collect_operator_diagnostics
@@ -41,6 +51,8 @@ REQUIRED_UI_TEMPLATES = (
     "run_detail.html",
     "review_detail.html",
     "diagnostics.html",
+    "packet_new.html",
+    "packet_detail.html",
     "_orchestrator_execution_section.html",
 )
 
@@ -282,6 +294,81 @@ def create_app_from_config(config) -> FastAPI:
                 page_mode="project-detail",
             ),
         )
+
+    @app.get("/packets/new", response_class=HTMLResponse)
+    def packet_intake_page(request: Request):
+        portfolio = service.build_portfolio()
+        return templates.TemplateResponse(
+            request,
+            "packet_new.html",
+            _template_payload(
+                request,
+                projects=portfolio.project_rankings,
+                page_title="New intelligence packet",
+                page_kicker="Weekly schedule intelligence — deterministic assembly from live Control Tower signals",
+                page_mode="packets-intake",
+            ),
+        )
+
+    @app.post("/packets/new")
+    async def packet_intake_submit(
+        request: Request,
+        project_code: str = Form(""),
+        packet_type: str = Form("weekly_schedule_intelligence"),
+        reporting_period: str = Form(""),
+        title: str = Form(""),
+        operator_notes: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _verify_auth_csrf(request, csrf_token)
+        try:
+            req = GeneratePacketRequest(
+                project_code=project_code,
+                packet_type=packet_type,
+                reporting_period=reporting_period,
+                title=title,
+                operator_notes=operator_notes,
+            )
+            record = generate_weekly_schedule_intelligence_packet(service, req)
+            write_packet_artifacts(config.runtime.state_root, record)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return RedirectResponse(url=f"/packets/{record.packet_id}", status_code=303)
+
+    @app.get("/packets/{packet_id}", response_class=HTMLResponse)
+    def packet_detail_page(request: Request, packet_id: str):
+        try:
+            record = load_packet(config.runtime.state_root, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        return templates.TemplateResponse(
+            request,
+            "packet_detail.html",
+            _template_payload(
+                request,
+                packet=record,
+                page_title=record.title,
+                page_kicker=f"{record.project_name} · {record.reporting_period}",
+                page_mode="packet-detail",
+            ),
+        )
+
+    @app.post("/packets/{packet_id}/publish")
+    async def packet_publish_form(
+        request: Request,
+        packet_id: str,
+        csrf_token: str = Form(""),
+    ):
+        _verify_auth_csrf(request, csrf_token)
+        try:
+            updated = publish_packet(config.runtime.state_root, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        return RedirectResponse(url=f"/packets/{packet_id}?published=1", status_code=303)
 
     @app.get("/projects/{project_code}/compare", response_class=HTMLResponse)
     def project_compare(request: Request, project_code: str):
@@ -785,6 +872,57 @@ def create_app_from_config(config) -> FastAPI:
         if review is None:
             raise HTTPException(status_code=404, detail="Review run not found")
         return review.model_dump(mode="json")
+
+    @app.post("/api/packets/generate")
+    def api_packets_generate(payload: dict = Body(...)):
+        try:
+            req = GeneratePacketRequest.model_validate(payload)
+            record = generate_weekly_schedule_intelligence_packet(service, req)
+            write_packet_artifacts(config.runtime.state_root, record)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "packet_id": record.packet_id,
+            "status": record.status,
+            "detail_path": f"/packets/{record.packet_id}",
+        }
+
+    @app.get("/api/packets/{packet_id}")
+    def api_packets_get(packet_id: str):
+        try:
+            record = load_packet(config.runtime.state_root, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        return record.model_dump(mode="json")
+
+    @app.post("/api/packets/{packet_id}/publish")
+    def api_packets_publish(packet_id: str):
+        try:
+            updated = publish_packet(config.runtime.state_root, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        return updated.model_dump(mode="json")
+
+    @app.get("/api/packets/{packet_id}/export/markdown")
+    def api_packets_export_markdown(packet_id: str):
+        try:
+            exported = export_markdown_bytes(config.runtime.state_root, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if exported is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        filename, body = exported
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.post("/api/execution/results")
     def execution_result_ingest(payload: dict = Body(...)):

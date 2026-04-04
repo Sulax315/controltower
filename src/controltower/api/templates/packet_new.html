@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="pkt-page" id="packet-intake-shell">
+  <div class="pkt-toolbar">
+    <div class="pkt-toolbar-main">
+      <h1 class="pkt-toolbar-title">Generate construction intelligence packet</h1>
+      <p class="pkt-toolbar-meta">Phase 1: Weekly Schedule Intelligence — assembled deterministically from ScheduleLab / Control Tower signals (no autonomous agents).</p>
+    </div>
+  </div>
+
+  <form method="post" action="/packets/new" class="pkt-intake-form">
+    <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+    <div class="pkt-form-grid">
+      <div class="pkt-field">
+        <label class="pkt-label" for="pkt-project">Project</label>
+        <select class="pkt-select" id="pkt-project" name="project_code" required>
+          <option value="" disabled selected>Select project…</option>
+          {% for p in projects %}
+          <option value="{{ p.canonical_project_code }}">{{ p.project_name }} ({{ p.canonical_project_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="pkt-field">
+        <label class="pkt-label" for="pkt-type">Packet type</label>
+        <select class="pkt-select" id="pkt-type" name="packet_type" required>
+          <option value="weekly_schedule_intelligence" selected>Weekly Schedule Intelligence Packet</option>
+        </select>
+      </div>
+      <div class="pkt-field">
+        <label class="pkt-label" for="pkt-period">Reporting period</label>
+        <input class="pkt-input" id="pkt-period" name="reporting_period" type="text" required placeholder="e.g. 2026-W14 or Mar 24–30, 2026" autocomplete="off">
+      </div>
+      <div class="pkt-field">
+        <label class="pkt-label" for="pkt-title">Title</label>
+        <input class="pkt-input" id="pkt-title" name="title" type="text" required placeholder="Issued title for this packet" autocomplete="off">
+      </div>
+      <div class="pkt-field pkt-field-span2">
+        <label class="pkt-label" for="pkt-notes">Operator notes / instructions</label>
+        <textarea class="pkt-textarea" id="pkt-notes" name="operator_notes" placeholder="Context for readers, emphasis, or exclusions (optional)."></textarea>
+      </div>
+    </div>
+    <div class="pkt-form-footer">
+      <a class="text-link pkt-muted" href="/publish">Cancel</a>
+      <button type="submit" class="button primary">Generate packet</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

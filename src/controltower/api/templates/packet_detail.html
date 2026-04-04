@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="pkt-page" id="packet-detail-shell">
+  {% if request.query_params.get('published') == '1' %}
+  <div class="pkt-banner" role="status">Packet marked published. Runtime artifacts updated on server.</div>
+  {% endif %}
+
+  <div class="pkt-toolbar">
+    <div class="pkt-toolbar-main">
+      <h1 class="pkt-toolbar-title">{{ packet.title }}</h1>
+      <p class="pkt-toolbar-meta">{{ packet.project_name }} · {{ packet.canonical_project_code }} · {{ packet.reporting_period }} · {{ packet.packet_type }} · ID {{ packet.packet_id }}</p>
+    </div>
+    <div class="pkt-toolbar-actions">
+      <span class="pkt-status-pill {% if packet.status == 'published' %}pkt-status-published{% else %}pkt-status-generated{% endif %}">{{ packet.status }}</span>
+      <a class="button secondary" href="/api/packets/{{ packet.packet_id }}/export/markdown">Export Markdown</a>
+      {% if packet.status != 'published' %}
+      <form method="post" action="/packets/{{ packet.packet_id }}/publish" class="review-inline-form">
+        <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+        <button type="submit" class="button primary">Publish packet</button>
+      </form>
+      {% endif %}
+      <a class="button secondary" href="/packets/new">New packet</a>
+    </div>
+  </div>
+
+  <div class="pkt-tabs" role="tablist" aria-label="Packet sections">
+    {% for section in packet.sections %}
+    <button type="button" class="pkt-tab{% if loop.first %} is-active{% endif %}" role="tab" aria-selected="{% if loop.first %}true{% else %}false{% endif %}" data-pkt-tab="{{ section.key }}" id="tab-{{ section.key }}">{{ section.title }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="pkt-panels">
+    {% for section in packet.sections %}
+    <div class="pkt-panel{% if loop.first %} is-active{% endif %}" role="tabpanel" data-pkt-panel="{{ section.key }}" aria-labelledby="tab-{{ section.key }}" {% if not loop.first %}hidden{% endif %}>
+      <div class="pkt-panel-body intelligence-packet-section" data-section-key="{{ section.key }}">
+        {{ section.body_html | safe }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="pkt-form-footer" style="justify-content: flex-start;">
+    <span class="pkt-muted">JSON API: <code>/api/packets/{{ packet.packet_id }}</code> · Created {{ packet.created_at }}{% if packet.published_at %} · Published {{ packet.published_at }}{% endif %} · Updated {{ packet.updated_at }}</span>
+  </div>
+</section>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.pkt-tab');
+  var panels = document.querySelectorAll('.pkt-panel');
+  function activate(key) {
+    tabs.forEach(function (t) {
+      var on = t.getAttribute('data-pkt-tab') === key;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach(function (p) {
+      var on = p.getAttribute('data-pkt-panel') === key;
+      p.classList.toggle('is-active', on);
+      if (on) p.removeAttribute('hidden'); else p.setAttribute('hidden', 'hidden');
+    });
+  }
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      activate(tab.getAttribute('data-pkt-tab'));
+    });
+  });
+})();
+</script>
+{% endblock %}

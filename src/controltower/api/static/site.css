@@ -5203,6 +5203,234 @@ body.publish .text-link:hover {
   background: var(--panel-strong);
 }
 
+/* Intelligence packets (operator desktop surface) */
+#packet-intake-shell,
+#packet-detail-shell {
+  display: grid;
+  gap: 0;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow-tight);
+  overflow: hidden;
+}
+
+.pkt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-strong) 0%, var(--panel) 100%);
+}
+
+.pkt-toolbar-main {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.pkt-toolbar-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pkt-toolbar-meta {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.pkt-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pkt-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-soft);
+}
+
+.pkt-status-generated {
+  border-color: rgba(23, 94, 166, 0.35);
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+
+.pkt-status-published {
+  border-color: rgba(31, 122, 73, 0.4);
+  color: var(--healthy);
+  background: var(--healthy-soft);
+}
+
+.pkt-banner {
+  padding: 10px 18px;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--healthy-soft);
+  color: var(--ink);
+}
+
+.pkt-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  padding: 18px;
+}
+
+@media (max-width: 960px) {
+  .pkt-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pkt-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pkt-field-span2 {
+  grid-column: 1 / -1;
+}
+
+.pkt-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.pkt-input,
+.pkt-select,
+.pkt-textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font: inherit;
+  background: var(--panel-strong);
+}
+
+.pkt-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.pkt-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.pkt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.pkt-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pkt-tab:hover {
+  background: rgba(23, 94, 166, 0.06);
+  color: var(--accent-deep);
+}
+
+.pkt-tab.is-active {
+  border-color: var(--line-strong);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 0 var(--panel);
+  margin-bottom: -1px;
+}
+
+.pkt-panels {
+  padding: 16px 18px 22px;
+  min-height: 320px;
+}
+
+.pkt-panel {
+  display: none;
+}
+
+.pkt-panel.is-active {
+  display: block;
+}
+
+.pkt-panel-body {
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+.pkt-panel-body h1,
+.pkt-panel-body h2,
+.pkt-panel-body h3 {
+  margin-top: 1.1em;
+  margin-bottom: 0.45em;
+  font-size: 1rem;
+}
+
+.pkt-panel-body ul {
+  margin: 0.4em 0 0.8em;
+  padding-left: 1.25rem;
+}
+
+.pkt-evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.pkt-evidence-table th,
+.pkt-evidence-table td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pkt-evidence-table th {
+  background: var(--panel-soft);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.pkt-muted {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 @media (max-width: 900px) {
   .review-summary-head,
   .review-summary-meta {

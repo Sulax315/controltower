@@ -28,6 +28,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from controltower.config import load_config
 from controltower.services.controltower import ControlTowerService
+from controltower.services.intelligence_packets import load_packet, packets_root
 from controltower.services.release import stamp_release_trace
 from controltower.services.release_trace import load_source_release_trace, release_source_trace_path
 from controltower.services.runtime_state import ARTIFACT_INDEX_NAME, LATEST_DIAGNOSTICS_NAME, LATEST_RELEASE_JSON
@@ -264,6 +265,43 @@ def main() -> int:
             deployed_commit=deployed_commit,
         )
 
+    orch_status_raw = _json_check(
+        f"{public_base_url}/api/orchestrator/status",
+        timeout_seconds=args.timeout_seconds,
+        require_loaded_config=False,
+    )
+    orch_status_check: dict[str, Any] = {"name": "public_orchestrator_status", **orch_status_raw}
+    orch_payload = orch_status_raw.get("payload") if orch_status_raw["status"] == "pass" else None
+    if orch_payload is not None:
+        orch_status_check["orchestrator_enabled"] = orch_payload.get("enabled")
+        orch_status_check["orchestrator_bind_status"] = orch_payload.get("status")
+        orch_status_check["orchestrator_service_root"] = orch_payload.get("service_root")
+        orch_status_check["orchestrator_runtime_dir"] = orch_payload.get("runtime_dir")
+        if orch_payload.get("bind_error"):
+            orch_status_check["orchestrator_bind_error"] = orch_payload.get("bind_error")
+        shape_ok = isinstance(orch_payload.get("enabled"), bool)
+        contract_ok = shape_ok
+        if config.orchestrator_substrate.enabled:
+            contract_ok = contract_ok and orch_payload.get("enabled") is True and orch_payload.get("status") == "ok"
+        orch_status_check["status"] = "pass" if contract_ok else "fail"
+        orch_status_check.pop("payload", None)
+    summary["checks"].append(orch_status_check)
+    if orch_status_check["status"] != "pass":
+        summary["error"] = (
+            "The public /api/orchestrator/status route must return HTTP 200 JSON with a boolean 'enabled' without "
+            "authenticating. When orchestrator_substrate is enabled in config, the response must also report "
+            "enabled=true and status=ok. HTTP 401 here usually means the deployment predates the public orchestrator "
+            "status contract in AppAuthGuardMiddleware. A degraded status or bind_error indicates the MCP service "
+            "root or runtime directory is wrong on the host."
+        )
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
+
     public_http_root = _http_check(
         f"{public_http_base_url}/",
         timeout_seconds=args.timeout_seconds,
@@ -437,6 +475,28 @@ def main() -> int:
                 deployed_commit=deployed_commit,
             )
 
+        if config.orchestrator_substrate.enabled:
+            publish_orch = _http_check(
+                f"{public_base_url}/publish",
+                timeout_seconds=args.timeout_seconds,
+                opener=public_opener,
+                expected_content_type_prefix="text/html",
+                expected_markers=['id="ct-orch-execution-band"'],
+            )
+            summary["checks"].append({"name": "public_publish_orchestrator_panel", **publish_orch})
+            if publish_orch["status"] != "pass":
+                summary["error"] = (
+                    "Authenticated /publish must include the orchestrator execution band when orchestrator_substrate "
+                    "is enabled (marker id=\"ct-orch-execution-band\")."
+                )
+                return _finish(
+                    summary,
+                    exit_code=EXIT_PROXY_ERROR,
+                    runtime_root=runtime_root,
+                    source_trace=source_trace,
+                    deployed_commit=deployed_commit,
+                )
+
         route_expectations = {
             "/publish": {
                 "name": "publish",
@@ -458,6 +518,11 @@ def main() -> int:
             "/diagnostics": {
                 "name": "diagnostics",
                 "expected_content_type_prefix": "text/html",
+            },
+            "/packets/new": {
+                "name": "packets_new",
+                "expected_content_type_prefix": "text/html",
+                "markers": ['id="packet-intake-shell"', "Weekly Schedule Intelligence"],
             },
         }
     else:
@@ -520,6 +585,11 @@ def main() -> int:
                 "expected_headers": {
                     "x-controltower-arena-selection": ",".join(base_arena.selected_arena_codes),
                 },
+            },
+            "/packets/new": {
+                "name": "packets_new",
+                "expected_content_type_prefix": "text/html",
+                "markers": ['id="packet-intake-shell"', "Weekly Schedule Intelligence"],
             },
         }
     if selected_codes:
@@ -667,6 +737,25 @@ def main() -> int:
         return _finish(
             summary,
             exit_code=EXIT_DIAGNOSTICS_ERROR,
+            runtime_root=runtime_root,
+            source_trace=source_trace,
+            deployed_commit=deployed_commit,
+        )
+
+    packet_opener = public_opener if auth_required else None
+    pkt_flow_checks, pkt_flow_err = _verify_intelligence_packet_flow(
+        public_base_url=public_base_url,
+        service=service,
+        opener=packet_opener,
+        timeout_seconds=args.timeout_seconds,
+    )
+    for chk in pkt_flow_checks:
+        summary["checks"].append(chk)
+    if pkt_flow_err:
+        summary["error"] = pkt_flow_err
+        return _finish(
+            summary,
+            exit_code=EXIT_PROXY_ERROR,
             runtime_root=runtime_root,
             source_trace=source_trace,
             deployed_commit=deployed_commit,
@@ -836,6 +925,188 @@ def _http_check(
         "forbidden_visible_markers_present": forbidden_visible_markers_present,
         "header_mismatches": header_mismatches,
     }
+
+
+def _http_post_json(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    timeout_seconds: int,
+    opener=None,
+    expected_statuses: set[int] | None = None,
+) -> dict[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    request = Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "controltower-production-verifier/1.0",
+        },
+    )
+    active_opener = opener or _build_http_opener()
+    allowed = expected_statuses or {200}
+    try:
+        with active_opener.open(request, timeout=timeout_seconds) as response:
+            status_code = response.status
+            body_bytes = response.read()
+    except HTTPError as exc:
+        status_code = exc.code
+        body_bytes = exc.read()
+    except URLError as exc:
+        return {"status": "fail", "url": url, "error": str(exc.reason), "http_status": None, "payload": None}
+
+    try:
+        parsed: Any = json.loads(body_bytes.decode("utf-8"))
+    except json.JSONDecodeError:
+        parsed = None
+    ok = status_code in allowed and parsed is not None
+    return {
+        "status": "pass" if ok else "fail",
+        "url": url,
+        "http_status": status_code,
+        "payload": parsed,
+        "body_snippet": body_bytes.decode("utf-8", errors="replace")[:400],
+    }
+
+
+def _http_post_empty(url: str, *, timeout_seconds: int, opener=None, expected_statuses: set[int] | None = None) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=b"{}",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "controltower-production-verifier/1.0",
+        },
+    )
+    active_opener = opener or _build_http_opener()
+    allowed = expected_statuses or {200}
+    try:
+        with active_opener.open(request, timeout=timeout_seconds) as response:
+            status_code = response.status
+            body_bytes = response.read()
+    except HTTPError as exc:
+        status_code = exc.code
+        body_bytes = exc.read()
+    except URLError as exc:
+        return {"status": "fail", "url": url, "error": str(exc.reason), "http_status": None, "payload": None}
+    try:
+        parsed: Any = json.loads(body_bytes.decode("utf-8"))
+    except json.JSONDecodeError:
+        parsed = None
+    ok = status_code in allowed and parsed is not None
+    return {
+        "status": "pass" if ok else "fail",
+        "url": url,
+        "http_status": status_code,
+        "payload": parsed,
+        "body_snippet": body_bytes.decode("utf-8", errors="replace")[:400],
+    }
+
+
+def _verify_intelligence_packet_flow(
+    *,
+    public_base_url: str,
+    service: ControlTowerService,
+    opener,
+    timeout_seconds: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Exercises packet generate → GET JSON → publish → markdown export → HTML detail.
+    Creates one persisted packet under the deployment runtime state root.
+    """
+    portfolio = service.build_portfolio()
+    if not portfolio.project_rankings:
+        return (
+            [{"name": "intelligence_packet_flow", "status": "pass", "detail": "skipped_no_projects"}],
+            None,
+        )
+    project_code = portfolio.project_rankings[0].canonical_project_code
+    base = public_base_url.rstrip("/")
+    checks: list[dict[str, Any]] = []
+
+    gen = _http_post_json(
+        f"{base}/api/packets/generate",
+        {
+            "project_code": project_code,
+            "packet_type": "weekly_schedule_intelligence",
+            "reporting_period": datetime.now(timezone.utc).strftime("%Y-%m-%dZ"),
+            "title": "Production verifier — intelligence packet",
+            "operator_notes": "Automated production verification run.",
+        },
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+    checks.append({"name": "public_api_packets_generate", **{k: v for k, v in gen.items() if k != "payload"}})
+    if gen["status"] != "pass" or not isinstance(gen.get("payload"), dict):
+        return checks, "Packet generation API did not return HTTP 200 JSON."
+    packet_id = gen["payload"].get("packet_id")
+    if not packet_id:
+        checks[-1]["status"] = "fail"
+        return checks, "Packet generation response missing packet_id."
+
+    state_root = Path(service.config.runtime.state_root)
+    pkt_base = packets_root(state_root) / packet_id
+    persisted = (
+        (pkt_base / "packet.json").is_file()
+        and (pkt_base / "packet.md").is_file()
+        and (pkt_base / "packet.html").is_file()
+    )
+    loaded = load_packet(state_root, packet_id)
+    section_ok = loaded is not None and len(loaded.sections) == 8
+    checks.append(
+        {
+            "name": "intelligence_packet_runtime_persistence",
+            "status": "pass" if persisted and section_ok else "fail",
+            "packet_dir": str(pkt_base),
+            "artifacts_present": persisted,
+            "section_count": len(loaded.sections) if loaded else None,
+        }
+    )
+    if not persisted or not section_ok:
+        return checks, "Packet artifacts missing on runtime state root or section count is not 8."
+
+    get_pkt = _http_check(
+        f"{base}/api/packets/{packet_id}",
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+        expected_content_type_prefix="application/json",
+        expected_markers=['"sections"'],
+    )
+    checks.append({"name": "public_api_packets_get", **{k: v for k, v in get_pkt.items() if k not in ("body_snippet", "visible_prefix_snippet")}})
+    if get_pkt["status"] != "pass":
+        return checks, "GET /api/packets/{id} did not succeed."
+
+    pub = _http_post_empty(f"{base}/api/packets/{packet_id}/publish", timeout_seconds=timeout_seconds, opener=opener)
+    checks.append({"name": "public_api_packets_publish", **{k: v for k, v in pub.items() if k != "payload"}})
+    if pub["status"] != "pass":
+        return checks, "POST /api/packets/{id}/publish did not return JSON."
+    if isinstance(pub.get("payload"), dict) and pub["payload"].get("status") != "published":
+        checks[-1]["status"] = "fail"
+        return checks, "Published packet status was not 'published'."
+
+    export_chk = _http_check(
+        f"{base}/api/packets/{packet_id}/export/markdown",
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+        expected_content_type_prefix="text/markdown",
+        expected_markers=["# Production verifier"],
+    )
+    checks.append({"name": "public_api_packets_export_markdown", **export_chk})
+
+    detail_chk = _http_check(
+        f"{base}/packets/{packet_id}",
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+        expected_markers=['id="packet-detail-shell"', "pkt-tab"],
+    )
+    checks.append({"name": "public_packet_detail_html", **detail_chk})
+
+    if any(c.get("status") != "pass" for c in checks):
+        return checks, "One or more intelligence packet verification steps failed."
+    return checks, None
 
 
 def _json_check(url: str, *, timeout_seconds: int, opener=None, require_loaded_config: bool = True) -> dict[str, Any]:
