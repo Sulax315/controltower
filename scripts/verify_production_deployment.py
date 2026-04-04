@@ -1100,7 +1100,7 @@ def _verify_intelligence_packet_flow(
         f"{base}/packets/{packet_id}",
         timeout_seconds=timeout_seconds,
         opener=opener,
-        expected_markers=['id="packet-detail-shell"', "pkt-tab"],
+        expected_markers=['id="packet-detail-shell"', 'id="pkt-command-strip"'],
     )
     checks.append({"name": "public_packet_detail_html", **detail_chk})
 

@@ -1,11 +1,32 @@
 {% extends "layout.html" %}
+
+{% macro pkt_section_card(title, keys, sec_id) %}
+<article class="pkt-section-card" id="{{ sec_id }}" data-section-group="{{ sec_id }}">
+  <header class="pkt-section-card__head">
+    <h2 class="pkt-section-card__title">{{ title }}</h2>
+  </header>
+  <div class="pkt-section-card__body">
+    {% for s in packet.sections %}
+      {% if s.key in keys %}
+      <div class="pkt-section-block" data-section-key="{{ s.key }}">
+        {% if keys|length > 1 %}
+        <div class="pkt-section-block__subhead">{{ s.title }}</div>
+        {% endif %}
+        <div class="pkt-prose{% if s.key == 'action_register' %} pkt-action-register-prose{% endif %}">{{ s.body_html | safe }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</article>
+{% endmacro %}
+
 {% block content %}
-<section class="pkt-page" id="packet-detail-shell">
+<section class="pkt-page pkt-page--intel" id="packet-detail-shell">
   {% if request.query_params.get('published') == '1' %}
   <div class="pkt-banner" role="status">Packet marked published. Runtime artifacts updated on server.</div>
   {% endif %}
 
-  <div class="pkt-toolbar">
+  <div class="pkt-toolbar pkt-toolbar--intel">
     <div class="pkt-toolbar-main">
       <h1 class="pkt-toolbar-title">{{ packet.title }}</h1>
       <p class="pkt-toolbar-meta">{{ packet.project_name }} · {{ packet.canonical_project_code }} · {{ packet.reporting_period }} · {{ packet.packet_type }} · ID {{ packet.packet_id }}</p>
@@ -23,48 +44,126 @@
     </div>
   </div>
 
-  <div class="pkt-tabs" role="tablist" aria-label="Packet sections">
-    {% for section in packet.sections %}
-    <button type="button" class="pkt-tab{% if loop.first %} is-active{% endif %}" role="tab" aria-selected="{% if loop.first %}true{% else %}false{% endif %}" data-pkt-tab="{{ section.key }}" id="tab-{{ section.key }}">{{ section.title }}</button>
-    {% endfor %}
-  </div>
-
-  <div class="pkt-panels">
-    {% for section in packet.sections %}
-    <div class="pkt-panel{% if loop.first %} is-active{% endif %}" role="tabpanel" data-pkt-panel="{{ section.key }}" aria-labelledby="tab-{{ section.key }}" {% if not loop.first %}hidden{% endif %}>
-      <div class="pkt-panel-body intelligence-packet-section" data-section-key="{{ section.key }}">
-        {{ section.body_html | safe }}
+  <div class="pkt-command-strip" id="pkt-command-strip" data-risk="unknown" aria-label="Command summary">
+    <div class="pkt-command-strip__inner">
+      <div class="pkt-command-field">
+        <span class="pkt-command-field__label">Finish date</span>
+        <span class="pkt-command-field__value" id="pkt-cmd-finish">—</span>
+      </div>
+      <div class="pkt-command-field pkt-command-field--wide">
+        <span class="pkt-command-field__label">Δ vs prior</span>
+        <span class="pkt-command-field__value pkt-command-field__value--clamp" id="pkt-cmd-delta">—</span>
+      </div>
+      <div class="pkt-command-field">
+        <span class="pkt-command-field__label">Risk level</span>
+        <span class="pkt-command-field__value"><span class="pkt-risk-pill" id="pkt-cmd-risk">—</span></span>
+      </div>
+      <div class="pkt-command-field pkt-command-field--grow">
+        <span class="pkt-command-field__label">Primary driver</span>
+        <span class="pkt-command-field__value pkt-command-field__value--clamp" id="pkt-cmd-driver">—</span>
+      </div>
+      <div class="pkt-command-field">
+        <span class="pkt-command-field__label">Status (movement)</span>
+        <span class="pkt-command-field__value" id="pkt-cmd-status">—</span>
       </div>
     </div>
-    {% endfor %}
   </div>
 
-  <div class="pkt-form-footer" style="justify-content: flex-start;">
+  <div class="pkt-kpi-row" aria-label="Key indicators">
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Finish date</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-finish">—</span>
+    </div>
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Δ vs prior</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-delta">—</span>
+    </div>
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Risk level</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-risk">—</span>
+    </div>
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Cycles</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-cycles">—</span>
+    </div>
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Open ends</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-open-ends">—</span>
+    </div>
+    <div class="pkt-kpi-card">
+      <span class="pkt-kpi-card__label">Margin</span>
+      <span class="pkt-kpi-card__value" id="pkt-kpi-margin">—</span>
+    </div>
+  </div>
+
+  <nav class="pkt-section-toc" aria-label="Section navigation">
+    <a href="#pkt-sec-summary">Summary</a>
+    <a href="#pkt-sec-finish">Finish outlook</a>
+    <a href="#pkt-sec-risks">Risks</a>
+    <a href="#pkt-sec-drivers">Drivers</a>
+    <a href="#pkt-sec-actions">Actions</a>
+    <a href="#pkt-sec-evidence">Evidence</a>
+  </nav>
+
+  <div class="pkt-intel-layout">
+    <div class="pkt-intel-main">
+      {{ pkt_section_card("Executive summary", ["executive_summary"], "pkt-sec-summary") }}
+      {{ pkt_section_card("Finish outlook", ["finish_milestone_outlook", "delta_vs_prior"], "pkt-sec-finish") }}
+      {{ pkt_section_card("Risks", ["near_term_risks"], "pkt-sec-risks") }}
+
+      <article class="pkt-section-card" id="pkt-sec-drivers" data-section-group="drivers">
+        <header class="pkt-section-card__head">
+          <h2 class="pkt-section-card__title">Drivers</h2>
+        </header>
+        <div class="pkt-section-card__body">
+          {% for s in packet.sections %}
+            {% if s.key == 'key_drivers' %}
+            <div class="pkt-section-block" data-section-key="key_drivers">
+              <div id="pkt-driver-highlight-mount" class="pkt-driver-highlight" hidden></div>
+              <div class="pkt-prose">{{ s.body_html | safe }}</div>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </article>
+
+      {{ pkt_section_card("Actions", ["required_decisions", "action_register"], "pkt-sec-actions") }}
+      {{ pkt_section_card("Source evidence", ["source_evidence_appendix"], "pkt-sec-evidence") }}
+    </div>
+
+    <aside class="pkt-intel-rail" aria-label="What matters now">
+      <div class="pkt-rail-card">
+        <h3 class="pkt-rail-card__title">Key risks</h3>
+        <ul class="pkt-rail-list" id="pkt-rail-risks"></ul>
+      </div>
+      <div class="pkt-rail-card">
+        <h3 class="pkt-rail-card__title">Next actions</h3>
+        <ul class="pkt-rail-list" id="pkt-rail-actions"></ul>
+      </div>
+      <div class="pkt-rail-card pkt-rail-card--stats">
+        <h3 class="pkt-rail-card__title">Quick stats</h3>
+        <dl class="pkt-rail-stats">
+          <div class="pkt-rail-stat">
+            <dt>Finish</dt>
+            <dd id="pkt-rail-stat-finish">—</dd>
+          </div>
+          <div class="pkt-rail-stat">
+            <dt>Risk</dt>
+            <dd id="pkt-rail-stat-risk">—</dd>
+          </div>
+          <div class="pkt-rail-stat">
+            <dt>Movement</dt>
+            <dd id="pkt-rail-stat-movement">—</dd>
+          </div>
+        </dl>
+      </div>
+    </aside>
+  </div>
+
+  <div class="pkt-form-footer pkt-form-footer--intel">
     <span class="pkt-muted">JSON API: <code>/api/packets/{{ packet.packet_id }}</code> · Created {{ packet.created_at }}{% if packet.published_at %} · Published {{ packet.published_at }}{% endif %} · Updated {{ packet.updated_at }}</span>
   </div>
 </section>
 
-<script>
-(function () {
-  var tabs = document.querySelectorAll('.pkt-tab');
-  var panels = document.querySelectorAll('.pkt-panel');
-  function activate(key) {
-    tabs.forEach(function (t) {
-      var on = t.getAttribute('data-pkt-tab') === key;
-      t.classList.toggle('is-active', on);
-      t.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
-    panels.forEach(function (p) {
-      var on = p.getAttribute('data-pkt-panel') === key;
-      p.classList.toggle('is-active', on);
-      if (on) p.removeAttribute('hidden'); else p.setAttribute('hidden', 'hidden');
-    });
-  }
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      activate(tab.getAttribute('data-pkt-tab'));
-    });
-  });
-})();
-</script>
+<script src="/static/packet-detail.js?v={{ asset_version }}" defer></script>
 {% endblock %}

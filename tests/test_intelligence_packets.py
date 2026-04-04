@@ -58,7 +58,8 @@ def test_intelligence_packet_happy_path(sample_config_path):
     assert detail.status_code == 200
     assert 'id="packet-detail-shell"' in detail.text
     assert "Weekly schedule intelligence — test" in detail.text
-    assert "pkt-tab" in detail.text
+    assert 'id="pkt-command-strip"' in detail.text
+    assert "pkt-section-card" in detail.text
 
     export = client.get(f"/api/packets/{packet_id}/export/markdown")
     assert export.status_code == 200
