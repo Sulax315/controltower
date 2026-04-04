@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from controltower.config import default_orchestrator_mcp_service_root, load_config
 from controltower.obsidian.exporter import load_latest_export
+from controltower.obsidian.intelligence_vault import try_sync_intelligence_packet_to_obsidian
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.services.controltower import ControlTowerService
@@ -368,6 +369,11 @@ def create_app_from_config(config) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if updated is None:
             raise HTTPException(status_code=404, detail="Packet not found")
+        try_sync_intelligence_packet_to_obsidian(
+            config.obsidian,
+            updated,
+            state_root=config.runtime.state_root,
+        )
         return RedirectResponse(url=f"/packets/{packet_id}?published=1", status_code=303)
 
     @app.get("/projects/{project_code}/compare", response_class=HTMLResponse)
@@ -907,6 +913,11 @@ def create_app_from_config(config) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if updated is None:
             raise HTTPException(status_code=404, detail="Packet not found")
+        try_sync_intelligence_packet_to_obsidian(
+            config.obsidian,
+            updated,
+            state_root=config.runtime.state_root,
+        )
         return updated.model_dump(mode="json")
 
     @app.get("/api/packets/{packet_id}/export/markdown")
