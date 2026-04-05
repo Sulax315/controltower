@@ -24,6 +24,50 @@ def test_load_intelligence_bundle_empty_when_missing_vault(tmp_path: Path):
     assert out["rail_do"] == ""
 
 
+def test_load_intelligence_bundle_flexible_headings_and_rail_fallbacks(tmp_path: Path):
+    """Headings differ from vault generator; rail fields still populate from movement + bullets."""
+    vault = tmp_path / "vault"
+    slug = "demo"
+    base = vault / "Projects" / slug
+    (base / "01 Intelligence").mkdir(parents=True)
+    (base / "02 Risks").mkdir(parents=True)
+    (base / "03 Actions").mkdir(parents=True)
+    pid = "pkt_" + "f" * 32
+    pdate = "2026-06-01"
+    stem = f"{pdate} — {pid}"
+    intel = base / "01 Intelligence" / f"{stem}.md"
+    intel.write_text(
+        "---\n---\n\n"
+        "# Demo — Intelligence Packet\n\n"
+        "## Summary\n\n"
+        "Finish at risk from steel delays. Negative float on procurement path.\n\n"
+        "## Finish\n\n"
+        "### Key changes\n\n"
+        "MEP coordination slipped one week; GC rebaselined lane owners.\n\n"
+        "## Drivers\n\n"
+        "- Long-lead steel\n"
+        "- Submittal backlog\n\n"
+        "## Risks\n\n"
+        "- Fabricator capacity tight\n\n"
+        "## Actions\n\n"
+        "- **PM:** Chase submittals by Tuesday\n",
+        encoding="utf-8",
+    )
+    (base / "02 Risks" / "Active Risks.md").write_text(
+        "---\n---\n\n# Active Risks\n\n_No risks file._\n", encoding="utf-8"
+    )
+    (base / "03 Actions" / "Action Register.md").write_text(
+        "---\n---\n\n# Action Register\n\n_No actions._\n", encoding="utf-8"
+    )
+
+    out = load_intelligence_bundle(vault, "Projects", slug, pid, pdate)
+    assert "steel" in out["intelligence_summary"].lower() or "float" in out["intelligence_summary"].lower()
+    assert out["key_points"]
+    assert "slipped" in out["rail_changed"].lower() or "week" in out["rail_changed"].lower()
+    assert out["rail_matters"]
+    assert "submittals" in out["rail_do"].lower() or "PM" in out["rail_do"]
+
+
 def test_load_intelligence_bundle_reads_intel_note_and_registers(tmp_path: Path):
     vault = tmp_path / "vault"
     slug = "aurora-hills"
