@@ -60,6 +60,10 @@ def test_intelligence_packet_happy_path(sample_config_path):
     assert "Weekly schedule intelligence — test" in detail.text
     assert 'id="pkt-command-strip"' in detail.text
     assert "pkt-section-card" in detail.text
+    assert 'id="pkt-command-brief-bar"' in detail.text
+    assert 'id="pkt-intelligence-rail"' in detail.text
+    assert "Intelligence rail" in detail.text
+    assert "What changed" in detail.text
 
     export = client.get(f"/api/packets/{packet_id}/export/markdown")
     assert export.status_code == 200

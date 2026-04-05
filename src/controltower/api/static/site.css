@@ -5655,6 +5655,133 @@ body.publish .text-link:hover {
   }
 }
 
+.pkt-command-brief-bar {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  background: #0f1720;
+  color: #f2f5f9;
+  border: 1px solid #05080c;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.pkt-command-brief-bar__inner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr auto 1fr;
+  gap: 0 10px;
+  align-items: stretch;
+}
+
+@media (max-width: 1080px) {
+  .pkt-command-brief-bar__inner {
+    grid-template-columns: 1fr;
+    gap: 10px 0;
+  }
+
+  .pkt-command-brief-bar__sep {
+    display: none;
+  }
+}
+
+.pkt-command-brief-bar__sep {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  align-self: stretch;
+  min-height: 32px;
+}
+
+.pkt-command-brief-bar__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pkt-command-brief-bar__label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(242, 245, 249, 0.55);
+}
+
+.pkt-command-brief-bar__value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.pkt-intelligence-rail {
+  margin: 0 0 12px;
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--ink);
+  background: var(--panel-strong);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.pkt-intelligence-rail__title {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.pkt-intelligence-rail__cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+
+@media (max-width: 960px) {
+  .pkt-intelligence-rail__cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pkt-intelligence-rail__col {
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+}
+
+.pkt-intelligence-rail__col:last-child {
+  border-right: none;
+}
+
+@media (max-width: 960px) {
+  .pkt-intelligence-rail__col {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .pkt-intelligence-rail__col:last-child {
+    border-bottom: none;
+  }
+}
+
+.pkt-intelligence-rail__head {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.pkt-intelligence-rail__body {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ink);
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
 .pkt-section-card {
   border: 1px solid var(--line-strong);
   border-radius: 4px;
