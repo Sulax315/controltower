@@ -368,7 +368,7 @@
     var riskPill = document.getElementById("pkt-cmd-risk");
     if (riskPill) {
       riskPill.textContent = riskUpper;
-      riskPill.className = "pkt-risk-pill " + riskClass(risk);
+      riskPill.className = "pkt-risk-pill pkt-risk-pill--command " + riskClass(risk);
     }
     setText("pkt-cmd-driver", primary);
     setText("pkt-cmd-status", statusLabel);
@@ -381,7 +381,8 @@
     var kpiRisk = document.getElementById("pkt-kpi-risk");
     if (kpiRisk) {
       kpiRisk.textContent = riskUpper;
-      kpiRisk.className = "pkt-kpi-card__value pkt-kpi-card__value--risk " + riskClass(risk);
+      kpiRisk.className =
+        "pkt-kpi-card__value pkt-kpi-card__value--hero pkt-kpi-card__value--risk " + riskClass(risk);
     }
     setText("pkt-kpi-cycles", parseCycles(fullScan));
     setText("pkt-kpi-open-ends", parseOpenEnds(fullScan));

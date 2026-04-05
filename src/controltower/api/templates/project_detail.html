@@ -65,6 +65,26 @@
     {% set section_id = "project-detail-section-continuity" %}
     {% include "_continuity_section.html" %}
 
+    <section class="card subdued iv-bridge iv-bridge--project" aria-label="Intelligence vault">
+      <span class="label">Intelligence vault</span>
+      <h3>Vault location</h3>
+      <p class="pkt-muted">Published intelligence packets sync under the configured Obsidian vault. Paths are relative to the vault root.</p>
+      <dl class="iv-bridge__grid">
+        <div><dt>Vault root</dt><dd><code class="iv-bridge__code">{{ vault_bridge.vault_root_display }}</code></dd></div>
+        <div><dt>Project folder</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.project_root_relative }}</code></dd></div>
+        <div><dt>Project index</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.project_index_relative }}</code></dd></div>
+        <div><dt>Portfolio index</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.portfolio_index_relative }}</code></dd></div>
+      </dl>
+      <div class="iv-bridge__actions">
+        {% if vault_bridge.enabled and vault_bridge.urls.project_index %}
+        <a class="button secondary" href="{{ vault_bridge.urls.project_index }}">View project index</a>
+        {% endif %}
+        {% if vault_bridge.enabled %}
+        <a class="button secondary" href="{{ vault_bridge.urls.portfolio_index }}">View portfolio index</a>
+        {% endif %}
+      </div>
+    </section>
+
     <section class="reference-grid">
       <article class="card subdued">
         <span class="label">Operational delta</span>

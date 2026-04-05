@@ -45,16 +45,27 @@ class _ActionSection:
     history_rows: list[tuple[str, str, str]] = field(default_factory=list)
 
 
-def project_slug_for_record(record: IntelligencePacketRecord) -> str:
-    code = (record.canonical_project_code or "").strip()
-    base = code if code else (record.project_name or "project")
+def intelligence_vault_project_slug(*, canonical_project_code: str, project_name: str) -> str:
+    code = (canonical_project_code or "").strip()
+    base = code if code else (project_name or "project")
     s = base.strip().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s)
     return s.strip("-") or "project"
 
 
+def project_slug_for_record(record: IntelligencePacketRecord) -> str:
+    return intelligence_vault_project_slug(
+        canonical_project_code=record.canonical_project_code or "",
+        project_name=record.project_name or "",
+    )
+
+
 def packet_note_stem(packet_date: str, packet_id: str) -> str:
     return f"{packet_date} — {packet_id}"
+
+
+def intelligence_packet_note_stem(record: IntelligencePacketRecord) -> str:
+    return packet_note_stem(_packet_iso_date(record), record.packet_id)
 
 
 def _packet_iso_date(record: IntelligencePacketRecord) -> str:
@@ -821,21 +832,19 @@ def _risk_posture_cell(record: IntelligencePacketRecord) -> str:
     return "—"
 
 
-def _sorted_packet_stems_desc(stems: list[str]) -> list[str]:
-    def key(s: str) -> tuple[str, str]:
-        parts = s.split(" — ", 1)
-        if len(parts) == 2:
-            return (parts[0], parts[1])
-        return (s, "")
-
-    return sorted(stems, key=key, reverse=True)
-
-
 def _list_intel_packet_stems(intel_dir: Path) -> list[str]:
+    """Return packet note stems newest-first using file mtimes (ties: stem ascending)."""
     if not intel_dir.is_dir():
         return []
-    stems = [p.stem for p in intel_dir.glob("*.md")]
-    return _sorted_packet_stems_desc(stems)
+    entries: list[tuple[float, str]] = []
+    for p in intel_dir.glob("*.md"):
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        entries.append((mtime, p.stem))
+    entries.sort(key=lambda t: (-t[0], t[1]))
+    return [stem for _mtime, stem in entries]
 
 
 def _write_project_index(
@@ -988,23 +997,43 @@ def sync_intelligence_packet_to_obsidian(
     Persist a published intelligence packet into the Obsidian vault layout under
     ``{vault}/Projects/{project_slug}/...`` and merge risks/actions registers (idempotent).
     """
-    if not obsidian.intelligence_vault_enabled:
-        return {}
-    if record.status != "published":
-        return {}
-
     vault = Path(obsidian.vault_root)
     project_slug = project_slug_for_record(record)
     packet_date = _packet_iso_date(record)
     packet_stem = packet_note_stem(packet_date, record.packet_id)
+    intelligence_vault_enabled = getattr(obsidian, "intelligence_vault_enabled", True)
+    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
     planned = _planned_export_paths(
         vault=vault,
-        projects_folder=obsidian.intelligence_vault_projects_folder,
+        projects_folder=projects_folder,
         project_slug=project_slug,
         packet_stem=packet_stem,
     )
 
-    base = vault / obsidian.intelligence_vault_projects_folder.strip().strip("/\\") / project_slug
+    if not intelligence_vault_enabled:
+        if state_root is not None:
+            _write_export_evidence(
+                Path(state_root),
+                packet_id=record.packet_id,
+                project_slug=project_slug,
+                paths=planned,
+                success=False,
+                error="obsidian.intelligence_vault_enabled is false",
+            )
+        return {}
+    if record.status != "published":
+        if state_root is not None:
+            _write_export_evidence(
+                Path(state_root),
+                packet_id=record.packet_id,
+                project_slug=project_slug,
+                paths=planned,
+                success=False,
+                error=f"packet status is {record.status!r} (expected 'published')",
+            )
+        return {}
+
+    base = vault / projects_folder.strip().strip("/\\") / project_slug
     intel_dir = base / "01 Intelligence"
     risks_dir = base / "02 Risks"
     actions_dir = base / "03 Actions"
@@ -1081,7 +1110,7 @@ def sync_intelligence_packet_to_obsidian(
     timeline_path = Path(planned["timeline"])
     _append_timeline(timeline_path, packet_date, packet_stem, record.packet_id, record.status)
 
-    global_path = _rebuild_portfolio_index(vault, obsidian.intelligence_vault_projects_folder)
+    global_path = _rebuild_portfolio_index(vault, projects_folder)
 
     final_paths = dict(planned)
     final_paths["global_index"] = str(global_path)
@@ -1105,9 +1134,10 @@ def try_sync_intelligence_packet_to_obsidian(
     state_root: Path | None = None,
 ) -> None:
     project_slug = project_slug_for_record(record)
+    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
     planned = _planned_export_paths(
         vault=Path(obsidian.vault_root),
-        projects_folder=obsidian.intelligence_vault_projects_folder,
+        projects_folder=projects_folder,
         project_slug=project_slug,
         packet_stem=packet_note_stem(_packet_iso_date(record), record.packet_id),
     )
