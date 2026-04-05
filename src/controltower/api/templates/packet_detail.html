@@ -1,5 +1,7 @@
 {% extends "layout.html" %}
 
+<!-- DO NOT overwrite without validating against docs/design/publish_layout_spec.md -->
+
 {% macro pkt_section_card(title, keys, sec_id, section_card_class="") %}
 <article class="pkt-section-card {{ section_card_class }}" id="{{ sec_id }}" data-section-group="{{ sec_id }}">
   <header class="pkt-section-card__head">
@@ -141,6 +143,54 @@
   <div class="pkt-intel-layout">
     <div class="pkt-intel-main">
       {{ pkt_section_card("Executive summary", ["executive_summary"], "pkt-sec-summary", "pkt-section-card--exec-brief") }}
+
+      <div class="pkt-command-brief-bar" id="pkt-command-brief-bar" aria-label="Command brief">
+        <div class="pkt-command-brief-bar__inner">
+          <div class="pkt-command-brief-bar__cell">
+            <span class="pkt-command-brief-bar__label">Finish</span>
+            <span class="pkt-command-brief-bar__value">{{ command_brief.finish or "—" }}</span>
+          </div>
+          <div class="pkt-command-brief-bar__sep" aria-hidden="true"></div>
+          <div class="pkt-command-brief-bar__cell">
+            <span class="pkt-command-brief-bar__label">Driver</span>
+            <span class="pkt-command-brief-bar__value">{{ command_brief.driver or "—" }}</span>
+          </div>
+          <div class="pkt-command-brief-bar__sep" aria-hidden="true"></div>
+          <div class="pkt-command-brief-bar__cell">
+            <span class="pkt-command-brief-bar__label">Risks</span>
+            <span class="pkt-command-brief-bar__value">{{ command_brief.risks or "—" }}</span>
+          </div>
+          <div class="pkt-command-brief-bar__sep" aria-hidden="true"></div>
+          <div class="pkt-command-brief-bar__cell">
+            <span class="pkt-command-brief-bar__label">Need</span>
+            <span class="pkt-command-brief-bar__value">{{ command_brief.need or "—" }}</span>
+          </div>
+          <div class="pkt-command-brief-bar__sep" aria-hidden="true"></div>
+          <div class="pkt-command-brief-bar__cell">
+            <span class="pkt-command-brief-bar__label">Doing</span>
+            <span class="pkt-command-brief-bar__value">{{ command_brief.doing or "—" }}</span>
+          </div>
+        </div>
+      </div>
+
+      <section class="pkt-intelligence-rail" id="pkt-intelligence-rail" aria-label="Intelligence rail">
+        <header class="pkt-intelligence-rail__title">Intelligence rail</header>
+        <div class="pkt-intelligence-rail__cols">
+          <div class="pkt-intelligence-rail__col">
+            <h3 class="pkt-intelligence-rail__head">What changed</h3>
+            <p class="pkt-intelligence-rail__body">{{ vault_intelligence.rail_changed or "—" }}</p>
+          </div>
+          <div class="pkt-intelligence-rail__col">
+            <h3 class="pkt-intelligence-rail__head">What matters</h3>
+            <p class="pkt-intelligence-rail__body">{{ vault_intelligence.rail_matters or "—" }}</p>
+          </div>
+          <div class="pkt-intelligence-rail__col">
+            <h3 class="pkt-intelligence-rail__head">What to do</h3>
+            <p class="pkt-intelligence-rail__body">{{ vault_intelligence.rail_do or "—" }}</p>
+          </div>
+        </div>
+      </section>
+
       {{ pkt_section_card("Finish outlook", ["finish_milestone_outlook", "delta_vs_prior"], "pkt-sec-finish") }}
       {{ pkt_section_card("Risks", ["near_term_risks"], "pkt-sec-risks") }}
 

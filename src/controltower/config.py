@@ -50,6 +50,8 @@ class IdentityConfig(BaseModel):
 
 class ObsidianConfig(BaseModel):
     vault_root: Path = Field(default_factory=lambda: _repo_root() / ".tmp" / "demo_vault")
+    intelligence_vault_enabled: bool = True
+    intelligence_vault_projects_folder: str = "Projects"
     projects_folder: str = "02 Projects"
     exports_folder: str = "10 Exports"
     timestamped_weekly_notes: bool = True

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 import secrets
 from typing import Any
@@ -17,8 +18,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from controltower.config import default_orchestrator_mcp_service_root, load_config
+from controltower.intelligence.command_brief import build_command_brief
 from controltower.obsidian.exporter import load_latest_export
-from controltower.obsidian.intelligence_vault import try_sync_intelligence_packet_to_obsidian
+from controltower.obsidian.intelligence_reader import load_intelligence_bundle, packet_iso_date
+from controltower.obsidian.intelligence_vault import project_slug_for_record, try_sync_intelligence_packet_to_obsidian
 from controltower.services.intelligence_vault_bridge import (
     build_packet_bridge_context,
     build_project_bridge_context,
@@ -42,6 +45,7 @@ from controltower.services.orchestration import OrchestrationService, ReviewActo
 from controltower.services.orchestrator_panel import build_orchestrator_publish_panel, mutation_query_notices
 from controltower.services.release import collect_operator_diagnostics
 
+logger = logging.getLogger(__name__)
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -360,6 +364,44 @@ def create_app_from_config(config) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="Packet not found")
         vault_bridge = build_packet_bridge_context(record, config)
+        vault_intel: dict[str, object] = {
+            "intelligence_summary": "",
+            "key_points": [],
+            "risks": [],
+            "actions": [],
+            "rail_changed": "",
+            "rail_matters": "",
+            "rail_do": "",
+        }
+        try:
+            vault_intel = load_intelligence_bundle(
+                Path(config.obsidian.vault_root),
+                config.obsidian.intelligence_vault_projects_folder,
+                project_slug_for_record(record),
+                record.packet_id,
+                packet_iso_date(record),
+            )
+        except Exception as exc:
+            try:
+                vault_read_slug = project_slug_for_record(record)
+            except Exception:
+                vault_read_slug = "<unavailable>"
+            logger.warning(
+                "Intelligence vault bundle read failed (packet detail): packet_id=%s project_slug=%s: %s",
+                record.packet_id,
+                vault_read_slug,
+                exc,
+            )
+            vault_intel = {
+                "intelligence_summary": "",
+                "key_points": [],
+                "risks": [],
+                "actions": [],
+                "rail_changed": "",
+                "rail_matters": "",
+                "rail_do": "",
+            }
+        command_brief = build_command_brief(record, vault_intel)
         return templates.TemplateResponse(
             request,
             "packet_detail.html",
@@ -367,6 +409,8 @@ def create_app_from_config(config) -> FastAPI:
                 request,
                 packet=record,
                 vault_bridge=vault_bridge,
+                vault_intelligence=vault_intel,
+                command_brief=command_brief,
                 page_title=record.title,
                 page_kicker=f"{record.project_name} · {record.reporting_period}",
                 page_mode="packet-detail",
