@@ -22,6 +22,14 @@ from controltower.intelligence.command_brief import build_command_brief
 from controltower.obsidian.exporter import load_latest_export
 from controltower.obsidian.intelligence_reader import load_intelligence_bundle, packet_iso_date
 from controltower.obsidian.intelligence_vault import project_slug_for_record, try_sync_intelligence_packet_to_obsidian
+from controltower.services.intelligence_vault_bridge import (
+    build_packet_bridge_context,
+    build_project_bridge_context,
+    read_vault_markdown_html,
+    resolve_packet_vault_doc_path,
+    resolve_portfolio_index_path,
+    resolve_project_index_path,
+)
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.services.controltower import ControlTowerService
@@ -58,6 +66,7 @@ REQUIRED_UI_TEMPLATES = (
     "diagnostics.html",
     "packet_new.html",
     "packet_detail.html",
+    "vault_intelligence_view.html",
     "_orchestrator_execution_section.html",
 )
 
@@ -283,6 +292,11 @@ def create_app_from_config(config) -> FastAPI:
             (item for item in notes if item.note_kind == "project_dossier" and item.canonical_project_code == project_code),
             None,
         )
+        vault_bridge = build_project_bridge_context(
+            canonical_project_code=project.canonical_project_code,
+            project_name=project.project_name,
+            config=config,
+        )
         return templates.TemplateResponse(
             request,
             "project_detail.html",
@@ -294,6 +308,7 @@ def create_app_from_config(config) -> FastAPI:
                 action_queue=action_queue,
                 continuity=continuity,
                 dossier_note=dossier_note,
+                vault_bridge=vault_bridge,
                 page_title=project.project_name,
                 page_kicker="Project detail command surface",
                 page_mode="project-detail",
@@ -348,6 +363,7 @@ def create_app_from_config(config) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if record is None:
             raise HTTPException(status_code=404, detail="Packet not found")
+        vault_bridge = build_packet_bridge_context(record, config)
         vault_intel: dict[str, object] = {
             "intelligence_summary": "",
             "key_points": [],
@@ -392,6 +408,7 @@ def create_app_from_config(config) -> FastAPI:
             _template_payload(
                 request,
                 packet=record,
+                vault_bridge=vault_bridge,
                 vault_intelligence=vault_intel,
                 command_brief=command_brief,
                 page_title=record.title,
@@ -419,6 +436,152 @@ def create_app_from_config(config) -> FastAPI:
             state_root=config.runtime.state_root,
         )
         return RedirectResponse(url=f"/packets/{packet_id}?published=1", status_code=303)
+
+    @app.get("/vault/intelligence/packets/{packet_id}/note", response_class=HTMLResponse)
+    def vault_intelligence_packet_note(request: Request, packet_id: str):
+        target = resolve_packet_vault_doc_path(config, packet_id, "packet")
+        if target is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        ok, html_body = read_vault_markdown_html(config, target)
+        title = "Intelligence packet note (vault)"
+        if not ok:
+            return templates.TemplateResponse(
+                request,
+                "vault_intelligence_view.html",
+                _template_payload(
+                    request,
+                    page_title=title,
+                    page_kicker="Obsidian intelligence vault",
+                    page_mode="vault-intelligence",
+                    vault_doc_title=title,
+                    vault_doc_missing=True,
+                    vault_doc_path=str(target),
+                    vault_doc_body="",
+                ),
+            )
+        return templates.TemplateResponse(
+            request,
+            "vault_intelligence_view.html",
+            _template_payload(
+                request,
+                page_title=title,
+                page_kicker="Obsidian intelligence vault",
+                page_mode="vault-intelligence",
+                vault_doc_title=title,
+                vault_doc_missing=False,
+                vault_doc_path=str(target),
+                vault_doc_body=html_body,
+            ),
+        )
+
+    @app.get("/vault/intelligence/packets/{packet_id}/project-index", response_class=HTMLResponse)
+    def vault_intelligence_packet_project_index(request: Request, packet_id: str):
+        target = resolve_packet_vault_doc_path(config, packet_id, "project_index")
+        if target is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        title = "Project index (vault)"
+        ok, html_body = read_vault_markdown_html(config, target)
+        if not ok:
+            return templates.TemplateResponse(
+                request,
+                "vault_intelligence_view.html",
+                _template_payload(
+                    request,
+                    page_title=title,
+                    page_kicker="Obsidian intelligence vault",
+                    page_mode="vault-intelligence",
+                    vault_doc_title=title,
+                    vault_doc_missing=True,
+                    vault_doc_path=str(target),
+                    vault_doc_body="",
+                ),
+            )
+        return templates.TemplateResponse(
+            request,
+            "vault_intelligence_view.html",
+            _template_payload(
+                request,
+                page_title=title,
+                page_kicker="Obsidian intelligence vault",
+                page_mode="vault-intelligence",
+                vault_doc_title=title,
+                vault_doc_missing=False,
+                vault_doc_path=str(target),
+                vault_doc_body=html_body,
+            ),
+        )
+
+    @app.get("/vault/intelligence/projects/{project_code}/project-index", response_class=HTMLResponse)
+    def vault_intelligence_project_index(request: Request, project_code: str):
+        target = resolve_project_index_path(config, project_code)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        title = "Project index (vault)"
+        ok, html_body = read_vault_markdown_html(config, target)
+        if not ok:
+            return templates.TemplateResponse(
+                request,
+                "vault_intelligence_view.html",
+                _template_payload(
+                    request,
+                    page_title=title,
+                    page_kicker="Obsidian intelligence vault",
+                    page_mode="vault-intelligence",
+                    vault_doc_title=title,
+                    vault_doc_missing=True,
+                    vault_doc_path=str(target),
+                    vault_doc_body="",
+                ),
+            )
+        return templates.TemplateResponse(
+            request,
+            "vault_intelligence_view.html",
+            _template_payload(
+                request,
+                page_title=title,
+                page_kicker="Obsidian intelligence vault",
+                page_mode="vault-intelligence",
+                vault_doc_title=title,
+                vault_doc_missing=False,
+                vault_doc_path=str(target),
+                vault_doc_body=html_body,
+            ),
+        )
+
+    @app.get("/vault/intelligence/portfolio-index", response_class=HTMLResponse)
+    def vault_intelligence_portfolio_index(request: Request):
+        target = resolve_portfolio_index_path(config)
+        title = "Portfolio index (vault)"
+        ok, html_body = read_vault_markdown_html(config, target)
+        if not ok:
+            return templates.TemplateResponse(
+                request,
+                "vault_intelligence_view.html",
+                _template_payload(
+                    request,
+                    page_title=title,
+                    page_kicker="Obsidian intelligence vault",
+                    page_mode="vault-intelligence",
+                    vault_doc_title=title,
+                    vault_doc_missing=True,
+                    vault_doc_path=str(target),
+                    vault_doc_body="",
+                ),
+            )
+        return templates.TemplateResponse(
+            request,
+            "vault_intelligence_view.html",
+            _template_payload(
+                request,
+                page_title=title,
+                page_kicker="Obsidian intelligence vault",
+                page_mode="vault-intelligence",
+                vault_doc_title=title,
+                vault_doc_missing=False,
+                vault_doc_path=str(target),
+                vault_doc_body=html_body,
+            ),
+        )
 
     @app.get("/projects/{project_code}/compare", response_class=HTMLResponse)
     def project_compare(request: Request, project_code: str):

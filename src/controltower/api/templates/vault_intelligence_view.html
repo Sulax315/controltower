@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="iv-doc-page" aria-label="Vault markdown view">
+  <div class="iv-doc-toolbar">
+    <a class="button secondary" href="javascript:history.back()">Back</a>
+    <span class="pkt-muted iv-doc-path"><code>{{ vault_doc_path }}</code></span>
+  </div>
+  {% if vault_doc_missing %}
+  <div class="iv-doc-missing" role="status">
+    <p><strong>Artifact not found on the server vault path.</strong></p>
+    <p class="pkt-muted">The intelligence vault may not have synced yet, or the path is outside the configured vault root.</p>
+  </div>
+  {% else %}
+  <article class="iv-doc-body pkt-prose">{{ vault_doc_body | safe }}</article>
+  {% endif %}
+</section>
+{% endblock %}

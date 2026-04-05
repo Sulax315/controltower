@@ -2,8 +2,8 @@
 
 <!-- DO NOT overwrite without validating against docs/design/publish_layout_spec.md -->
 
-{% macro pkt_section_card(title, keys, sec_id) %}
-<article class="pkt-section-card" id="{{ sec_id }}" data-section-group="{{ sec_id }}">
+{% macro pkt_section_card(title, keys, sec_id, section_card_class="") %}
+<article class="pkt-section-card {{ section_card_class }}" id="{{ sec_id }}" data-section-group="{{ sec_id }}">
   <header class="pkt-section-card__head">
     <h2 class="pkt-section-card__title">{{ title }}</h2>
   </header>
@@ -28,6 +28,33 @@
   <div class="pkt-banner" role="status">Packet marked published. Runtime artifacts updated on server.</div>
   {% endif %}
 
+  <section class="iv-bridge" aria-label="Intelligence vault">
+    <div class="iv-bridge__head">
+      <h2 class="iv-bridge__title">Intelligence vault</h2>
+      {% if vault_bridge.status == 'synced' %}
+      <span class="iv-bridge__badge is-synced">Synced</span>
+      {% elif vault_bridge.status == 'not_synced' %}
+      <span class="iv-bridge__badge is-unsynced">Not synced</span>
+      {% else %}
+      <span class="iv-bridge__badge is-unknown">Unknown</span>
+      {% endif %}
+    </div>
+    <dl class="iv-bridge__grid">
+      <div><dt>Vault root</dt><dd><code class="iv-bridge__code">{{ vault_bridge.vault_root_display }}</code></dd></div>
+      <div><dt>Projects folder</dt><dd><code class="iv-bridge__code">{{ vault_bridge.projects_folder }}</code></dd></div>
+      <div><dt>Packet note</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.packet_relative }}</code></dd></div>
+      <div><dt>Project index</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.project_index_relative }}</code></dd></div>
+      <div><dt>Portfolio index</dt><dd><code class="iv-bridge__code">{{ vault_bridge.paths.portfolio_index_relative }}</code></dd></div>
+    </dl>
+    <div class="iv-bridge__actions">
+      <a class="button secondary" href="{{ vault_bridge.urls.packet_note }}">View packet note</a>
+      {% if vault_bridge.urls.project_index %}
+      <a class="button secondary" href="{{ vault_bridge.urls.project_index }}">View project index</a>
+      {% endif %}
+      <a class="button secondary" href="{{ vault_bridge.urls.portfolio_index }}">View portfolio index</a>
+    </div>
+  </section>
+
   <div class="pkt-toolbar pkt-toolbar--intel">
     <div class="pkt-toolbar-main">
       <h1 class="pkt-toolbar-title">{{ packet.title }}</h1>
@@ -48,51 +75,57 @@
 
   <div class="pkt-command-strip" id="pkt-command-strip" data-risk="unknown" aria-label="Command summary">
     <div class="pkt-command-strip__inner">
-      <div class="pkt-command-field">
-        <span class="pkt-command-field__label">Finish date</span>
-        <span class="pkt-command-field__value" id="pkt-cmd-finish">—</span>
+      <div class="pkt-command-strip__hero" aria-label="Primary command signals">
+        <div class="pkt-command-field pkt-command-field--finish">
+          <span class="pkt-command-field__label">Finish</span>
+          <span class="pkt-command-field__value pkt-command-field__value--hero" id="pkt-cmd-finish">—</span>
+        </div>
+        <div class="pkt-command-field pkt-command-field--risk">
+          <span class="pkt-command-field__label">Risk</span>
+          <span class="pkt-command-field__value pkt-command-field__value--hero">
+            <span class="pkt-risk-pill pkt-risk-pill--command" id="pkt-cmd-risk">—</span>
+          </span>
+        </div>
+        <div class="pkt-command-field pkt-command-field--driver">
+          <span class="pkt-command-field__label">Primary driver</span>
+          <span class="pkt-command-field__value pkt-command-field__value--hero pkt-command-field__value--clamp" id="pkt-cmd-driver">—</span>
+        </div>
       </div>
-      <div class="pkt-command-field pkt-command-field--wide">
-        <span class="pkt-command-field__label">Δ vs prior</span>
-        <span class="pkt-command-field__value pkt-command-field__value--clamp" id="pkt-cmd-delta">—</span>
-      </div>
-      <div class="pkt-command-field">
-        <span class="pkt-command-field__label">Risk level</span>
-        <span class="pkt-command-field__value"><span class="pkt-risk-pill" id="pkt-cmd-risk">—</span></span>
-      </div>
-      <div class="pkt-command-field pkt-command-field--grow">
-        <span class="pkt-command-field__label">Primary driver</span>
-        <span class="pkt-command-field__value pkt-command-field__value--clamp" id="pkt-cmd-driver">—</span>
-      </div>
-      <div class="pkt-command-field">
-        <span class="pkt-command-field__label">Status (movement)</span>
-        <span class="pkt-command-field__value" id="pkt-cmd-status">—</span>
+      <div class="pkt-command-strip__sub" aria-label="Movement context">
+        <div class="pkt-command-field pkt-command-field--wide">
+          <span class="pkt-command-field__label">Δ vs prior</span>
+          <span class="pkt-command-field__value pkt-command-field__value--sub pkt-command-field__value--clamp" id="pkt-cmd-delta">—</span>
+        </div>
+        <div class="pkt-command-field">
+          <span class="pkt-command-field__label">Movement</span>
+          <span class="pkt-command-field__value pkt-command-field__value--sub" id="pkt-cmd-status">—</span>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="pkt-kpi-row" aria-label="Key indicators">
-    <div class="pkt-kpi-card">
-      <span class="pkt-kpi-card__label">Finish date</span>
-      <span class="pkt-kpi-card__value" id="pkt-kpi-finish">—</span>
+    <div class="pkt-kpi-card pkt-kpi-card--hero">
+      <span class="pkt-kpi-card__label">Finish</span>
+      <span class="pkt-kpi-card__value pkt-kpi-card__value--hero" id="pkt-kpi-finish">—</span>
     </div>
-    <div class="pkt-kpi-card">
-      <span class="pkt-kpi-card__label">Δ vs prior</span>
-      <span class="pkt-kpi-card__value" id="pkt-kpi-delta">—</span>
+    <div class="pkt-kpi-card pkt-kpi-card--hero">
+      <span class="pkt-kpi-card__label">Δ prior</span>
+      <span class="pkt-kpi-card__value pkt-kpi-card__value--hero" id="pkt-kpi-delta">—</span>
     </div>
-    <div class="pkt-kpi-card">
-      <span class="pkt-kpi-card__label">Risk level</span>
-      <span class="pkt-kpi-card__value" id="pkt-kpi-risk">—</span>
+    <div class="pkt-kpi-card pkt-kpi-card--hero">
+      <span class="pkt-kpi-card__label">Risk</span>
+      <span class="pkt-kpi-card__value pkt-kpi-card__value--hero" id="pkt-kpi-risk">—</span>
     </div>
-    <div class="pkt-kpi-card">
+    <div class="pkt-kpi-card pkt-kpi-card--support">
       <span class="pkt-kpi-card__label">Cycles</span>
       <span class="pkt-kpi-card__value" id="pkt-kpi-cycles">—</span>
     </div>
-    <div class="pkt-kpi-card">
+    <div class="pkt-kpi-card pkt-kpi-card--support">
       <span class="pkt-kpi-card__label">Open ends</span>
       <span class="pkt-kpi-card__value" id="pkt-kpi-open-ends">—</span>
     </div>
-    <div class="pkt-kpi-card">
+    <div class="pkt-kpi-card pkt-kpi-card--support">
       <span class="pkt-kpi-card__label">Margin</span>
       <span class="pkt-kpi-card__value" id="pkt-kpi-margin">—</span>
     </div>
@@ -109,7 +142,7 @@
 
   <div class="pkt-intel-layout">
     <div class="pkt-intel-main">
-      {{ pkt_section_card("Executive summary", ["executive_summary"], "pkt-sec-summary") }}
+      {{ pkt_section_card("Executive summary", ["executive_summary"], "pkt-sec-summary", "pkt-section-card--exec-brief") }}
 
       <div class="pkt-command-brief-bar" id="pkt-command-brief-bar" aria-label="Command brief">
         <div class="pkt-command-brief-bar__inner">
@@ -161,7 +194,7 @@
       {{ pkt_section_card("Finish outlook", ["finish_milestone_outlook", "delta_vs_prior"], "pkt-sec-finish") }}
       {{ pkt_section_card("Risks", ["near_term_risks"], "pkt-sec-risks") }}
 
-      <article class="pkt-section-card" id="pkt-sec-drivers" data-section-group="drivers">
+      <article class="pkt-section-card pkt-section-card--drivers-focus" id="pkt-sec-drivers" data-section-group="drivers">
         <header class="pkt-section-card__head">
           <h2 class="pkt-section-card__title">Drivers</h2>
         </header>
@@ -177,7 +210,7 @@
         </div>
       </article>
 
-      {{ pkt_section_card("Actions", ["required_decisions", "action_register"], "pkt-sec-actions") }}
+      {{ pkt_section_card("Actions", ["required_decisions", "action_register"], "pkt-sec-actions", "pkt-section-card--actions-focus") }}
       {{ pkt_section_card("Source evidence", ["source_evidence_appendix"], "pkt-sec-evidence") }}
     </div>
 

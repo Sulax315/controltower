@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from fastapi.testclient import TestClient
 
-from controltower.api.app import create_app
+from controltower.api.app import create_app, create_app_from_config
 from controltower.config import load_config
 from controltower.obsidian.intelligence_vault import _merge_action_register_longitudinal, _rebuild_portfolio_index
 from controltower.services.intelligence_packets import load_packet
@@ -31,6 +31,39 @@ def test_generate_does_not_export_obsidian_vault(sample_config_path):
     vault = Path(config.obsidian.vault_root)
     projects = vault / "Projects"
     assert not projects.exists() or not any(projects.rglob("*.md"))
+
+
+def test_publish_writes_skipped_evidence_when_intelligence_vault_disabled(sample_config_path):
+    config = load_config(sample_config_path)
+    config.obsidian.intelligence_vault_enabled = False
+    app = create_app_from_config(config)
+    client = TestClient(app)
+
+    gen = client.post(
+        "/api/packets/generate",
+        json={
+            "project_code": "AURORA_HILLS",
+            "packet_type": "weekly_schedule_intelligence",
+            "reporting_period": "2026-W15",
+            "title": "Weekly schedule intelligence — vault disabled",
+            "operator_notes": "",
+        },
+    )
+    assert gen.status_code == 200, gen.text
+    packet_id = gen.json()["packet_id"]
+
+    pub = client.post(f"/api/packets/{packet_id}/publish", json={})
+    assert pub.status_code == 200, pub.text
+
+    evidence = Path(config.runtime.state_root) / "obsidian_exports" / f"{packet_id}.json"
+    assert evidence.is_file()
+    ev = json.loads(evidence.read_text(encoding="utf-8"))
+    assert ev.get("success") is False
+    assert "intelligence_vault_enabled" in str(ev.get("error", ""))
+
+    vault = Path(config.obsidian.vault_root)
+    project_root = vault / "Projects" / "aurora-hills"
+    assert not project_root.is_dir()
 
 
 def test_publish_exports_obsidian_vault_with_slug_frontmatter_links_and_evidence(sample_config_path):

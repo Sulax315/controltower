@@ -63,6 +63,8 @@ class ObsidianConfig(BaseModel):
     active_control_note: str = "active_control.md"
     session_log_dir: str = "session_logs"
     active_control_section_heading: str = "## Active Lane Check-In"
+    intelligence_vault_enabled: bool = True
+    intelligence_vault_projects_folder: str = "Projects"
 
     @model_validator(mode="after")
     def normalize_continuity(self) -> "ObsidianConfig":
@@ -78,6 +80,10 @@ class ObsidianConfig(BaseModel):
         self.active_control_note = active_control_note
         self.session_log_dir = str(self.session_log_dir).strip().replace("\\", "/") or "session_logs"
         self.active_control_section_heading = str(self.active_control_section_heading).strip() or "## Active Lane Check-In"
+        folder = str(getattr(self, "intelligence_vault_projects_folder", "Projects")).strip().strip("/\\").replace(
+            "\\", "/"
+        )
+        self.intelligence_vault_projects_folder = folder or "Projects"
         return self
 
 
@@ -448,6 +454,13 @@ def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
     if value := os.getenv("CONTROLTOWER_ORCHESTRATOR_RUNTIME_DIR"):
         orchestrator_substrate["runtime_dir"] = value
     copied["orchestrator_substrate"] = orchestrator_substrate
+
+    obsidian_cfg = dict(copied.get("obsidian") or {})
+    if (value := _env_bool("CONTROLTOWER_OBSIDIAN_INTELLIGENCE_VAULT_ENABLED")) is not None:
+        obsidian_cfg["intelligence_vault_enabled"] = value
+    if value := os.getenv("CONTROLTOWER_OBSIDIAN_INTELLIGENCE_VAULT_PROJECTS_FOLDER"):
+        obsidian_cfg["intelligence_vault_projects_folder"] = value.strip()
+    copied["obsidian"] = obsidian_cfg
 
     return copied
 
