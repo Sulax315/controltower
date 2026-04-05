@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from controltower.config import ControlTowerConfig
+from controltower.obsidian.intelligence_vault import intelligence_vault_settings_from_obsidian
 from controltower.render.markdown import parse_markdown_frontmatter
 from controltower.services.build_info import current_build_info
 from controltower.services.intelligence_packets import load_packet
@@ -48,7 +49,7 @@ def verify_intelligence_vault_packets(
     verified_at = _utc_now_iso_override(now_utc_iso)
     build_info = current_build_info()
     obsidian = config.obsidian
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    intelligence_vault_enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     vault_root = str(Path(obsidian.vault_root))
     state_root = str(Path(config.runtime.state_root))
 
@@ -69,7 +70,7 @@ def verify_intelligence_vault_packets(
             "vault_root": vault_root,
             "projects_folder": projects_folder,
             "state_root": state_root,
-            "intelligence_vault_enabled": getattr(obsidian, "intelligence_vault_enabled", True),
+            "intelligence_vault_enabled": intelligence_vault_enabled,
             "packet_ids_verified": list(packet_ids),
             "files_verified_present": [],
             "content_checks": {
@@ -82,7 +83,7 @@ def verify_intelligence_vault_packets(
     if not packet_ids:
         return _fail("no_packet_ids")
 
-    if not getattr(obsidian, "intelligence_vault_enabled", True):
+    if not intelligence_vault_enabled:
         return _fail("intelligence_vault_disabled")
 
     all_files: list[str] = []
@@ -157,7 +158,7 @@ def verify_intelligence_vault_packets(
         "vault_root": vault_root,
         "projects_folder": projects_folder,
         "state_root": state_root,
-        "intelligence_vault_enabled": getattr(obsidian, "intelligence_vault_enabled", True),
+        "intelligence_vault_enabled": intelligence_vault_enabled,
         "packet_ids_verified": [p.strip() for p in packet_ids if p.strip()],
         "files_verified_present": sorted(set(all_files)),
         "content_checks": {

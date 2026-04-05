@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,38 @@ from controltower.services.obsidian_vault_verification import (
     verify_intelligence_vault_packets,
     write_intelligence_vault_verification_artifact,
 )
+
+
+def test_verify_passes_when_obsidian_lacks_intel_vault_config_attrs(sample_config_path):
+    """Published export + verifier must work when ``obsidian`` only exposes ``vault_root``."""
+    config = load_config(sample_config_path)
+    from fastapi.testclient import TestClient
+
+    from controltower.api.app import create_app
+
+    app = create_app(str(sample_config_path))
+    client = TestClient(app)
+    gen = client.post(
+        "/api/packets/generate",
+        json={
+            "project_code": "AURORA_HILLS",
+            "packet_type": "weekly_schedule_intelligence",
+            "reporting_period": "2026-W30",
+            "title": "legacy obsidian stub",
+            "operator_notes": "",
+        },
+    )
+    assert gen.status_code == 200
+    pid = gen.json()["packet_id"]
+    assert client.post(f"/api/packets/{pid}/publish", json={}).status_code == 200
+
+    vault_root = Path(config.obsidian.vault_root)
+    object.__setattr__(config, "obsidian", SimpleNamespace(vault_root=vault_root))
+
+    result = verify_intelligence_vault_packets(config, [pid])
+    assert result["result"] == "PASS"
+    assert result["projects_folder"] == "Projects"
+    assert result["intelligence_vault_enabled"] is True
 
 
 def test_verify_passes_after_publish(sample_config_path):

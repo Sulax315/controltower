@@ -78,7 +78,9 @@ class ObsidianConfig(BaseModel):
         self.active_control_note = active_control_note
         self.session_log_dir = str(self.session_log_dir).strip().replace("\\", "/") or "session_logs"
         self.active_control_section_heading = str(self.active_control_section_heading).strip() or "## Active Lane Check-In"
-        folder = str(self.intelligence_vault_projects_folder).strip().strip("/\\").replace("\\", "/")
+        folder = str(getattr(self, "intelligence_vault_projects_folder", "Projects")).strip().strip("/\\").replace(
+            "\\", "/"
+        )
         self.intelligence_vault_projects_folder = folder or "Projects"
         return self
 

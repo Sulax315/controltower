@@ -15,6 +15,18 @@ from controltower.services.runtime_state import ensure_runtime_layout, write_jso
 
 logger = logging.getLogger(__name__)
 
+
+def intelligence_vault_settings_from_obsidian(obsidian: Any) -> tuple[Any, str]:
+    """
+    Read optional intelligence-vault settings without assuming ``ObsidianConfig`` defines them
+    (older configs / duck-typed vault roots).
+    """
+    enabled = getattr(obsidian, "intelligence_vault_enabled", True)
+    raw_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    projects_folder = str(raw_folder).strip().strip("/\\").replace("\\", "/") or "Projects"
+    return enabled, projects_folder
+
+
 _WIN_INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _LEGACY_PACKET_TAIL = re.compile(r"\s*—\s*_Packet:_\s*(\[\[[^\]]+\]\])\s*$")
 _RISK_FP_MARK = re.compile(r"<!--\s*ct-risk-fp:([^>]+)\s*-->")
@@ -1001,8 +1013,7 @@ def sync_intelligence_packet_to_obsidian(
     project_slug = project_slug_for_record(record)
     packet_date = _packet_iso_date(record)
     packet_stem = packet_note_stem(packet_date, record.packet_id)
-    intelligence_vault_enabled = getattr(obsidian, "intelligence_vault_enabled", True)
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    intelligence_vault_enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     planned = _planned_export_paths(
         vault=vault,
         projects_folder=projects_folder,
@@ -1134,7 +1145,7 @@ def try_sync_intelligence_packet_to_obsidian(
     state_root: Path | None = None,
 ) -> None:
     project_slug = project_slug_for_record(record)
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    _enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     planned = _planned_export_paths(
         vault=Path(obsidian.vault_root),
         projects_folder=projects_folder,

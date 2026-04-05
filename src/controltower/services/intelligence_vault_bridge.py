@@ -7,6 +7,7 @@ from controltower.config import ControlTowerConfig
 from controltower.obsidian.intelligence_vault import (
     intelligence_packet_note_stem,
     intelligence_vault_project_slug,
+    intelligence_vault_settings_from_obsidian,
     _planned_export_paths,
 )
 from controltower.render.markdown import parse_markdown_frontmatter, render_publish_markdown_preview
@@ -20,7 +21,7 @@ def resolve_paths_for_packet(record: IntelligencePacketRecord, config: ControlTo
         canonical_project_code=record.canonical_project_code or "",
         project_name=record.project_name or "",
     )
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    _enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     stem = intelligence_packet_note_stem(record)
     return _planned_export_paths(
         vault=Path(obsidian.vault_root),
@@ -44,7 +45,8 @@ def load_export_evidence(state_root: Path, packet_id: str) -> dict[str, Any] | N
 
 
 def vault_sync_status(record: IntelligencePacketRecord, config: ControlTowerConfig) -> tuple[str, dict[str, Any] | None]:
-    if not getattr(config.obsidian, "intelligence_vault_enabled", True):
+    enabled, _folder = intelligence_vault_settings_from_obsidian(config.obsidian)
+    if not enabled:
         return ("unknown", None)
     ev = load_export_evidence(config.runtime.state_root, record.packet_id)
     if ev is None:
@@ -68,7 +70,7 @@ def build_packet_bridge_context(record: IntelligencePacketRecord, config: Contro
         canonical_project_code=record.canonical_project_code or "",
         project_name=record.project_name or "",
     )
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    _enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     vault_root = Path(obsidian.vault_root)
     code = (record.canonical_project_code or "").strip()
     pid = record.packet_id
@@ -102,11 +104,10 @@ def build_project_bridge_context(
         canonical_project_code=canonical_project_code,
         project_name=project_name,
     )
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     vault_root = Path(obsidian.vault_root)
     project_index = vault_root / projects_folder.strip().strip("/\\") / slug / "00 Project Index.md"
     portfolio_index = vault_root / projects_folder.strip().strip("/\\") / "_Index.md"
-    enabled = getattr(obsidian, "intelligence_vault_enabled", True)
     code = (canonical_project_code or "").strip()
     return {
         "enabled": enabled,
@@ -166,11 +167,11 @@ def resolve_project_index_path(config: ControlTowerConfig, project_code: str) ->
         return None
     obsidian = config.obsidian
     slug = intelligence_vault_project_slug(canonical_project_code=code, project_name="")
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    _enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     return Path(obsidian.vault_root) / projects_folder.strip().strip("/\\") / slug / "00 Project Index.md"
 
 
 def resolve_portfolio_index_path(config: ControlTowerConfig) -> Path:
     obsidian = config.obsidian
-    projects_folder = getattr(obsidian, "intelligence_vault_projects_folder", "Projects")
+    _enabled, projects_folder = intelligence_vault_settings_from_obsidian(obsidian)
     return Path(obsidian.vault_root) / projects_folder.strip().strip("/\\") / "_Index.md"
