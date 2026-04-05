@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+import re
 import secrets
 from typing import Any
 from pathlib import Path
@@ -47,6 +48,192 @@ from controltower.services.release import collect_operator_diagnostics
 
 logger = logging.getLogger(__name__)
 
+
+def _brief_section_md(packet, key: str) -> str:
+    for sec in packet.sections:
+        if sec.key == key:
+            return (sec.body_markdown or "").strip()
+    return ""
+
+
+def _brief_bullets(md: str, *, max_n: int = 3) -> list[str]:
+    out: list[str] = []
+    for line in (md or "").splitlines():
+        s = line.strip()
+        if not s.startswith("- "):
+            continue
+        item = s[2:].strip()
+        if item and item not in out:
+            out.append(item)
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def _brief_lines_from_narrative(text: str, *, max_n: int = 3) -> list[str]:
+    if not (text or "").strip():
+        return []
+    raw = " ".join(text.split())
+    for sep in (" | ", " · "):
+        if sep in raw:
+            bits = [b.strip() for b in raw.split(sep) if b.strip()]
+            if bits:
+                return bits[:max_n]
+    if "; " in raw:
+        bits = [b.strip() for b in raw.split("; ") if b.strip()]
+        if bits:
+            return bits[:max_n]
+    parts = re.split(r"(?<=[.!?])\s+", raw)
+    lines = [p.strip() for p in parts if p.strip()]
+    return lines[:max_n] if lines else ([raw[:280] + "…"] if len(raw) > 280 else [raw])
+
+
+def _brief_evidence_rows(packet) -> list[dict[str, str]]:
+    md = _brief_section_md(packet, "source_evidence_appendix")
+    if not md:
+        return []
+    rows: list[dict[str, str]] = []
+    for line in md.splitlines():
+        s = line.strip()
+        if not s.startswith("|") or s.startswith("|---"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if len(cells) >= 2 and cells[0]:
+            rows.append(
+                {
+                    "c0": cells[0],
+                    "c1": cells[1],
+                    "c2": cells[2] if len(cells) > 2 else "",
+                }
+            )
+        if len(rows) >= 12:
+            break
+    if rows:
+        return rows
+    bullets = _brief_bullets(md, max_n=8)
+    return [{"c0": "Evidence", "c1": b, "c2": ""} for b in bullets]
+
+
+def _brief_risk_band_class(packet, command_brief: dict[str, str]) -> str:
+    blob = f"{command_brief.get('risks') or ''} {_brief_section_md(packet, 'near_term_risks')}".lower()
+    if any(w in blob for w in ("critical", "severe", "catastrophic")):
+        return "cb-brief-risk--high"
+    if any(w in blob for w in ("high risk", "high ", "elevated", "amber", "yellow", "watch", "medium")):
+        return "cb-brief-risk--medium"
+    if any(w in blob for w in ("low risk", " low ", "green", "minimal", "stable")):
+        return "cb-brief-risk--low"
+    if "high" in blob or "critical" in blob:
+        return "cb-brief-risk--high"
+    return "cb-brief-risk--unknown"
+
+
+def _brief_confidence_blurb(text: str, *, max_len: int = 360) -> str:
+    if not (text or "").strip():
+        return ""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    out = " ".join(parts[:2]).strip()
+    if len(out) > max_len:
+        cut = out[: max_len - 1].rstrip()
+        if " " in cut:
+            cut = cut[: cut.rfind(" ")]
+        out = cut + "…"
+    return out
+
+
+def _brief_status_line(packet, vault_intel: dict[str, object], command_brief: dict[str, str]) -> str:
+    delta_md = _brief_section_md(packet, "delta_vs_prior")
+    b = _brief_bullets(delta_md, max_n=1)
+    if b:
+        return b[0][:200]
+    rc = str(vault_intel.get("rail_changed") or "").strip()
+    if rc:
+        return rc[:200]
+    need = str(command_brief.get("need") or "").strip()
+    if need:
+        return need[:200]
+    return "—"
+
+
+def _load_packet_brief_context(config, packet_id: str):
+    """Shared packet + vault bundle + command brief for brief render (no persistence changes)."""
+    record = load_packet(config.runtime.state_root, packet_id)
+    if record is None:
+        return None
+    vault_intel: dict[str, object] = {
+        "intelligence_summary": "",
+        "key_points": [],
+        "risks": [],
+        "actions": [],
+        "rail_changed": "",
+        "rail_matters": "",
+        "rail_do": "",
+    }
+    try:
+        vault_intel = load_intelligence_bundle(
+            Path(config.obsidian.vault_root),
+            config.obsidian.intelligence_vault_projects_folder,
+            project_slug_for_record(record),
+            record.packet_id,
+            packet_iso_date(record),
+        )
+    except Exception as exc:
+        try:
+            vault_read_slug = project_slug_for_record(record)
+        except Exception:
+            vault_read_slug = "<unavailable>"
+        logger.warning(
+            "Intelligence vault bundle read failed (packet brief): packet_id=%s project_slug=%s: %s",
+            record.packet_id,
+            vault_read_slug,
+            exc,
+        )
+        vault_intel = {
+            "intelligence_summary": "",
+            "key_points": [],
+            "risks": [],
+            "actions": [],
+            "rail_changed": "",
+            "rail_matters": "",
+            "rail_do": "",
+        }
+    command_brief = build_command_brief(record, vault_intel)
+    delta_bullets = _brief_bullets(_brief_section_md(record, "delta_vs_prior"), max_n=3)
+    movement = str(vault_intel.get("rail_changed") or "").strip()
+    if movement and len(delta_bullets) < 3:
+        delta_bullets = (delta_bullets + [movement])[:3]
+    lookahead = _brief_lines_from_narrative(str(vault_intel.get("rail_matters") or ""), max_n=3)
+    if not lookahead:
+        lookahead = _brief_lines_from_narrative(str(vault_intel.get("intelligence_summary") or ""), max_n=2)
+    action_lines: list[str] = []
+    for piece in (command_brief.get("need"), command_brief.get("doing"), str(vault_intel.get("rail_do") or "")):
+        if not piece or not str(piece).strip():
+            continue
+        for frag in str(piece).split(";"):
+            frag = frag.strip()
+            if frag and frag not in action_lines:
+                action_lines.append(frag)
+            if len(action_lines) >= 3:
+                break
+        if len(action_lines) >= 3:
+            break
+    ev_rows = _brief_evidence_rows(record)
+    summary_txt = str(vault_intel.get("intelligence_summary") or "").strip()
+    return {
+        "packet": record,
+        "vault_intelligence": vault_intel,
+        "command_brief": command_brief,
+        "brief_evidence_rows": ev_rows,
+        "brief_delta_bullets": delta_bullets,
+        "brief_drivers_bullets": _brief_bullets(_brief_section_md(record, "key_drivers"), max_n=3),
+        "brief_risks_bullets": _brief_bullets(_brief_section_md(record, "near_term_risks"), max_n=3),
+        "brief_lookahead_lines": lookahead,
+        "brief_action_lines": action_lines,
+        "brief_risk_band_class": _brief_risk_band_class(record, command_brief),
+        "brief_status_line": _brief_status_line(record, vault_intel, command_brief),
+        "brief_confidence_blurb": _brief_confidence_blurb(summary_txt),
+    }
+
+
 TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 REQUIRED_UI_TEMPLATES = (
@@ -66,6 +253,7 @@ REQUIRED_UI_TEMPLATES = (
     "diagnostics.html",
     "packet_new.html",
     "packet_detail.html",
+    "packet_brief.html",
     "vault_intelligence_view.html",
     "_orchestrator_execution_section.html",
 )
@@ -414,6 +602,27 @@ def create_app_from_config(config) -> FastAPI:
                 page_title=record.title,
                 page_kicker=f"{record.project_name} · {record.reporting_period}",
                 page_mode="packet-detail",
+            ),
+        )
+
+    @app.get("/packets/{packet_id}/brief", response_class=HTMLResponse)
+    def packet_command_brief_page(request: Request, packet_id: str):
+        try:
+            ctx = _load_packet_brief_context(config, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Packet not found")
+        record = ctx["packet"]
+        return templates.TemplateResponse(
+            request,
+            "packet_brief.html",
+            _template_payload(
+                request,
+                page_title=f"Command brief — {record.title}",
+                page_kicker="",
+                page_mode="packet-brief",
+                **ctx,
             ),
         )
 

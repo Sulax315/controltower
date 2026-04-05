@@ -63,6 +63,7 @@
     <div class="pkt-toolbar-actions">
       <span class="pkt-status-pill {% if packet.status == 'published' %}pkt-status-published{% else %}pkt-status-generated{% endif %}">{{ packet.status }}</span>
       <a class="button secondary" href="/api/packets/{{ packet.packet_id }}/export/markdown">Export Markdown</a>
+      <a class="button secondary" href="/packets/{{ packet.packet_id }}/brief">Generate Brief</a>
       {% if packet.status != 'published' %}
       <form method="post" action="/packets/{{ packet.packet_id }}/publish" class="review-inline-form">
         <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">

@@ -64,6 +64,12 @@ def test_intelligence_packet_happy_path(sample_config_path):
     assert 'id="pkt-intelligence-rail"' in detail.text
     assert "Intelligence rail" in detail.text
     assert "What changed" in detail.text
+    assert f'href="/packets/{packet_id}/brief"' in detail.text
+
+    brief = client.get(f"/packets/{packet_id}/brief")
+    assert brief.status_code == 200
+    assert "cb-brief" in brief.text
+    assert "Command brief" in brief.text
 
     export = client.get(f"/api/packets/{packet_id}/export/markdown")
     assert export.status_code == 200
@@ -86,8 +92,10 @@ def test_packet_detail_404_and_invalid_id(sample_config_path):
     app = create_app(str(sample_config_path))
     client = TestClient(app)
     assert client.get("/packets/not-a-real-id").status_code == 400
+    assert client.get("/packets/not-a-real-id/brief").status_code == 400
     missing = "pkt_" + "0" * 32
     assert client.get(f"/packets/{missing}").status_code == 404
+    assert client.get(f"/packets/{missing}/brief").status_code == 404
 
 
 def test_api_invalid_packet_id_returns_400(sample_config_path):

@@ -6500,3 +6500,497 @@ body.publish .text-link:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Command brief — 1-page executive surface (.cb-brief-*)                   */
+/* -------------------------------------------------------------------------- */
+
+.cb-brief-body {
+  margin: 0;
+  background: #f6f8fb;
+  color: #121a24;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.cb-brief-screen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 12px 20px 0;
+}
+
+.cb-brief-back {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #0d3f73;
+  text-decoration: none;
+}
+
+.cb-brief-back:hover {
+  text-decoration: underline;
+}
+
+.cb-brief-print-btn {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(18, 32, 49, 0.2);
+  background: #fff;
+  cursor: pointer;
+}
+
+.cb-brief {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px 22px 20px;
+  box-sizing: border-box;
+}
+
+.cb-brief-identity {
+  background: linear-gradient(180deg, #0f1720 0%, #1a2431 100%);
+  color: #f2f5f9;
+  padding: 18px 22px 16px;
+  margin: 0 -4px 14px;
+  border-radius: 2px;
+}
+
+.cb-brief-identity__label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(242, 245, 249, 0.55);
+  margin: 0 0 6px;
+}
+
+.cb-brief-identity__title {
+  margin: 0 0 4px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
+.cb-brief-identity__meta {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(242, 245, 249, 0.78);
+}
+
+.cb-brief-identity__subtitle {
+  margin: 0 0 2px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: rgba(242, 245, 249, 0.88);
+  line-height: 1.28;
+}
+
+.cb-brief-dot {
+  margin: 0 0.35em;
+  opacity: 0.55;
+}
+
+.cb-brief-mono {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.78em;
+}
+
+.cb-brief-strip {
+  margin: 0;
+}
+
+.cb-brief-strip__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-top: 12px;
+  margin-top: 10px;
+  border-top: 1px solid rgba(242, 245, 249, 0.14);
+}
+
+.cb-brief-strip__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.cb-brief-strip__cell {
+  min-width: 0;
+  flex: 1 1 140px;
+}
+
+.cb-brief-strip__cell--finish {
+  flex: 1 1 100%;
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.cb-brief-strip__cell--status {
+  flex: 0 1 auto;
+  min-width: 7.5rem;
+}
+
+.cb-brief-k {
+  display: block;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5c6b7a;
+  margin-bottom: 3px;
+}
+
+.cb-brief-v {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #121a24;
+}
+
+.cb-brief-strip__finish-value {
+  display: block;
+  font-size: clamp(1.65rem, 4.2vw, 2.35rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: #0f1720;
+}
+
+.cb-brief-strip--inverse .cb-brief-k {
+  color: rgba(242, 245, 249, 0.52);
+}
+
+.cb-brief-strip--inverse .cb-brief-v {
+  color: #f8fafc;
+}
+
+.cb-brief-strip--inverse .cb-brief-strip__finish-value {
+  color: #fff;
+}
+
+.cb-brief-risk-text {
+  font-weight: 800;
+}
+
+.cb-brief-risk-block {
+  padding: 8px 10px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.cb-brief-strip--inverse .cb-brief-risk-block.cb-brief-risk--high {
+  background: rgba(255, 120, 120, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(80, 20, 20, 0.25);
+}
+
+.cb-brief-strip--inverse .cb-brief-risk-block.cb-brief-risk--medium {
+  background: rgba(255, 210, 100, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(80, 60, 10, 0.2);
+}
+
+.cb-brief-strip--inverse .cb-brief-risk-block.cb-brief-risk--low {
+  background: rgba(100, 210, 140, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(15, 60, 35, 0.22);
+}
+
+.cb-brief-strip--inverse .cb-brief-risk-block.cb-brief-risk--unknown {
+  background: rgba(180, 195, 210, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(40, 55, 70, 0.2);
+}
+
+.cb-brief-strip--inverse .cb-brief-risk-block .cb-brief-risk-text {
+  color: #0f1720;
+}
+
+.cb-brief-status-pill {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  padding: 5px 10px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  color: #0f1720;
+}
+
+.cb-brief-status-pill.cb-brief-risk--low {
+  background: rgba(100, 210, 140, 0.55);
+}
+
+.cb-brief-status-pill.cb-brief-risk--medium {
+  background: rgba(255, 210, 100, 0.65);
+}
+
+.cb-brief-status-pill.cb-brief-risk--high {
+  background: rgba(255, 120, 120, 0.55);
+}
+
+.cb-brief-status-pill.cb-brief-risk--unknown {
+  background: rgba(200, 210, 220, 0.45);
+}
+
+.cb-brief-h2 {
+  margin: 0 0 5px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #3d4d5c;
+}
+
+.cb-brief-band {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(18, 32, 49, 0.08);
+}
+
+.cb-brief-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 28px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(18, 32, 49, 0.08);
+}
+
+.cb-brief-two--single {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 640px) {
+  .cb-brief-two {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cb-brief-list {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.28;
+  color: #1c2836;
+}
+
+.cb-brief-list--compact li {
+  margin-bottom: 2px;
+}
+
+.cb-brief-list li {
+  margin-bottom: 4px;
+}
+
+.cb-brief-evidence {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(18, 32, 49, 0.08);
+}
+
+.cb-brief-table-wrap {
+  width: 100%;
+  overflow: hidden;
+}
+
+.cb-brief-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.76rem;
+  line-height: 1.28;
+}
+
+.cb-brief-table th,
+.cb-brief-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid rgba(18, 32, 49, 0.07);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.cb-brief-table th:nth-child(1),
+.cb-brief-table td:nth-child(1) {
+  width: 26%;
+}
+
+.cb-brief-table th:nth-child(2),
+.cb-brief-table td:nth-child(2) {
+  width: 42%;
+}
+
+.cb-brief-table th:nth-child(3),
+.cb-brief-table td:nth-child(3) {
+  width: 32%;
+}
+
+.cb-brief-table th {
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5c6b7a;
+  border-bottom-color: rgba(18, 32, 49, 0.14);
+}
+
+.cb-brief-commit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 28px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(18, 32, 49, 0.08);
+}
+
+.cb-brief-commit__col:only-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .cb-brief-commit {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cb-brief-footer {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(18, 32, 49, 0.1);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #5c6b7a;
+}
+
+.cb-brief-footer__facts {
+  margin: 0 0 6px;
+  padding-left: 1rem;
+}
+
+.cb-brief-footer__facts li {
+  margin-bottom: 0;
+}
+
+.cb-brief-footer__source {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.66rem;
+}
+
+@media print {
+  .cb-brief-no-print {
+    display: none !important;
+  }
+
+  .cb-brief-body {
+    background: #fff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    size: letter;
+    margin: 0.28in;
+  }
+
+  .cb-brief {
+    max-width: none;
+    margin: 0;
+    padding: 0.08in 0.22in 0.1in;
+    min-height: 0;
+    font-size: 8.25pt;
+    zoom: 0.92;
+  }
+
+  .cb-brief-identity {
+    margin: 0 0 8px;
+    border-radius: 0;
+    padding: 10px 12px 10px;
+    break-inside: avoid;
+  }
+
+  .cb-brief-identity__title {
+    font-size: 13pt;
+  }
+
+  .cb-brief-identity__subtitle {
+    font-size: 8.5pt;
+  }
+
+  .cb-brief-strip__grid,
+  .cb-brief-strip__row,
+  .cb-brief-band,
+  .cb-brief-two,
+  .cb-brief-evidence,
+  .cb-brief-commit {
+    break-inside: avoid;
+  }
+
+  .cb-brief-strip__finish-value {
+    font-size: 20pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .cb-brief-h2 {
+    font-size: 6.5pt;
+    margin-bottom: 3px;
+  }
+
+  .cb-brief-list {
+    font-size: 8pt;
+    line-height: 1.22;
+  }
+
+  .cb-brief-list--compact li {
+    margin-bottom: 1px;
+  }
+
+  .cb-brief-band,
+  .cb-brief-two,
+  .cb-brief-evidence,
+  .cb-brief-commit {
+    margin-bottom: 7px;
+    padding-bottom: 6px;
+  }
+
+  .cb-brief-table {
+    font-size: 7.25pt;
+    line-height: 1.22;
+  }
+
+  .cb-brief-table th,
+  .cb-brief-table td {
+    padding: 2px 5px 2px 0;
+  }
+
+  .cb-brief-table th {
+    font-size: 6pt;
+  }
+
+  .cb-brief-footer {
+    padding-top: 5px;
+    margin-top: 2px;
+    font-size: 6.75pt;
+  }
+
+  .cb-brief-footer__source {
+    font-size: 6.25pt;
+  }
+
+  .cb-brief-status-pill {
+    font-size: 6.5pt;
+    padding: 3px 7px;
+  }
+
+  .cb-brief-risk-block {
+    padding: 5px 7px;
+  }
+}
