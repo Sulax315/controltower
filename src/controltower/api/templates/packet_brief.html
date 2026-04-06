@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/static/site.css?v={{ asset_version }}">
 </head>
 <body class="cb-brief-body">
-{# Presentation-only: clip lines for executive scan (~12 words). #}
-{% macro clip_words(text, max_words=12) -%}
+{# Presentation-only clamps to keep one-page report behavior stable. #}
+{% macro clip_words(text, max_words=14) -%}
 {%- if text is none or text|string|trim == '' -%}
 {%- else -%}
 {%- set t = text|string|trim -%}
@@ -33,119 +33,118 @@
 {%- endif -%}
 {%- endmacro %}
 
-{# Delta & movement: backend merges rail_changed into bullets (max 3). #}
 {% set delta_lines = brief_delta_bullets[:3] %}
 {% set la_lines = brief_lookahead_lines[:3] %}
-
 {% set ev_rows = brief_evidence_rows[:5] %}
 {% set dr_lines = brief_drivers_bullets[:3] %}
 {% set rr_lines = brief_risks_bullets[:3] %}
 {% set act_lines = brief_action_lines[:3] %}
+{% set verdict_lines = delta_lines[:3] %}
+{% if verdict_lines|length < 2 and brief_strip_driver %}
+{% set verdict_lines = verdict_lines + ["Driver: " ~ brief_strip_driver] %}
+{% endif %}
+{% if verdict_lines|length < 3 and brief_strip_risk %}
+{% set verdict_lines = verdict_lines + ["Risk: " ~ brief_strip_risk] %}
+{% endif %}
 
   <div class="cb-brief-screen-actions cb-brief-no-print" aria-label="Screen actions">
     <a class="cb-brief-back" href="/packets/{{ packet.packet_id }}">← Back to packet</a>
     <button type="button" class="cb-brief-print-btn" onclick="window.print()">Print</button>
   </div>
 
-  <article class="cb-brief" aria-label="Command brief">
-    <header class="cb-brief-identity">
-      <div class="cb-brief-identity__label">Command brief</div>
-      <h1 class="cb-brief-identity__title">{{ clip_words(packet.project_name, 8) }}</h1>
-      <p class="cb-brief-identity__meta">
-        <span>{{ packet.canonical_project_code }}</span>
-        <span class="cb-brief-dot">·</span>
-        <span>{{ packet.reporting_period }}</span>
-        <span class="cb-brief-dot">·</span>
-        <span class="cb-brief-mono">{{ packet.packet_id }}</span>
-      </p>
-      {% if packet.title and packet.title|string|trim %}
-      <p class="cb-brief-identity__subtitle">{{ clip_words(packet.title, 14) }}</p>
-      {% endif %}
-
-      <div class="cb-brief-strip cb-brief-strip--inverse" aria-label="Command strip">
-        <div class="cb-brief-strip__grid">
-          {% if command_brief.finish and command_brief.finish|string|trim %}
-          <div class="cb-brief-strip__cell cb-brief-strip__cell--finish">
-            <span class="cb-brief-k">Finish</span>
-            <span class="cb-brief-strip__finish-value">{{ clip_words(command_brief.finish, 16) }}</span>
-          </div>
-          {% endif %}
-          <div class="cb-brief-strip__row">
-            {% if command_brief.driver and command_brief.driver|string|trim %}
-            <div class="cb-brief-strip__cell">
-              <span class="cb-brief-k">Driver</span>
-              <span class="cb-brief-v">{{ clip_words(command_brief.driver) }}</span>
-            </div>
-            {% endif %}
-            {% if command_brief.risks and command_brief.risks|string|trim %}
-            <div class="cb-brief-strip__cell cb-brief-strip__cell--risk cb-brief-risk-block {{ brief_risk_band_class }}">
-              <span class="cb-brief-k">Risk</span>
-              <span class="cb-brief-v cb-brief-risk-text">{{ clip_words(command_brief.risks) }}</span>
-            </div>
-            {% endif %}
-            <div class="cb-brief-strip__cell cb-brief-strip__cell--status">
-              <span class="cb-brief-k">Status</span>
-              <span class="cb-brief-status-pill {{ brief_risk_band_class }}">{{ posture_label(brief_risk_band_class) }}</span>
-            </div>
-          </div>
-        </div>
+  <article class="cb-brief" aria-label="Command brief" data-command-artifact="stakeholder-brief">
+    <header class="cb-brief-head" id="cb-zone-command-header" data-zone="1-command-header" aria-label="Command header">
+      <div class="cb-brief-head__left">
+        <div class="cb-brief-head__project">{{ clip_words(packet.project_name, 8) }}</div>
+        <div class="cb-brief-head__finish"><span class="cb-brief-strip__finish-value">{{ brief_strip_finish or "—" }}</span></div>
+        <div class="cb-brief-head__finish-label">Command finish date</div>
+        {% if brief_strip_finish_sub %}
+        <p class="cb-brief-head__subline">{{ clip_words(brief_strip_finish_sub, 10) }}{% if brief_strip_driver %} · {{ clip_words(brief_strip_driver, 6) }}{% endif %}</p>
+        {% elif brief_strip_driver %}
+        <p class="cb-brief-head__subline">{{ clip_words(brief_strip_driver, 6) }}</p>
+        {% endif %}
+      </div>
+      <div class="cb-brief-head__right">
+        <div class="cb-brief-head__status-label">Status</div>
+        <div class="cb-brief-status-pill cb-brief-status-pill--dominant {{ brief_risk_band_class }}">{{ posture_label(brief_risk_band_class) }}</div>
+        {% if brief_strip_risk %}
+        <div class="cb-brief-head__risk cb-brief-risk-block {{ brief_risk_band_class }}">{{ clip_words(brief_strip_risk, 6) }}</div>
+        {% endif %}
       </div>
     </header>
 
-    {% if delta_lines %}
-    <section class="cb-brief-band" aria-label="Delta and movement">
+    {% if verdict_lines %}
+    <section class="cb-brief-verdict" id="cb-zone-verdict-band" data-zone="2-verdict-band" aria-label="Verdict band">
       <h2 class="cb-brief-h2">Delta &amp; movement</h2>
-      <ul class="cb-brief-list cb-brief-list--compact">
-        {% for line in delta_lines %}
-        <li>{{ clip_words(line) }}</li>
+      <ul class="cb-brief-list cb-brief-list--verdict">
+        {% for line in verdict_lines[:3] %}
+        <li>{{ clip_words(line, 12) }}</li>
         {% endfor %}
       </ul>
     </section>
     {% endif %}
 
-    {% if dr_lines or rr_lines %}
-    <section class="cb-brief-two{% if dr_lines and not rr_lines %} cb-brief-two--single{% elif rr_lines and not dr_lines %} cb-brief-two--single{% endif %}" aria-label="Drivers and risks">
-      {% if dr_lines %}
-      <div class="cb-brief-two__col">
+    <section class="cb-brief-core" id="cb-zone-core-grid" data-zone="3-core-grid" aria-label="Core grid">
+      <div class="cb-brief-core__col">
         <h2 class="cb-brief-h2">Drivers</h2>
+        {% if dr_lines %}
         <ul class="cb-brief-list cb-brief-list--compact">
           {% for line in dr_lines %}
-          <li>{{ clip_words(line) }}</li>
+          <li>{{ clip_words(line, 10) }}</li>
           {% endfor %}
         </ul>
+        {% else %}
+        <p class="cb-brief-empty">No material driver shift</p>
+        {% endif %}
       </div>
-      {% endif %}
-      {% if rr_lines %}
-      <div class="cb-brief-two__col">
+      <div class="cb-brief-core__col">
         <h2 class="cb-brief-h2">Risks</h2>
+        {% if rr_lines %}
         <ul class="cb-brief-list cb-brief-list--compact">
           {% for line in rr_lines %}
-          <li>{{ clip_words(line) }}</li>
+          <li>{{ clip_words(line, 10) }}</li>
           {% endfor %}
         </ul>
+        {% else %}
+        <p class="cb-brief-empty">No material risk change</p>
+        {% endif %}
       </div>
-      {% endif %}
+      <div class="cb-brief-core__col">
+        <h2 class="cb-brief-h2">Actions</h2>
+        {% if act_lines %}
+        <ul class="cb-brief-list cb-brief-list--actions">
+          {% for line in act_lines %}
+          <li>{{ clip_words(line, 10) }}</li>
+          {% endfor %}
+        </ul>
+        {% elif la_lines %}
+        <ul class="cb-brief-list cb-brief-list--compact">
+          {% for line in la_lines %}
+          <li>{{ clip_words(line, 10) }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="cb-brief-empty">No immediate action required</p>
+        {% endif %}
+      </div>
     </section>
-    {% endif %}
 
     {% if ev_rows %}
-    <section class="cb-brief-evidence" aria-label="Evidence">
+    <section class="cb-brief-evidence" id="cb-zone-evidence" data-zone="4-evidence" aria-label="Evidence">
       <h2 class="cb-brief-h2">Evidence</h2>
       <div class="cb-brief-table-wrap">
-        <table class="cb-brief-table">
+        <table class="cb-brief-table cb-brief-table--secondary">
           <thead>
             <tr>
               <th scope="col">Item</th>
-              <th scope="col">Change</th>
-              <th scope="col">Impact</th>
+              <th scope="col">Decision signal</th>
             </tr>
           </thead>
           <tbody>
             {% for row in ev_rows %}
             <tr>
-              <td>{{ clip_chars(row.c0, 48) }}</td>
-              <td>{{ clip_chars(row.c1, 56) }}</td>
-              <td>{{ clip_chars(row.c2, 48) }}</td>
+              <td>{{ clip_chars(row.c0, 34) }}</td>
+              <td>{% if row.c2 %}{{ clip_chars(row.c1, 34) }} · {{ clip_chars(row.c2, 28) }}{% else %}{{ clip_chars(row.c1, 44) }}{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -154,38 +153,8 @@
     </section>
     {% endif %}
 
-    {% if la_lines or act_lines %}
-    <section class="cb-brief-commit" aria-label="Look-ahead and actions">
-      {% if la_lines %}
-      <div class="cb-brief-commit__col">
-        <h2 class="cb-brief-h2">Look-ahead</h2>
-        <ul class="cb-brief-list cb-brief-list--compact">
-          {% for line in la_lines %}
-          <li>{{ clip_words(line) }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-      {% if act_lines %}
-      <div class="cb-brief-commit__col">
-        <h2 class="cb-brief-h2">Actions</h2>
-        <ul class="cb-brief-list cb-brief-list--compact">
-          {% for line in act_lines %}
-          <li>{{ clip_words(line) }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-    </section>
-    {% endif %}
-
     <footer class="cb-brief-footer">
-      {% if brief_confidence_blurb %}
-      <ul class="cb-brief-footer__facts">
-        <li>{{ clip_words(brief_confidence_blurb, 18) }}</li>
-      </ul>
-      {% endif %}
-      <p class="cb-brief-footer__source">{{ config.app.product_name }} · {{ packet.reporting_period }} · {{ packet.packet_id }}{% if packet.published_at %} · {{ packet.published_at }}{% endif %}</p>
+      <p class="cb-brief-footer__source">{{ packet.reporting_period }} · {{ packet.canonical_project_code }}</p>
     </footer>
   </article>
 </body>

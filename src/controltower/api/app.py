@@ -114,6 +114,361 @@ def _brief_evidence_rows(packet) -> list[dict[str, str]]:
     return [{"c0": "Evidence", "c1": b, "c2": ""} for b in bullets]
 
 
+def _looks_like_path(s: str) -> bool:
+    t = (s or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    return "/" in t or "\\" in t or t.endswith(".md") or "outputs" in low or low.startswith("s3://")
+
+
+def _path_to_evidence_label(path: str) -> str:
+    base = path.replace("\\", "/").strip().split("/")[-1]
+    base = re.sub(r"\.[a-zA-Z0-9]+$", "", base)
+    base = base.replace("_", " ").replace("-", " ")
+    return (base.strip().title() or "Supporting export").strip()
+
+
+def brief_global_sanitize(text: str) -> str:
+    """Strip system-shaped tokens before any stakeholder-facing render."""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    s = s.replace("_", " ")
+    s = re.sub(r"(?i)(?:/app/|\\\\app\\\\)[\w./\\-]*", " ", s)
+    s = re.sub(r"(?i)\bpkt_[a-f0-9]+\b", " ", s)
+    s = re.sub(r"(?<![\d-])\b\d{6,}\b(?![\d-])", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _brief_plain_schedule_line(text: str) -> str:
+    """Stakeholder-facing wording: strip parser jargon and snake_case tokens."""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"(?i)\bhigh[_\s]?logic[_\s]?density\b", "tight schedule logic", s)
+    s = re.sub(r"(?i)\blogic[_\s]?density\b", "tight schedule logic", s)
+    s = re.sub(r"(?i)\blogic[_\s]?cycles?\b", "logic cycles", s)
+    s = re.sub(r"(?i)\b(successor|predecessor)[_\s]?counts?\b", r"\1 volume", s)
+    s = re.sub(r"(?i)\b(successor|predecessor)[_\s]?count\b", r"\1 volume", s)
+    s = re.sub(r"(?i)\bnegative[_\s]?float\b", "schedule slip", s)
+    s = re.sub(r"(?i)\bcritical[_\s]?path\b", "critical path", s)
+
+    def _de_snake(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        return tok.replace("_", " ")
+
+    s = re.sub(r"\b[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)+\b", _de_snake, s)
+    s = s.strip(" -—:·|")
+    if s and s[0].isalpha():
+        s = s[0].upper() + s[1:]
+    return s.strip()
+
+
+def _brief_short_phrase(text: str, *, max_words: int = 12, max_chars: int = 96) -> str:
+    t = _brief_plain_schedule_line(text)
+    if not t:
+        return ""
+    words = t.split()
+    if len(words) > max_words:
+        t = " ".join(words[:max_words]) + "…"
+    if len(t) > max_chars:
+        cut = t[: max_chars - 1].rstrip()
+        if " " in cut:
+            cut = cut[: cut.rfind(" ")]
+        t = cut + "…"
+    return t
+
+
+def humanize_driver(text: str) -> str:
+    """Strip IDs, snake_case, and metrics; collapse to a 3–6 word phrase. Never pass raw driver text through."""
+    s = brief_global_sanitize((text or "").strip())
+    s = re.sub(r"^\s*\d+[\).\s-]+", "", s)
+    s = _brief_plain_schedule_line(s)
+    s = re.sub(
+        r"(?i)\b(logic[_\s]?density|successor[_\s]?count|predecessor[_\s]?count)\b",
+        "",
+        s,
+    )
+    s = re.sub(r"\s+", " ", s).strip()
+    words = [w for w in s.split() if w]
+    if len(words) > 6:
+        s = " ".join(words[:6])
+    else:
+        s = " ".join(words)
+    low = s.lower()
+    if not s or len(s) < 2:
+        return "Primary sequence constraint"
+    if "critical" in low and "path" in low:
+        return "Critical path constraint"
+    if len(words) < 3:
+        return "Primary sequence constraint"
+    return s
+
+
+def _brief_clean_risk_phrase(text: str) -> str:
+    s = (text or "").strip()
+    s = re.sub(r"\*+", "", s)
+    s = re.sub(r"(?i)^(?:risk|risks)\s*:\s*", "", s)
+    s = brief_global_sanitize(s)
+    s = _brief_plain_schedule_line(s)
+    words = s.split()[:10]
+    return " ".join(words)
+
+
+def _brief_finish_sentiment_label(blob: str) -> str:
+    low = (blob or "").lower()
+    slip = ("slip", "delay", "push", "later", "behind", "negative float", "weeks", "worse", "loss")
+    imp = ("pull", "gain", "improv", "earlier", "recover", "acceler", "better", "favorable")
+    if any(w in low for w in slip):
+        return "Slipping"
+    if any(w in low for w in imp):
+        return "Improving"
+    return "Holding"
+
+
+def _brief_finish_headline_and_sub(
+    command_brief: dict[str, str],
+    packet,
+    vault_intel: dict[str, object],
+) -> tuple[str, str]:
+    """Line 1: ISO date only. Line 2: Holding/Slipping/Improving · short source."""
+    raw = (command_brief.get("finish") or "").strip()
+    primary = raw.partition(" Δ ")[0].strip()
+    tail = raw.partition(" Δ ")[2].strip()
+    m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", primary)
+    line1 = m.group(1) if m else (packet_iso_date(packet) or "")
+    blob = " ".join(
+        [
+            tail,
+            _brief_section_md(packet, "delta_vs_prior")[:500],
+            str(vault_intel.get("rail_changed") or ""),
+        ]
+    )
+    sentiment = _brief_finish_sentiment_label(blob)
+    src = brief_global_sanitize((packet.title or "").strip())
+    if len(src) > 36:
+        src = src[:33].rstrip() + "…"
+    line2 = f"{sentiment} · {src}" if src else sentiment
+    return line1, brief_global_sanitize(line2)
+
+
+def _brief_driver_changed(packet, vault_intel: dict[str, object]) -> bool:
+    b = " ".join([_brief_section_md(packet, "delta_vs_prior"), str(vault_intel.get("rail_changed") or "")]).lower()
+    return any(w in b for w in ("driver", "controlling", "constraint shift", "constraint change"))
+
+
+def _brief_delta_rewrite_bullets(packet, vault_intel: dict[str, object]) -> list[str]:
+    delta_md = _brief_section_md(packet, "delta_vs_prior")
+    mov = str(vault_intel.get("rail_changed") or "")
+    blob = f"{delta_md} {mov}".lower()
+    fv = "unchanged"
+    if _brief_finish_sentiment_label(blob) == "Slipping":
+        fv = "slipping"
+    elif _brief_finish_sentiment_label(blob) == "Improving":
+        fv = "improving"
+    dv = "changed" if _brief_driver_changed(packet, vault_intel) else "unchanged"
+    rv = "unchanged"
+    if any(x in blob for x in ("new risk", "emerged risk", "additional risk", "escalat")):
+        rv = "new"
+    elif any(x in blob for x in ("resolved", "closed", "cleared risk", "mitigated")):
+        rv = "resolved"
+    return [f"Finish: {fv}", f"Driver: {dv}", f"Risk: {rv}"]
+
+
+def _brief_text_still_system_shaped(s: str) -> bool:
+    t = (s or "").strip()
+    if not t:
+        return False
+    if _looks_like_path(t):
+        return True
+    low = t.lower()
+    if "/app/" in low:
+        return True
+    if re.search(r"\b[a-z]{2,}_[a-z]{2,}(?:_[a-z0-9]+)+\b", low):
+        return True
+    if re.search(r"\b[a-z][a-z0-9]*_[a-z][a-z0-9_]*\b", low):
+        return True
+    if re.match(r"^pkt_[a-f0-9]{8,}$", low):
+        return True
+    return False
+
+
+def _brief_evidence_cell_display(s: str) -> str:
+    t = (s or "").strip()
+    if not t:
+        return ""
+    if _looks_like_path(t):
+        return _path_to_evidence_label(t)
+    return _brief_plain_schedule_line(t)
+
+
+def _brief_stakeholder_evidence_row(row: dict[str, str]) -> dict[str, str] | None:
+    c0, c1, c2 = row.get("c0", ""), row.get("c1", ""), row.get("c2", "")
+    if _looks_like_path(c0) and _looks_like_path(c1) and not (c2 or "").strip():
+        return None
+    h0 = _brief_evidence_cell_display(c0)
+    h1 = _brief_evidence_cell_display(c1)
+    h2 = _brief_evidence_cell_display(c2)
+    if h0.lower() in ("evidence", "source"):
+        h0 = "Schedule basis"
+    if not h1 and h2:
+        h1, h2 = h2, "Outlook"
+    if _brief_text_still_system_shaped(h0) or _brief_text_still_system_shaped(h1) or _brief_text_still_system_shaped(h2):
+        return None
+    return {"c0": h0, "c1": h1, "c2": h2}
+
+
+_SYSTEM_EVIDENCE_FRAGS = ("logic_density", "successor_count", "predecessor_count", "pkt_", "/app/")
+
+
+def _brief_raw_evidence_contaminated(rows: list[dict[str, str]]) -> bool:
+    for row in rows:
+        for k in ("c0", "c1", "c2"):
+            cell = row.get(k) or ""
+            if _looks_like_path(cell):
+                return True
+            low = cell.lower()
+            if any(t in low for t in _SYSTEM_EVIDENCE_FRAGS):
+                return True
+            if re.search(r"\b[a-z][a-z0-9]*_[a-z][a-z0-9_]*\b", low):
+                return True
+    return False
+
+
+def _brief_evidence_three_row_fallback(
+    packet,
+    vault_intel: dict[str, object],
+    command_brief: dict[str, str],
+    finish_sent: str,
+    driver_ok: bool,
+    risk_ok: bool,
+) -> list[dict[str, str]]:
+    rclass = _brief_risk_band_class(packet, command_brief)
+    if not driver_ok:
+        dcell = "Not stated"
+    else:
+        dcell = "Changed" if _brief_driver_changed(packet, vault_intel) else "Unchanged"
+    if not risk_ok:
+        rc = "Not stated"
+    elif rclass in ("cb-brief-risk--high", "cb-brief-risk--medium"):
+        rc = "Elevated"
+    elif rclass == "cb-brief-risk--low":
+        rc = "Controlled"
+    else:
+        rc = "Monitoring"
+    return [
+        {"c0": "Finish position", "c1": finish_sent, "c2": "Vs prior"},
+        {"c0": "Driver stability", "c1": dcell, "c2": "Path control"},
+        {"c0": "Risk exposure", "c1": rc, "c2": "Near-term"},
+    ]
+
+
+def _brief_stakeholder_evidence_rows(
+    packet,
+    vault_intel: dict[str, object],
+    command_brief: dict[str, str],
+    finish_sent: str,
+    driver_ok: bool,
+    risk_ok: bool,
+) -> list[dict[str, str]]:
+    raw = _brief_evidence_rows(packet)
+    if not raw or _brief_raw_evidence_contaminated(raw):
+        return _brief_evidence_three_row_fallback(
+            packet, vault_intel, command_brief, finish_sent, driver_ok, risk_ok
+        )
+    refined: list[dict[str, str]] = []
+    for row in raw[:12]:
+        mapped = _brief_stakeholder_evidence_row(row)
+        if not mapped:
+            return _brief_evidence_three_row_fallback(
+                packet, vault_intel, command_brief, finish_sent, driver_ok, risk_ok
+            )
+        if any(_brief_text_still_system_shaped(mapped[k]) for k in mapped):
+            return _brief_evidence_three_row_fallback(
+                packet, vault_intel, command_brief, finish_sent, driver_ok, risk_ok
+            )
+        refined.append(mapped)
+        if len(refined) >= 5:
+            break
+    return refined[:5]
+
+
+def _brief_normalize_action_key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+
+def _brief_strip_action_role_prefix(s: str) -> str:
+    t = (s or "").strip()
+    t = re.sub(r"^\*+\s*", "", t)
+    t = re.sub(r"^\*?\*?[A-Za-z][A-Za-z0-9]{0,14}\*?\*?:\s*", "", t)
+    return t.strip()
+
+
+def _brief_action_meeting_line(line: str) -> str:
+    t = _brief_strip_action_role_prefix(line)
+    t = brief_global_sanitize(t)
+    t = _brief_plain_schedule_line(t)
+    if not t:
+        return ""
+    low = t.lower()
+    for prefix in ("need:", "action:", "doing:", "need ", "action "):
+        if low.startswith(prefix):
+            t = t.split(":", 1)[-1].strip() if ":" in t else t[len(prefix) :].strip()
+            break
+    meeting_openers = (
+        "confirm ",
+        "decide ",
+        "approve ",
+        "review ",
+        "assign ",
+        "hold ",
+        "schedule ",
+        "authorize ",
+        "align ",
+        "resolve ",
+    )
+    tl = t.lower()
+    if not any(tl.startswith(o) for o in meeting_openers) and len(t.split()) <= 6:
+        if len(t) > 1:
+            t = f"Confirm {t[0].lower()}{t[1:]}"
+        else:
+            t = f"Confirm {t.lower()}"
+    elif t:
+        t = t[0].upper() + t[1:]
+    return _brief_short_phrase(t, max_words=12, max_chars=88)
+
+
+def _brief_meeting_action_lines(command_brief: dict[str, str], vault_intel: dict[str, object]) -> list[str]:
+    candidates: list[str] = []
+    for piece in (command_brief.get("need"), command_brief.get("doing"), str(vault_intel.get("rail_do") or "")):
+        if not piece or not str(piece).strip():
+            continue
+        for frag in str(piece).split(";"):
+            frag = frag.strip()
+            if frag:
+                candidates.append(frag)
+    out: list[str] = []
+    seen_keys: set[str] = set()
+    for c in candidates:
+        line = _brief_action_meeting_line(c)
+        if not line:
+            continue
+        k = _brief_normalize_action_key(line)
+        if len(k) < 5:
+            continue
+        k30 = k[:36]
+        if k30 in seen_keys:
+            continue
+        seen_keys.add(k30)
+        out.append(line)
+        if len(out) >= 3:
+            break
+    return out
+
+
 def _brief_risk_band_class(packet, command_brief: dict[str, str]) -> str:
     blob = f"{command_brief.get('risks') or ''} {_brief_section_md(packet, 'near_term_risks')}".lower()
     if any(w in blob for w in ("critical", "severe", "catastrophic")):
@@ -197,40 +552,62 @@ def _load_packet_brief_context(config, packet_id: str):
             "rail_do": "",
         }
     command_brief = build_command_brief(record, vault_intel)
-    delta_bullets = _brief_bullets(_brief_section_md(record, "delta_vs_prior"), max_n=3)
-    movement = str(vault_intel.get("rail_changed") or "").strip()
-    if movement and len(delta_bullets) < 3:
-        delta_bullets = (delta_bullets + [movement])[:3]
+    finish_headline, finish_sub = _brief_finish_headline_and_sub(command_brief, record, vault_intel)
+    strip_driver = humanize_driver(command_brief.get("driver") or "")
+    strip_risk = _brief_clean_risk_phrase(command_brief.get("risks") or "")
+    delta_bullets = _brief_delta_rewrite_bullets(record, vault_intel)
     lookahead = _brief_lines_from_narrative(str(vault_intel.get("rail_matters") or ""), max_n=3)
     if not lookahead:
         lookahead = _brief_lines_from_narrative(str(vault_intel.get("intelligence_summary") or ""), max_n=2)
-    action_lines: list[str] = []
-    for piece in (command_brief.get("need"), command_brief.get("doing"), str(vault_intel.get("rail_do") or "")):
-        if not piece or not str(piece).strip():
+    lookahead_h: list[str] = []
+    for x in lookahead:
+        if not str(x).strip():
             continue
-        for frag in str(piece).split(";"):
-            frag = frag.strip()
-            if frag and frag not in action_lines:
-                action_lines.append(frag)
-            if len(action_lines) >= 3:
-                break
-        if len(action_lines) >= 3:
-            break
-    ev_rows = _brief_evidence_rows(record)
-    summary_txt = str(vault_intel.get("intelligence_summary") or "").strip()
+        y = brief_global_sanitize(_brief_short_phrase(_brief_plain_schedule_line(str(x)), max_words=12))
+        if y:
+            lookahead_h.append(y)
+    lookahead = lookahead_h
+    action_lines = _brief_meeting_action_lines(command_brief, vault_intel)
+    driver_ok = bool(strip_driver) or bool(_brief_bullets(_brief_section_md(record, "key_drivers"), max_n=1))
+    risk_ok = bool(strip_risk) or bool(_brief_bullets(_brief_section_md(record, "near_term_risks"), max_n=1))
+    raw_fin = (command_brief.get("finish") or "").strip()
+    tail_fin = raw_fin.partition(" Δ ")[2].strip()
+    blob_fin = " ".join(
+        [
+            tail_fin,
+            _brief_section_md(record, "delta_vs_prior")[:500],
+            str(vault_intel.get("rail_changed") or ""),
+        ]
+    )
+    finish_sent_ev = _brief_finish_sentiment_label(blob_fin)
+    ev_rows = _brief_stakeholder_evidence_rows(
+        record,
+        vault_intel,
+        command_brief,
+        finish_sent_ev,
+        driver_ok,
+        risk_ok,
+    )
+    drivers_raw = _brief_bullets(_brief_section_md(record, "key_drivers"), max_n=3)
+    risks_raw = _brief_bullets(_brief_section_md(record, "near_term_risks"), max_n=3)
+    brief_drivers = [humanize_driver(b) for b in drivers_raw if b.strip()]
+    brief_risks = [r for b in risks_raw if b.strip() for r in [_brief_clean_risk_phrase(b)] if r.strip()]
     return {
         "packet": record,
         "vault_intelligence": vault_intel,
         "command_brief": command_brief,
+        "brief_strip_finish": finish_headline,
+        "brief_strip_finish_sub": finish_sub,
+        "brief_strip_driver": strip_driver,
+        "brief_strip_risk": strip_risk,
         "brief_evidence_rows": ev_rows,
         "brief_delta_bullets": delta_bullets,
-        "brief_drivers_bullets": _brief_bullets(_brief_section_md(record, "key_drivers"), max_n=3),
-        "brief_risks_bullets": _brief_bullets(_brief_section_md(record, "near_term_risks"), max_n=3),
+        "brief_drivers_bullets": brief_drivers,
+        "brief_risks_bullets": brief_risks,
         "brief_lookahead_lines": lookahead,
         "brief_action_lines": action_lines,
         "brief_risk_band_class": _brief_risk_band_class(record, command_brief),
         "brief_status_line": _brief_status_line(record, vault_intel, command_brief),
-        "brief_confidence_blurb": _brief_confidence_blurb(summary_txt),
     }
 
 
