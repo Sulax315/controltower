@@ -6570,6 +6570,7 @@ body.publish .text-link:hover {
   line-height: 1.02;
   letter-spacing: -0.03em;
   color: #0b1118;
+  white-space: nowrap;
 }
 
 .cb-brief-head__finish-label {
@@ -6641,6 +6642,7 @@ body.publish .text-link:hover {
   padding: 3px 7px;
   max-width: 18ch;
   text-align: left;
+  opacity: 0.92;
 }
 
 .cb-brief-risk-block.cb-brief-risk--high {
@@ -6689,7 +6691,7 @@ body.publish .text-link:hover {
 
 .cb-brief-list li {
   margin-bottom: 2px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .cb-brief-list--verdict li {
@@ -6701,6 +6703,10 @@ body.publish .text-link:hover {
   letter-spacing: 0.005em;
 }
 
+.cb-brief-list--actions li::marker {
+  font-weight: 800;
+}
+
 .cb-brief-core {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6708,11 +6714,15 @@ body.publish .text-link:hover {
   margin-bottom: 7px;
   padding-bottom: 7px;
   border-bottom: 1px solid #dfe5ec;
+  align-items: start;
 }
 
 .cb-brief-core__col {
   min-width: 0;
   padding-right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .cb-brief-empty {
@@ -6727,6 +6737,7 @@ body.publish .text-link:hover {
   margin-bottom: 6px;
   padding-bottom: 6px;
   border-bottom: 1px solid #e5eaf0;
+  opacity: 0.95;
 }
 
 .cb-brief-table {
@@ -6837,6 +6848,7 @@ body.publish .text-link:hover {
 
   .cb-brief-head__finish {
     font-size: 24pt;
+    white-space: nowrap;
   }
 
   .cb-brief-head__subline {
@@ -6846,6 +6858,11 @@ body.publish .text-link:hover {
   .cb-brief-status-pill {
     font-size: 8.3pt;
     padding: 4px 8px;
+    white-space: nowrap;
+  }
+
+  .cb-brief-core__col {
+    break-inside: avoid;
   }
 
   .cb-brief-list {
