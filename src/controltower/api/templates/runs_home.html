@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="card" id="runs-home-upload">
+  <h2>Upload Schedule CSV</h2>
+  {% if upload_error %}
+  <div class="utility-note" id="runs-home-upload-error">Error: {{ upload_error }}</div>
+  {% endif %}
+  <form method="post" action="/runs" enctype="multipart/form-data">
+    <label for="csv_file">Schedule CSV</label>
+    <input id="csv_file" name="csv_file" type="file" accept=".csv,text/csv" required>
+    <button type="submit" class="button">Execute Run</button>
+  </form>
+</section>
+
+<section class="card" id="runs-home-recent">
+  <h2>Recent Runs</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>run_id</th>
+        <th>created_at</th>
+        <th>status</th>
+        <th>detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td>{{ run.run_id }}</td>
+        <td>{{ run.created_at }}</td>
+        <td>{{ run.status }}</td>
+        <td><a href="/runs/{{ run.run_id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+      {% if not recent_runs %}
+      <tr>
+        <td colspan="4">No runs have been executed yet.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

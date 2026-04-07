@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from pydantic import ValidationError
 
-from fastapi import Body, FastAPI, Form, HTTPException, Request
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -32,6 +32,8 @@ from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.schedule_intake.publish_assembly import build_publish_packet
 from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
+from controltower.runs.execution import execute_run
+from controltower.runs.registry import get_run, list_runs
 from controltower.services.controltower import ControlTowerService
 from controltower.services.intelligence_packets import (
     GeneratePacketRequest,
@@ -57,6 +59,7 @@ REQUIRED_UI_TEMPLATES = (
     "publish.html",
     "publish_present.html",
     "publish_operator.html",
+    "runs_home.html",
     "projects.html",
     "project_compare.html",
     "project_detail.html",
@@ -213,9 +216,26 @@ def create_app_from_config(config) -> FastAPI:
         _ensure_auth_csrf_token(request, rotate=True)
         return RedirectResponse(url=_with_auth_action(_safe_next_path(next_path, default="/login"), "logged_out"), status_code=303)
 
+    def _render_runs_home(request: Request, *, status_code: int = 200, upload_error: str | None = None):
+        recent_runs = list_runs(config.runtime.state_root)
+        response = templates.TemplateResponse(
+            request,
+            "runs_home.html",
+            _template_payload(
+                request,
+                recent_runs=recent_runs,
+                upload_error=upload_error,
+                page_title="Run Execution",
+                page_kicker="Browser-native run execution over deterministic artifacts",
+                page_mode="runs-home",
+            ),
+        )
+        response.status_code = status_code
+        return response
+
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
-        return RedirectResponse(url=str(request.url.replace(path="/publish")), status_code=307)
+        return _render_runs_home(request)
 
     @app.get("/control", response_class=HTMLResponse)
     def portfolio_overview(request: Request):
@@ -575,8 +595,55 @@ def create_app_from_config(config) -> FastAPI:
             ),
         )
 
+    @app.post("/runs")
+    async def runs_execute(request: Request, csv_file: UploadFile | None = File(None)):
+        wants_json = _wants_json_response(request)
+        if csv_file is None:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload is required."})
+            return _render_runs_home(request, status_code=400, upload_error="A CSV upload is required.")
+        raw_name = (csv_file.filename or "").strip()
+        filename = Path(raw_name).name.strip()
+        if not filename:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file filename is required."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV filename is required.")
+        if not filename.lower().endswith(".csv"):
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file must be a .csv upload."})
+            return _render_runs_home(request, status_code=400, upload_error="Only .csv uploads are supported.")
+        payload = await csv_file.read()
+        if len(payload) == 0:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload cannot be empty."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV upload cannot be empty.")
+        uploads_root = config.runtime.state_root / "runs" / "_uploads"
+        uploads_root.mkdir(parents=True, exist_ok=True)
+        upload_path = uploads_root / f"{secrets.token_hex(8)}_{filename}"
+        upload_path.write_bytes(payload)
+        run_id = execute_run(upload_path, state_root=config.runtime.state_root)
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=500, detail="Run metadata not found after execution.")
+        if wants_json:
+            return {"run_id": run_id, "status": run["status"]}
+        return RedirectResponse(url=f"/runs/{run_id}", status_code=303)
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail(request: Request, run_id: str):
+        run_record = get_run(config.runtime.state_root, run_id)
+        if run_record is not None:
+            return templates.TemplateResponse(
+                request,
+                "run_detail.html",
+                _template_payload(
+                    request,
+                    run_record=run_record,
+                    page_title=f"Run {run_record['run_id']}",
+                    page_kicker="Run registry detail and deterministic artifact pointers",
+                    page_mode="run-detail",
+                ),
+            )
         record = service.get_run(run_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Run not found")
@@ -990,6 +1057,21 @@ def create_app_from_config(config) -> FastAPI:
 
     @app.get("/publish/operator", response_class=HTMLResponse)
     def publish_operator_view(request: Request, bundle: str | None = None):
+        return _render_publish_operator(request, bundle=bundle)
+
+    @app.get("/publish/operator/{run_id}", response_class=HTMLResponse)
+    def publish_operator_run_view(request: Request, run_id: str):
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        bundle_path = str(run.get("bundle_path") or "").strip()
+        if not bundle_path:
+            raise HTTPException(status_code=409, detail="Run bundle path is missing.")
+        if not Path(bundle_path).exists():
+            raise HTTPException(status_code=409, detail="Run bundle artifact is missing.")
+        return _render_publish_operator(request, bundle=bundle_path)
+
+    def _render_publish_operator(request: Request, *, bundle: str | None):
         packet = None
         load_error = None
         if bundle:
@@ -1376,6 +1458,11 @@ def _with_review_action(path: str, action: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["action"] = action
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _wants_json_response(request: Request) -> bool:
+    accepts = (request.headers.get("accept") or "").lower()
+    return "application/json" in accepts and "text/html" not in accepts
 
 
 app = create_app()
