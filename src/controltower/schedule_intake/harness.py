@@ -8,8 +8,24 @@ import sys
 from pathlib import Path
 
 from .asta_csv import parse_asta_export_csv
+from .command_brief import build_command_brief
 from .delta_analysis import ScheduleDeltaResult, compare_schedule_csv_paths
 from .drivers import rank_driver_candidates
+from .export_artifacts import export_deterministic_artifact_set
+from .exploration import (
+    all_simple_paths_between,
+    downstream_closure,
+    downstream_impact_span,
+    explain_driver_structure,
+    immediate_predecessors,
+    immediate_successors,
+    is_reachable,
+    shared_ancestors,
+    shared_descendants,
+    shortest_path_between,
+    upstream_closure,
+)
+from .output_contracts import build_exploration_contract, build_schedule_intelligence_bundle
 from .risks import collect_schedule_risk_findings
 from .graph import ScheduleLogicGraph, build_schedule_logic_graph
 from .graph_summary import (
@@ -179,6 +195,48 @@ def _print_drivers_section(graph: ScheduleLogicGraph, *, top: int) -> None:
         print(f"   signals: {c.rationale_signals}")
 
 
+def _print_exploration_queries(
+    graph: ScheduleLogicGraph,
+    *,
+    upstream_task_id: str | None,
+    downstream_task_id: str | None,
+    path_pair: tuple[str, str] | None,
+    all_paths_pair: tuple[str, str] | None,
+    shared_ancestors_pair: tuple[str, str] | None,
+    shared_descendants_pair: tuple[str, str] | None,
+    driver_structure_task_id: str | None,
+    impact_span_task_id: str | None,
+) -> None:
+    if upstream_task_id is not None:
+        print(f"upstream:{upstream_task_id}={list(upstream_closure(graph, upstream_task_id))}")
+        print(f"immediate_predecessors:{upstream_task_id}={list(immediate_predecessors(graph, upstream_task_id))}")
+    if downstream_task_id is not None:
+        print(f"downstream:{downstream_task_id}={list(downstream_closure(graph, downstream_task_id))}")
+        print(f"immediate_successors:{downstream_task_id}={list(immediate_successors(graph, downstream_task_id))}")
+    if path_pair is not None:
+        src, dst = path_pair
+        print(f"path:{src}->{dst}={list(shortest_path_between(graph, src, dst))}")
+        print(f"reachable:{src}->{dst}={is_reachable(graph, src, dst)}")
+    if all_paths_pair is not None:
+        src, dst = all_paths_pair
+        all_paths = all_simple_paths_between(graph, src, dst)
+        print(f"all_paths:{src}->{dst}={len(all_paths)}")
+        for p in all_paths:
+            print(f"path={list(p)}")
+    if shared_ancestors_pair is not None:
+        left, right = shared_ancestors_pair
+        print(f"shared_ancestors:{left},{right}={list(shared_ancestors(graph, left, right))}")
+    if shared_descendants_pair is not None:
+        left, right = shared_descendants_pair
+        print(f"shared_descendants:{left},{right}={list(shared_descendants(graph, left, right))}")
+    if driver_structure_task_id is not None:
+        ds = explain_driver_structure(graph, driver_structure_task_id)
+        print(f"driver_structure:{driver_structure_task_id}={ds}")
+    if impact_span_task_id is not None:
+        span = downstream_impact_span(graph, impact_span_task_id)
+        print(f"impact_span:{impact_span_task_id}={span}")
+
+
 def run_summary(
     csv_path: Path,
     *,
@@ -187,6 +245,16 @@ def run_summary(
     graph_summary: bool,
     drivers_top: int | None,
     risks_top: int | None,
+    brief: bool,
+    upstream_task_id: str | None,
+    downstream_task_id: str | None,
+    path_pair: tuple[str, str] | None,
+    all_paths_pair: tuple[str, str] | None,
+    shared_ancestors_pair: tuple[str, str] | None,
+    shared_descendants_pair: tuple[str, str] | None,
+    driver_structure_task_id: str | None,
+    impact_span_task_id: str | None,
+    export_dir: Path | None,
 ) -> int:
     result = parse_asta_export_csv(csv_path)
     acts = result.activities
@@ -223,6 +291,76 @@ def run_summary(
             _print_drivers_section(graph, top=drivers_top)
         if risks_top is not None:
             _print_risks_section(graph, top=risks_top)
+        if brief:
+            gs = build_schedule_graph_summary(graph)
+            ranked = rank_driver_candidates(graph, limit=1)
+            drv = ranked[0] if ranked else None
+            risks = collect_schedule_risk_findings(graph, graph_summary=gs)
+            cb = build_command_brief(graph_summary=gs, driver=drv, risks=risks, delta=None)
+            for ln in cb.as_lines():
+                print(ln)
+        _print_exploration_queries(
+            graph,
+            upstream_task_id=upstream_task_id,
+            downstream_task_id=downstream_task_id,
+            path_pair=path_pair,
+            all_paths_pair=all_paths_pair,
+            shared_ancestors_pair=shared_ancestors_pair,
+            shared_descendants_pair=shared_descendants_pair,
+            driver_structure_task_id=driver_structure_task_id,
+            impact_span_task_id=impact_span_task_id,
+        )
+        if export_dir is not None:
+            gs = build_schedule_graph_summary(graph)
+            lq = analyze_logic_quality(graph)
+            ranked = rank_driver_candidates(graph, limit=1)
+            top = ranked[0] if ranked else None
+            risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs)
+            brief_obj = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+            ex = build_exploration_contract(
+                immediate_predecessors=immediate_predecessors(graph, upstream_task_id)
+                if upstream_task_id is not None
+                else (),
+                immediate_successors=immediate_successors(graph, downstream_task_id)
+                if downstream_task_id is not None
+                else (),
+                upstream_closure=upstream_closure(graph, upstream_task_id) if upstream_task_id is not None else (),
+                downstream_closure=downstream_closure(graph, downstream_task_id) if downstream_task_id is not None else (),
+                shortest_path=shortest_path_between(graph, path_pair[0], path_pair[1]) if path_pair is not None else (),
+                all_simple_paths=all_simple_paths_between(graph, all_paths_pair[0], all_paths_pair[1])
+                if all_paths_pair is not None
+                else (),
+                shared_ancestors=shared_ancestors(graph, shared_ancestors_pair[0], shared_ancestors_pair[1])
+                if shared_ancestors_pair is not None
+                else (),
+                shared_descendants=shared_descendants(graph, shared_descendants_pair[0], shared_descendants_pair[1])
+                if shared_descendants_pair is not None
+                else (),
+                driver_structure=explain_driver_structure(graph, driver_structure_task_id)
+                if driver_structure_task_id is not None
+                else None,
+                impact_span=downstream_impact_span(graph, impact_span_task_id) if impact_span_task_id is not None else None,
+            )
+            bundle = build_schedule_intelligence_bundle(
+                graph_summary=gs,
+                logic_quality=lq,
+                top_driver=top,
+                risks=risks,
+                delta=None,
+                command_brief=brief_obj,
+                exploration=ex,
+            )
+            artifacts, manifest = export_deterministic_artifact_set(export_dir, bundle=bundle)
+            print(f"export_dir={export_dir}")
+            for a in artifacts:
+                print(f"artifact:{a.filename} sha256={a.sha256} bytes={a.byte_count} type={a.artifact_type}")
+            print(
+                "manifest_flags:"
+                f" bundle={manifest.bundle_present}"
+                f" brief={manifest.command_brief_present}"
+                f" snapshot={manifest.engine_snapshot_present}"
+                f" exploration={manifest.exploration_present}"
+            )
 
     return 0
 
@@ -288,14 +426,49 @@ def main(argv: list[str] | None = None) -> int:
         metavar=("BASELINE_CSV", "CURRENT_CSV"),
         help="Compare two Asta exports (baseline then current). Mutually exclusive with single-file mode.",
     )
+    p.add_argument(
+        "--brief",
+        action="store_true",
+        help="After graph build, print the five-line deterministic command brief (Phase 5A).",
+    )
+    p.add_argument("--upstream", metavar="TASK_ID", help="Print upstream closure for TASK_ID.")
+    p.add_argument("--downstream", metavar="TASK_ID", help="Print downstream closure for TASK_ID.")
+    p.add_argument("--path", nargs=2, metavar=("SOURCE", "TARGET"), help="Print shortest path and reachability.")
+    p.add_argument(
+        "--all-paths",
+        nargs=2,
+        metavar=("SOURCE", "TARGET"),
+        help="Print bounded all-simple-paths between SOURCE and TARGET.",
+    )
+    p.add_argument("--shared-ancestors", nargs=2, metavar=("A", "B"), help="Print shared ancestors of A and B.")
+    p.add_argument("--shared-descendants", nargs=2, metavar=("A", "B"), help="Print shared descendants of A and B.")
+    p.add_argument("--driver-structure", metavar="TASK_ID", help="Print structural driver context for TASK_ID.")
+    p.add_argument("--impact-span", metavar="TASK_ID", help="Print downstream impact span for TASK_ID.")
+    p.add_argument("--export-dir", type=Path, metavar="PATH", help="Write deterministic export artifacts to PATH.")
     args = p.parse_args(argv)
 
     if args.delta is not None:
         if args.csv_path is not None:
             print("Do not pass csv_path when using --delta", file=sys.stderr)
             return 2
-        if args.no_graph or args.logic_quality or args.graph_summary or args.drivers is not None or args.risks is not None:
-            print("--delta is mutually exclusive with single-file graph flags", file=sys.stderr)
+        if (
+            args.no_graph
+            or args.logic_quality
+            or args.graph_summary
+            or args.drivers is not None
+            or args.risks is not None
+            or args.brief
+            or args.upstream is not None
+            or args.downstream is not None
+            or args.path is not None
+            or args.all_paths is not None
+            or args.shared_ancestors is not None
+            or args.shared_descendants is not None
+            or args.driver_structure is not None
+            or args.impact_span is not None
+            or args.export_dir is not None
+        ):
+            print("--delta is mutually exclusive with single-file graph/exploration flags", file=sys.stderr)
             return 2
         return run_delta(args.delta[0], args.delta[1])
 
@@ -306,7 +479,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"File not found: {args.csv_path}", file=sys.stderr)
         return 1
     if args.no_graph and (
-        args.logic_quality or args.graph_summary or args.drivers is not None or args.risks is not None
+        args.logic_quality
+        or args.graph_summary
+        or args.drivers is not None
+        or args.risks is not None
+        or args.brief
+        or args.upstream is not None
+        or args.downstream is not None
+        or args.path is not None
+        or args.all_paths is not None
+        or args.shared_ancestors is not None
+        or args.shared_descendants is not None
+        or args.driver_structure is not None
+        or args.impact_span is not None
+        or args.export_dir is not None
     ):
         print("Graph options require graph (omit --no-graph)", file=sys.stderr)
         return 2
@@ -317,6 +503,16 @@ def main(argv: list[str] | None = None) -> int:
         graph_summary=args.graph_summary,
         drivers_top=args.drivers,
         risks_top=args.risks,
+        brief=args.brief,
+        upstream_task_id=args.upstream,
+        downstream_task_id=args.downstream,
+        path_pair=tuple(args.path) if args.path is not None else None,
+        all_paths_pair=tuple(args.all_paths) if args.all_paths is not None else None,
+        shared_ancestors_pair=tuple(args.shared_ancestors) if args.shared_ancestors is not None else None,
+        shared_descendants_pair=tuple(args.shared_descendants) if args.shared_descendants is not None else None,
+        driver_structure_task_id=args.driver_structure,
+        impact_span_task_id=args.impact_span,
+        export_dir=args.export_dir,
     )
 
 

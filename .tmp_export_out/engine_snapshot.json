@@ -1,0 +1,381 @@
+{
+  "command_brief_lines": [
+    "FINISH: nodes=6 edges=5 open_sink=2 open_source=1 cycle=False invref=1",
+    "DRIVER: task_id=101 score=41.0000",
+    "RISKS: count=10 top_id=invalid_reference:100:predecessor:99 top_sev=high top_type=invalid_reference",
+    "DELTA: none",
+    "ACTION: repair_invalid_references"
+  ],
+  "delta_summary": null,
+  "graph_summary": {
+    "degree_stats": {
+      "max_in_degree": 1,
+      "max_out_degree": 2,
+      "mean_in_degree": 0.8333333333333334,
+      "mean_out_degree": 0.8333333333333334,
+      "min_in_degree": 0,
+      "min_out_degree": 0,
+      "zero_inbound_node_count": 1,
+      "zero_outbound_node_count": 2
+    },
+    "directed_cycle_present": false,
+    "directed_cycle_witness_length": 0,
+    "edge_count": 5,
+    "invalid_reference_count": 1,
+    "node_count": 6,
+    "open_sink_node_count": 2,
+    "open_source_node_count": 1,
+    "sink_node_ids": [
+      "102",
+      "105"
+    ],
+    "source_node_ids": [
+      "100"
+    ]
+  },
+  "logic_quality": {
+    "asymmetric_relationships": [
+      [
+        "100",
+        "102",
+        true,
+        false
+      ],
+      [
+        "103",
+        "104",
+        false,
+        true
+      ]
+    ],
+    "cycle_witness": [],
+    "invalid_references": [
+      [
+        "100",
+        "predecessor",
+        "99"
+      ]
+    ],
+    "open_end_sinks": [
+      "102",
+      "105"
+    ],
+    "open_end_sources": [
+      "100"
+    ]
+  },
+  "risks": [
+    {
+      "evidence": [
+        [
+          "reference_role",
+          "predecessor"
+        ],
+        [
+          "referenced_task_id",
+          "99"
+        ],
+        [
+          "referencing_task_id",
+          "100"
+        ]
+      ],
+      "related_task_ids": [
+        "99"
+      ],
+      "risk_id": "invalid_reference:100:predecessor:99",
+      "risk_type": "invalid_reference",
+      "severity": "high",
+      "sort_score": 3072,
+      "source_signals": [
+        "LogicQualitySignals.invalid_references",
+        "ScheduleLogicGraph.invalid_references"
+      ],
+      "task_id": "100",
+      "task_name": "Pour slab, Level 1"
+    },
+    {
+      "evidence": [
+        [
+          "critical",
+          "False"
+        ],
+        [
+          "task_id",
+          "103"
+        ],
+        [
+          "total_float_days",
+          "0.0"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "zero_float_non_critical:103",
+      "risk_type": "zero_float_non_critical",
+      "severity": "high",
+      "sort_score": 3060,
+      "source_signals": [
+        "Activity.total_float_days",
+        "Activity.critical"
+      ],
+      "task_id": "103",
+      "task_name": "Bad date row"
+    },
+    {
+      "evidence": [
+        [
+          "critical",
+          "False"
+        ],
+        [
+          "task_id",
+          "104"
+        ],
+        [
+          "total_float_days",
+          "0.0"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "zero_float_non_critical:104",
+      "risk_type": "zero_float_non_critical",
+      "severity": "high",
+      "sort_score": 3060,
+      "source_signals": [
+        "Activity.total_float_days",
+        "Activity.critical"
+      ],
+      "task_id": "104",
+      "task_name": "ISO date variant"
+    },
+    {
+      "evidence": [
+        [
+          "critical",
+          "False"
+        ],
+        [
+          "task_id",
+          "105"
+        ],
+        [
+          "total_float_days",
+          "0.0"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "zero_float_non_critical:105",
+      "risk_type": "zero_float_non_critical",
+      "severity": "high",
+      "sort_score": 3060,
+      "source_signals": [
+        "Activity.total_float_days",
+        "Activity.critical"
+      ],
+      "task_id": "105",
+      "task_name": "Trailing preds spaces"
+    },
+    {
+      "evidence": [
+        [
+          "low_float_max_exclusive_days",
+          "5.0"
+        ],
+        [
+          "task_id",
+          "100"
+        ],
+        [
+          "total_float_days",
+          "2.0"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "low_float:100",
+      "risk_type": "low_float",
+      "severity": "medium",
+      "sort_score": 2060,
+      "source_signals": [
+        "Activity.total_float_days"
+      ],
+      "task_id": "100",
+      "task_name": "Pour slab, Level 1"
+    },
+    {
+      "evidence": [
+        [
+          "edge_from_task_id",
+          "100"
+        ],
+        [
+          "edge_to_task_id",
+          "102"
+        ],
+        [
+          "missing_on_predecessor_side",
+          "True"
+        ],
+        [
+          "missing_on_successor_side",
+          "False"
+        ]
+      ],
+      "related_task_ids": [
+        "102"
+      ],
+      "risk_id": "asymmetric_relationship:100:102",
+      "risk_type": "asymmetric_relationship",
+      "severity": "medium",
+      "sort_score": 2050,
+      "source_signals": [
+        "LogicQualitySignals.asymmetric_relationships",
+        "Activity.predecessors",
+        "Activity.successors"
+      ],
+      "task_id": "100",
+      "task_name": "Pour slab, Level 1"
+    },
+    {
+      "evidence": [
+        [
+          "edge_from_task_id",
+          "103"
+        ],
+        [
+          "edge_to_task_id",
+          "104"
+        ],
+        [
+          "missing_on_predecessor_side",
+          "False"
+        ],
+        [
+          "missing_on_successor_side",
+          "True"
+        ]
+      ],
+      "related_task_ids": [
+        "104"
+      ],
+      "risk_id": "asymmetric_relationship:103:104",
+      "risk_type": "asymmetric_relationship",
+      "severity": "medium",
+      "sort_score": 2050,
+      "source_signals": [
+        "LogicQualitySignals.asymmetric_relationships",
+        "Activity.predecessors",
+        "Activity.successors"
+      ],
+      "task_id": "103",
+      "task_name": "Bad date row"
+    },
+    {
+      "evidence": [
+        [
+          "inbound_edge_count",
+          "0"
+        ],
+        [
+          "structural_role",
+          "source"
+        ],
+        [
+          "task_id",
+          "100"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "open_start:100",
+      "risk_type": "open_start",
+      "severity": "low",
+      "sort_score": 1020,
+      "source_signals": [
+        "ScheduleGraphSummary.source_node_ids",
+        "ScheduleLogicGraph.no_predecessor_nodes"
+      ],
+      "task_id": "100",
+      "task_name": "Pour slab, Level 1"
+    },
+    {
+      "evidence": [
+        [
+          "outbound_edge_count",
+          "0"
+        ],
+        [
+          "structural_role",
+          "sink"
+        ],
+        [
+          "task_id",
+          "102"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "open_finish:102",
+      "risk_type": "open_finish",
+      "severity": "low",
+      "sort_score": 1010,
+      "source_signals": [
+        "ScheduleGraphSummary.sink_node_ids",
+        "ScheduleLogicGraph.no_successor_nodes"
+      ],
+      "task_id": "102",
+      "task_name": "Placeholder none fields"
+    },
+    {
+      "evidence": [
+        [
+          "outbound_edge_count",
+          "0"
+        ],
+        [
+          "structural_role",
+          "sink"
+        ],
+        [
+          "task_id",
+          "105"
+        ]
+      ],
+      "related_task_ids": [],
+      "risk_id": "open_finish:105",
+      "risk_type": "open_finish",
+      "severity": "low",
+      "sort_score": 1010,
+      "source_signals": [
+        "ScheduleGraphSummary.sink_node_ids",
+        "ScheduleLogicGraph.no_successor_nodes"
+      ],
+      "task_id": "105",
+      "task_name": "Trailing preds spaces"
+    }
+  ],
+  "top_driver": {
+    "critical": true,
+    "downstream_reach_count": 3,
+    "driver_score": 41.0,
+    "hops_to_structural_sink": 3,
+    "inbound_degree": 1,
+    "outbound_degree": 1,
+    "rationale_signals": [
+      "total_float_days=0.0",
+      "critical=True",
+      "downstream_reach_count=3",
+      "outbound_degree=1",
+      "inbound_degree=1",
+      "hops_to_structural_sink=3"
+    ],
+    "score_components": {
+      "critical_flag": 10.0,
+      "downstream_reach": 6.0,
+      "float_pressure": 16.0,
+      "inbound_fan": 1.0,
+      "outbound_fan": 2.0,
+      "sink_proximity": 6.0
+    },
+    "task_id": "101",
+    "task_name": "Steel delivery",
+    "total_float_days": 0.0
+  }
+}

@@ -111,4 +111,3 @@ Useful for filtering, reporting, and stakeholder context; not required for a min
 
 - File is read as **UTF-8** with optional BOM (`utf-8-sig`).
 - Headers must match the names above **exactly** after BOM strip. If future exports rename columns, extend this document and the parser’s header map in the same change.
-
