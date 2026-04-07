@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block content %}
-<section class="ct-layout" id="publish-operator-surface">
+<section class="ct-layout" id="publish-operator-surface" {% if auto_print %}data-auto-print="true"{% endif %}>
   <div class="ct-main">
     <div class="ct-header" id="publish-operator-header">
       <div class="ct-project">
@@ -9,6 +9,9 @@
         {% if publish_bundle_path %}
         <div class="ct-meta">{{ publish_bundle_path }}</div>
         {% endif %}
+      </div>
+      <div class="ct-header-actions">
+        <a class="ct-inline-action" href="{{ request.url.path }}?{% if request.url.query %}{{ request.url.query }}&amp;{% endif %}print=1">Print / PDF</a>
       </div>
     </div>
 
@@ -23,80 +26,103 @@
 
     {% set p = publish_packet or {} %}
 
+    <div class="ct-print-note">Stakeholder handout mode: deterministic output from existing publish packet artifacts.</div>
+
     <section class="ct-section" id="publish-operator-header-strip">
-      <div class="ct-section-header"><h3>Header</h3></div>
-      <div class="ct-table ct-table-3">
-        <div class="ct-table-header"><div>finish_line</div><div>delta_line</div><div>status_flags</div></div>
-        <div class="ct-table-row">
-          <div><strong>{{ p.header.finish_line if p.header else "" }}</strong></div>
-          <div><strong>{{ p.header.delta_line if p.header else "" }}</strong></div>
-          <div>
-            {% if p.header and p.header.status_flags %}
-              {% for flag in p.header.status_flags %}
-              <span class="present-meta-pill">{{ flag }}</span>
-              {% endfor %}
-            {% endif %}
+      <div class="ct-command-header">
+        <div class="ct-command-header-main">
+          <div class="ct-block-label">FINISH</div>
+          <div class="ct-command-finish">{{ p.header.finish_line if p.header else "" }}</div>
+          {% if p.header and p.header.delta_line %}
+          <div class="ct-command-delta"><strong>DELTA:</strong> {{ p.header.delta_line }}</div>
+          {% endif %}
+        </div>
+        <div class="ct-command-header-status">
+          <div class="ct-command-pill-wrap">
+            <span class="ct-command-pill">
+              {% if p.header and p.header.status_flags and p.header.status_flags|length > 0 %}
+                {{ p.header.status_flags[0] }}
+              {% else %}
+                Status Unavailable
+              {% endif %}
+            </span>
+          </div>
+          <div class="ct-command-risk">
+            <span class="ct-label">Risk Level</span>
+            <strong>{{ p.risks.top_risk_severity if p.risks else "Unknown" }}</strong>
           </div>
         </div>
       </div>
     </section>
 
     <section class="ct-section" id="publish-operator-verdict">
-      <div class="ct-section-header"><h3>Verdict</h3></div>
-      <div class="ct-table ct-table-3">
-        <div class="ct-table-header"><div>primary_driver</div><div>primary_risk</div><div>action_token</div></div>
-        <div class="ct-table-row">
-          <div>{{ p.verdict.primary_driver if p.verdict else "" }}</div>
-          <div>{{ p.verdict.primary_risk if p.verdict else "" }}</div>
-          <div><strong>{{ p.verdict.action_token if p.verdict else "" }}</strong></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="ct-section" id="publish-operator-kpis">
-      <div class="ct-section-header"><h3>KPIs</h3></div>
-      <div class="ct-table ct-table-5">
-        <div class="ct-table-header"><div>node_count</div><div>edge_count</div><div>open_sources</div><div>open_sinks</div><div>risk_count</div></div>
-        <div class="ct-table-row">
-          <div>{{ p.kpis.node_count if p.kpis else 0 }}</div>
-          <div>{{ p.kpis.edge_count if p.kpis else 0 }}</div>
-          <div>{{ p.kpis.open_sources if p.kpis else 0 }}</div>
-          <div>{{ p.kpis.open_sinks if p.kpis else 0 }}</div>
-          <div>{{ p.kpis.risk_count if p.kpis else 0 }}</div>
-        </div>
+      <div class="ct-verdict-band">
+        <div class="ct-verdict-line"><strong>DRIVER:</strong> {{ p.verdict.primary_driver if p.verdict else "" }}</div>
+        <div class="ct-verdict-line"><strong>RISKS:</strong> {{ p.verdict.primary_risk if p.verdict else "" }}</div>
+        <div class="ct-verdict-line"><strong>NEED:</strong> {{ p.verdict.action_token if p.verdict else "" }}</div>
       </div>
     </section>
 
     <section class="ct-section" id="publish-operator-drivers-risks">
-      <div class="ct-table ct-table-3">
-        <div class="ct-table-header"><div>top_driver_task_id</div><div>top_driver_score</div><div>top_risk_id / severity / total</div></div>
-        <div class="ct-table-row">
-          <div>{{ p.drivers.top_driver_task_id if p.drivers else "" }}</div>
-          <div>{{ p.drivers.top_driver_score if p.drivers else "" }}</div>
-          <div>
-            {{ p.risks.top_risk_id if p.risks else "" }}
-            {% if p.risks %} | {{ p.risks.top_risk_severity }} | {{ p.risks.total_risk_count }}{% endif %}
-          </div>
+      <div class="ct-core-grid">
+        <article class="ct-core-col">
+          <div class="ct-core-title">DRIVER</div>
+          <div class="ct-core-lead">{{ p.drivers.top_driver_task_id if p.drivers else "" }}</div>
+          <div class="ct-core-support">Driver Score: {{ p.drivers.top_driver_score if p.drivers else "" }}</div>
+          <div class="ct-core-support">{{ p.verdict.primary_driver if p.verdict else "" }}</div>
+        </article>
+        <article class="ct-core-col">
+          <div class="ct-core-title">RISKS</div>
+          <div class="ct-core-lead">{{ p.risks.top_risk_id if p.risks else "" }}</div>
+          <div class="ct-core-support">Severity: {{ p.risks.top_risk_severity if p.risks else "" }}</div>
+          <div class="ct-core-support">At-Risk Items: {{ p.risks.total_risk_count if p.risks else 0 }}</div>
+        </article>
+        <article class="ct-core-col">
+          <div class="ct-core-title">DOING</div>
+          <div class="ct-core-lead">{{ p.verdict.action_token if p.verdict else "" }}</div>
+          <div class="ct-core-support">{{ p.verdict.primary_risk if p.verdict else "" }}</div>
+          <div class="ct-core-support">Execute mitigation against current top risk sequence.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="ct-section" id="publish-operator-kpis">
+      <div class="ct-kpi-strip">
+        <div class="ct-kpi-item">
+          <span>Finish Date</span>
+          <strong>{{ p.header.finish_line if p.header else "" }}</strong>
+        </div>
+        <div class="ct-kpi-item">
+          <span>Total Float</span>
+          <strong>{{ p.kpis.total_float if p.kpis and p.kpis.total_float is defined else p.kpis.open_sources if p.kpis else 0 }}</strong>
+        </div>
+        <div class="ct-kpi-item">
+          <span>Critical Path Length</span>
+          <strong>{{ p.kpis.critical_path_length if p.kpis and p.kpis.critical_path_length is defined else p.kpis.edge_count if p.kpis else 0 }}</strong>
+        </div>
+        <div class="ct-kpi-item">
+          <span>High-Risk Items</span>
+          <strong>{{ p.risks.total_risk_count if p.risks else p.kpis.risk_count if p.kpis else 0 }}</strong>
         </div>
       </div>
     </section>
 
-    <section class="ct-section" id="publish-operator-evidence">
-      <div class="ct-section-header"><h3>Evidence</h3></div>
+    <section class="ct-section ct-evidence-table" id="publish-operator-evidence">
+      <div class="ct-section-header"><h3>EVIDENCE GRID</h3></div>
       <div class="ct-table ct-table-2">
-        <div class="ct-table-header"><div>driver_evidence</div><div>risk_evidence</div></div>
+        <div class="ct-table-header"><div>Driver Evidence</div><div>Risk Evidence</div></div>
         <div class="ct-table-row">
           <div>
             {% if p.evidence and p.evidence.driver_evidence %}
               {% for pair in p.evidence.driver_evidence %}
-              <div>{{ pair[0] }}: {{ pair[1] }}</div>
+              <div class="ct-evidence-line"><strong>{{ pair[0] }}</strong><span>{{ pair[1] }}</span></div>
               {% endfor %}
             {% endif %}
           </div>
           <div>
             {% if p.evidence and p.evidence.risk_evidence %}
               {% for pair in p.evidence.risk_evidence %}
-              <div>{{ pair[0] }}: {{ pair[1] }}</div>
+              <div class="ct-evidence-line"><strong>{{ pair[0] }}</strong><span>{{ pair[1] }}</span></div>
               {% endfor %}
             {% endif %}
           </div>

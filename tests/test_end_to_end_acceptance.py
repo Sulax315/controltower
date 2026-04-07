@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import csv
+import io
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from controltower.api.app import create_app
+from controltower.config import load_config
+from controltower.runs.execution import execute_run
+from controltower.schedule_intake.asta_csv import ASTA_EXPORT_HEADERS
 from controltower.schedule_intake import (
     Activity,
     FILENAME_BUNDLE,
@@ -21,6 +26,18 @@ from controltower.schedule_intake import (
 from controltower.schedule_intake.logic_quality import analyze_logic_quality
 from controltower.schedule_intake.publish_assembly import build_publish_packet
 from controltower.schedule_intake.verification import load_publish_bundle, validate_export_artifact_set
+from controltower.runs.publish_authority import load_publish_projection_from_bundle_path
+
+
+def _write_schedule_csv(tmp_path: Path) -> Path:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS))
+    writer.writeheader()
+    writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "100", "Task name": "Start", "Successors": "200"})
+    writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "200", "Task name": "Finish", "Predecessors": "100"})
+    path = tmp_path / "schedule.csv"
+    path.write_text(buf.getvalue(), encoding="utf-8")
+    return path
 
 
 def _build_bundle():
@@ -64,8 +81,14 @@ def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) ->
     assert packet_json["verdict"]["action_token"].startswith("ACTION:")
     assert isinstance(packet_json["kpis"]["risk_count"], int)
 
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    run_bundle = config.runtime.state_root / "runs" / run_id / "artifacts" / FILENAME_BUNDLE
+    projected = load_publish_projection_from_bundle_path(str(run_bundle)).to_jsonable_dict()
+    finish_line = projected["header"]["finish_line"]
+
     client = TestClient(create_app(str(sample_config_path)))
-    response = client.get("/publish/operator", params={"bundle": str(export_dir / FILENAME_BUNDLE)})
+    response = client.get(f"/publish/operator/{run_id}")
     assert response.status_code == 200
     assert 'id="publish-operator-header-strip"' in response.text
     assert 'id="publish-operator-verdict"' in response.text
@@ -73,7 +96,7 @@ def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) ->
     assert 'id="publish-operator-drivers-risks"' in response.text
     assert 'id="publish-operator-evidence"' in response.text
     assert 'id="publish-operator-error"' not in response.text
-    assert bundle.command_brief.finish in response.text
+    assert finish_line in response.text
 
 
 def test_end_to_end_deterministic_stable_outputs(tmp_path: Path) -> None:

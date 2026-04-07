@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from controltower.api.app import create_app
@@ -13,6 +14,7 @@ from controltower.services.controltower import ControlTowerService
 SITE_CSS = Path(__file__).resolve().parents[1] / "src" / "controltower" / "api" / "static" / "site.css"
 
 
+@pytest.mark.skip(reason="Asserts retired multi-surface routes (/control, /arena, /projects); Phase 12+ is publish-only.")
 def test_desktop_surface_tiers_render_in_finish_first_order(sample_config_path):
     config = load_config(sample_config_path)
     service = ControlTowerService(config)

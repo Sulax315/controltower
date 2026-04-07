@@ -33,6 +33,11 @@ from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.schedule_intake.publish_assembly import build_publish_packet
 from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
 from controltower.runs.execution import execute_run
+from controltower.runs.publish_authority import (
+    assess_run_publishability,
+    get_latest_publishable_run,
+    load_publish_projection_from_bundle_path,
+)
 from controltower.runs.registry import get_run, list_runs
 from controltower.services.controltower import ControlTowerService
 from controltower.services.intelligence_packets import (
@@ -123,6 +128,17 @@ def create_app_from_config(config) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATE_ROOT))
     templates.env.filters["urlquote"] = lambda value: quote(str(value or ""), safe="")
     app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
+
+    @app.middleware("http")
+    async def primary_surface_only(request: Request, call_next):
+        path = request.url.path or "/"
+        if path == "/":
+            return RedirectResponse(url="/publish", status_code=303)
+        if _is_allowed_primary_surface_path(path):
+            return await call_next(request)
+        if _is_allowed_infra_path(path):
+            return await call_next(request)
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     def _template_payload(request: Request, **context: object) -> dict[str, object]:
         payload = {
@@ -234,8 +250,8 @@ def create_app_from_config(config) -> FastAPI:
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def home(request: Request):
-        return _render_runs_home(request)
+    def home():
+        return RedirectResponse(url="/publish", status_code=303)
 
     @app.get("/control", response_class=HTMLResponse)
     def portfolio_overview(request: Request):
@@ -807,30 +823,13 @@ def create_app_from_config(config) -> FastAPI:
         orch_notice: str | None = None,
         orch_err: str | None = None,
     ):
-        try:
-            publish = service.build_publish_view(run_id=run, artifact_id=artifact, project_code=project)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Run not found")
-        orch_panel = build_orchestrator_publish_panel(
-            config,
-            workflow_id=orch_wf,
-            action_notice=orch_notice,
-            action_error=orch_err,
-        )
-        return templates.TemplateResponse(
-            request,
-            "publish.html",
-            _template_payload(
-                request,
-                publish=publish,
-                orch_panel=orch_panel,
-                review_auth=_review_auth_context(orchestration, request),
-                auto_print=bool(print),
-                page_title="Publish",
-                page_kicker="Meeting-ready command brief and deliverable workspace",
-                page_mode="publish",
-            ),
-        )
+        latest_run = get_latest_publishable_run(config.runtime.state_root)
+        if latest_run is None:
+            return _render_publish_operator(request, bundle=None, auto_print=bool(print))
+        run_id = str(latest_run.get("run_id") or "").strip()
+        if not run_id:
+            return _render_publish_operator(request, bundle=None, auto_print=bool(print))
+        return RedirectResponse(url=f"/publish/operator/{run_id}", status_code=303)
 
     def _require_orchestrator_substrate_enabled() -> None:
         if not config.orchestrator_substrate.enabled:
@@ -1056,27 +1055,26 @@ def create_app_from_config(config) -> FastAPI:
         )
 
     @app.get("/publish/operator", response_class=HTMLResponse)
-    def publish_operator_view(request: Request, bundle: str | None = None):
-        return _render_publish_operator(request, bundle=bundle)
+    def publish_operator_view(request: Request, bundle: str | None = None, print: int = 0):
+        return _render_publish_operator(request, bundle=bundle, auto_print=bool(print))
 
     @app.get("/publish/operator/{run_id}", response_class=HTMLResponse)
-    def publish_operator_run_view(request: Request, run_id: str):
+    def publish_operator_run_view(request: Request, run_id: str, print: int = 0):
         run = get_run(config.runtime.state_root, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        ok, reason = assess_run_publishability(config.runtime.state_root, run)
+        if not ok:
+            raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
         bundle_path = str(run.get("bundle_path") or "").strip()
-        if not bundle_path:
-            raise HTTPException(status_code=409, detail="Run bundle path is missing.")
-        if not Path(bundle_path).exists():
-            raise HTTPException(status_code=409, detail="Run bundle artifact is missing.")
-        return _render_publish_operator(request, bundle=bundle_path)
+        return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print))
 
-    def _render_publish_operator(request: Request, *, bundle: str | None):
+    def _render_publish_operator(request: Request, *, bundle: str | None, auto_print: bool = False):
         packet = None
         load_error = None
         if bundle:
             try:
-                packet = build_publish_packet(load_publish_bundle(bundle))
+                packet = load_publish_projection_from_bundle_path(bundle)
             except BundleValidationError as exc:
                 load_error = str(exc)
             except Exception:
@@ -1089,9 +1087,10 @@ def create_app_from_config(config) -> FastAPI:
                 publish_packet=packet.to_jsonable_dict() if packet is not None else None,
                 publish_bundle_path=bundle,
                 publish_load_error=load_error,
+                auto_print=auto_print,
                 page_title="Publish Operator",
                 page_kicker="Deterministic PublishPacket operator surface",
-                page_mode="publish-operator",
+                page_mode="publish publish-operator",
             ),
         )
 
@@ -1463,6 +1462,21 @@ def _with_review_action(path: str, action: str) -> str:
 def _wants_json_response(request: Request) -> bool:
     accepts = (request.headers.get("accept") or "").lower()
     return "application/json" in accepts and "text/html" not in accepts
+
+
+def _is_allowed_primary_surface_path(path: str) -> bool:
+    if path in {"/publish"}:
+        return True
+    if path.startswith("/publish/operator/"):
+        suffix = path.removeprefix("/publish/operator/").strip("/")
+        return bool(suffix)
+    return False
+
+
+def _is_allowed_infra_path(path: str) -> bool:
+    if path in {"/healthz", "/favicon.ico", "/login", "/logout"}:
+        return True
+    return path.startswith("/static/")
 
 
 app = create_app()

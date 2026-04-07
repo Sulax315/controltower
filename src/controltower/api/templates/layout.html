@@ -9,7 +9,7 @@
 </head>
 <body class="{{ page_mode or 'support' }}">
   {% set current_path = request.url.path %}
-  {% set surface_label = "Meeting-ready command center" if current_path.startswith("/publish") else "Legacy control workspace" if current_path.startswith("/control") else "Deep-dive presentation surface" if current_path.startswith("/arena") else "Approval-gated review surface" if current_path.startswith("/reviews") else "Support surface" %}
+  {% set surface_label = "Meeting-ready command center" if current_path.startswith("/publish") else "Support surface" %}
   <div class="app-shell">
     <header class="app-shell-header{% if page_mode == 'publish' %} app-shell-header-publish{% endif %}">
       <div class="app-frame">
@@ -23,14 +23,6 @@
           {% if page_mode != "auth" %}
           <nav class="workspace-nav" aria-label="Primary">
             <a href="/publish" class="nav-primary {% if current_path.startswith('/publish') %}is-active{% endif %}" {% if current_path.startswith('/publish') %}aria-current="page"{% endif %}>Publish</a>
-            <a href="/arena" class="{% if current_path.startswith('/arena') %}is-active{% endif %}" {% if current_path.startswith('/arena') %}aria-current="page"{% endif %}>Arena Deep Dive</a>
-            <a href="/projects" class="{% if current_path.startswith('/projects') %}is-active{% endif %}" {% if current_path.startswith('/projects') %}aria-current="page"{% endif %}>Projects</a>
-            <a href="/packets/new" class="{% if current_path.startswith('/packets') %}is-active{% endif %}" {% if current_path.startswith('/packets') %}aria-current="page"{% endif %}>Packets</a>
-            <a href="/runs" class="nav-support {% if current_path.startswith('/runs') %}is-active{% endif %}" {% if current_path.startswith('/runs') %}aria-current="page"{% endif %}>Run History</a>
-            <a href="/runs#review-queue" class="nav-support {% if current_path.startswith('/reviews') %}is-active{% endif %}" {% if current_path.startswith('/reviews') %}aria-current="page"{% endif %}>Review Queue</a>
-            <a href="/exports/latest" class="nav-support {% if current_path.startswith('/exports') %}is-active{% endif %}" {% if current_path.startswith('/exports') %}aria-current="page"{% endif %}>Debug Exports</a>
-            <a href="/diagnostics" class="nav-support {% if current_path.startswith('/diagnostics') %}is-active{% endif %}" {% if current_path.startswith('/diagnostics') %}aria-current="page"{% endif %}>Diagnostics</a>
-            <a href="/control" class="nav-support {% if current_path.startswith('/control') %}is-active{% endif %}" {% if current_path.startswith('/control') %}aria-current="page"{% endif %}>Legacy Control</a>
           </nav>
           {% endif %}
           {% if auth_context.identity and auth_context.auth_mode == "session" %}

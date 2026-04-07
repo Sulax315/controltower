@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from controltower.config import load_config
 from controltower.services.meeting_readiness import _challenge_statement_is_source_backed, verify_meeting_readiness
 
 
+@pytest.mark.skip(reason="Meeting readiness harness targets retired /control and /arena HTTP surfaces (pre Phase 12).")
 def test_meeting_readiness_contract_passes(sample_config_path):
     config = load_config(sample_config_path)
 

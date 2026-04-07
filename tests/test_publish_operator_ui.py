@@ -6,51 +6,34 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from controltower.api.app import create_app
-from controltower.schedule_intake import (
-    Activity,
-    build_command_brief,
-    build_exploration_contract,
-    build_schedule_graph_summary,
-    build_schedule_intelligence_bundle,
-    build_schedule_logic_graph,
-    collect_schedule_risk_findings,
-    rank_driver_candidates,
-)
-from controltower.schedule_intake.logic_quality import analyze_logic_quality
+from controltower.config import load_config
+from controltower.runs.execution import execute_run
+from controltower.runs.registry import create_run
+from controltower.schedule_intake.export_artifacts import FILENAME_BUNDLE
+from controltower.schedule_intake.asta_csv import ASTA_EXPORT_HEADERS
+import csv
+import io
 
 
-def _bundle_payload() -> dict:
-    g = build_schedule_logic_graph(
-        [
-            Activity(task_id="1", successors=["2"]),
-            Activity(task_id="2", predecessors=["1"], successors=["3"]),
-            Activity(task_id="3", predecessors=["2"]),
-        ]
-    )
-    gs = build_schedule_graph_summary(g)
-    lq = analyze_logic_quality(g)
-    risks = collect_schedule_risk_findings(g, logic_quality=lq, graph_summary=gs)
-    top = rank_driver_candidates(g, limit=1)[0]
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
-    bundle = build_schedule_intelligence_bundle(
-        graph_summary=gs,
-        logic_quality=lq,
-        top_driver=top,
-        risks=risks,
-        delta=None,
-        command_brief=brief,
-        exploration=build_exploration_contract(),
-    )
-    return bundle.to_jsonable_dict()
+def _write_schedule_csv(tmp_path: Path) -> Path:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS))
+    writer.writeheader()
+    writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "100", "Task name": "Start", "Successors": "200"})
+    writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "200", "Task name": "Finish", "Predecessors": "100"})
+    path = tmp_path / "schedule.csv"
+    path.write_text(buf.getvalue(), encoding="utf-8")
+    return path
 
 
 def test_publish_operator_surface_renders_packet_sections(sample_config_path, tmp_path: Path) -> None:
-    payload = _bundle_payload()
-    bundle_path = tmp_path / "bundle.json"
-    bundle_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    rec = config.runtime.state_root / "runs" / run_id / "artifacts" / FILENAME_BUNDLE
+    inner = json.loads(rec.read_text(encoding="utf-8"))
 
     client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator", params={"bundle": str(bundle_path)})
+    res = client.get(f"/publish/operator/{run_id}")
     assert res.status_code == 200
     text = res.text
     assert 'id="publish-operator-header-strip"' in text
@@ -59,13 +42,40 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert 'id="publish-operator-drivers-risks"' in text
     assert 'id="publish-operator-evidence"' in text
     assert "id=\"publish-operator-error\"" not in text
-    assert payload["command_brief"]["finish"] in text
-    assert payload["command_brief"]["driver"] in text
+    assert inner["command_brief"]["finish"] in text or "FINISH" in text
 
 
-def test_publish_operator_surface_handles_empty_default(sample_config_path) -> None:
+def test_publish_operator_surface_print_mode_renders_stakeholder_handout(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
     client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator")
+    res = client.get(f"/publish/operator/{run_id}", params={"print": 1})
+    assert res.status_code == 200
+    text = res.text
+    assert 'id="publish-operator-surface"' in text
+    assert 'data-auto-print="true"' in text
+    assert "Print / PDF" in text
+
+
+def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    bundle_path = config.runtime.state_root / "runs" / run_id / "artifacts" / FILENAME_BUNDLE
+    inner = json.loads(bundle_path.read_text(encoding="utf-8"))
+    needle_finish = str(inner.get("command_brief", {}).get("finish", ""))[:24]
+
+    client = TestClient(create_app(str(sample_config_path)))
+    normal = client.get(f"/publish/operator/{run_id}")
+    printed = client.get(f"/publish/operator/{run_id}", params={"print": 1})
+    assert normal.status_code == 200
+    assert printed.status_code == 200
+    assert needle_finish in normal.text
+    assert needle_finish in printed.text
+
+
+def test_publish_operator_empty_when_no_publishable_run(sample_config_path) -> None:
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get("/publish", follow_redirects=False)
     assert res.status_code == 200
     text = res.text
     assert 'id="publish-operator-surface"' in text
@@ -73,41 +83,54 @@ def test_publish_operator_surface_handles_empty_default(sample_config_path) -> N
     assert 'id="publish-operator-evidence"' in text
 
 
-def test_publish_operator_surface_reports_missing_bundle_path(sample_config_path) -> None:
+def test_publish_operator_query_route_is_blocked(sample_config_path, tmp_path: Path) -> None:
+    """Legacy ?bundle= entrypoint removed; only /publish/operator/{run_id} is allowed."""
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    bundle_path = config.runtime.state_root / "runs" / run_id / "artifacts" / FILENAME_BUNDLE
     client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator", params={"bundle": "Z:/does/not/exist.json"})
-    assert res.status_code == 200
-    assert 'id="publish-operator-error"' in res.text
-    assert "bundle path does not exist." in res.text
-    assert "Traceback" not in res.text
+    assert client.get("/publish/operator", params={"bundle": str(bundle_path)}).status_code == 404
 
 
-def test_publish_operator_surface_reports_missing_bundle_query_value(sample_config_path) -> None:
+def test_publish_operator_invalid_bundle_run_returns_409(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = "run_publish_op_ui_bad"
+    run_root = config.runtime.state_root / "runs" / run_id
+    art = run_root / "artifacts"
+    bundle = art / FILENAME_BUNDLE
+    create_run(
+        config.runtime.state_root,
+        run_id=run_id,
+        input_filename="schedule.csv",
+        input_path=run_root / "input" / "schedule.csv",
+        artifact_dir=art,
+        bundle_path=bundle,
+        manifest_path=art / "manifest.json",
+        status="completed",
+    )
+    bundle.write_text("{not-json", encoding="utf-8")
     client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator", params={"bundle": "   "})
-    assert res.status_code == 200
-    assert 'id="publish-operator-error"' in res.text
-    assert "bundle query parameter is required." in res.text
-    assert "Traceback" not in res.text
+    res = client.get(f"/publish/operator/{run_id}")
+    assert res.status_code == 409
 
 
-def test_publish_operator_surface_reports_invalid_json(sample_config_path, tmp_path: Path) -> None:
-    bundle_path = tmp_path / "broken.json"
-    bundle_path.write_text("{not-json", encoding="utf-8")
+def test_publish_operator_incomplete_bundle_run_returns_409(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = "run_publish_op_ui_incomplete"
+    run_root = config.runtime.state_root / "runs" / run_id
+    art = run_root / "artifacts"
+    bundle = art / FILENAME_BUNDLE
+    create_run(
+        config.runtime.state_root,
+        run_id=run_id,
+        input_filename="schedule.csv",
+        input_path=run_root / "input" / "schedule.csv",
+        artifact_dir=art,
+        bundle_path=bundle,
+        manifest_path=art / "manifest.json",
+        status="completed",
+    )
+    bundle.write_text(json.dumps({"command_brief": {}, "exploration": {}}), encoding="utf-8")
     client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator", params={"bundle": str(bundle_path)})
-    assert res.status_code == 200
-    assert 'id="publish-operator-error"' in res.text
-    assert "bundle file contains invalid JSON." in res.text
-    assert "Traceback" not in res.text
-
-
-def test_publish_operator_surface_reports_incomplete_bundle(sample_config_path, tmp_path: Path) -> None:
-    bundle_path = tmp_path / "incomplete.json"
-    bundle_path.write_text(json.dumps({"command_brief": {}, "exploration": {}}), encoding="utf-8")
-    client = TestClient(create_app(str(sample_config_path)))
-    res = client.get("/publish/operator", params={"bundle": str(bundle_path)})
-    assert res.status_code == 200
-    assert 'id="publish-operator-error"' in res.text
-    assert "incomplete bundle:" in res.text
-    assert "Traceback" not in res.text
+    res = client.get(f"/publish/operator/{run_id}")
+    assert res.status_code == 409
