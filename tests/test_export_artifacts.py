@@ -23,6 +23,7 @@ from controltower.schedule_intake import (
     rank_driver_candidates,
 )
 from controltower.schedule_intake.logic_quality import analyze_logic_quality
+from controltower.schedule_intake.verification import validate_export_artifact_set
 
 
 def _build_bundle():
@@ -146,4 +147,31 @@ def test_build_export_manifest_from_subset_artifacts() -> None:
     assert m.command_brief_present is True
     assert m.engine_snapshot_present is True
     assert m.exploration_present is False
+
+
+def test_export_validation_passes_for_clean_artifact_set(tmp_path: Path) -> None:
+    bundle = _build_bundle()
+    export_deterministic_artifact_set(tmp_path, bundle=bundle)
+    result = validate_export_artifact_set(tmp_path)
+    assert result.ok is True
+    assert result.errors == ()
+
+
+def test_export_validation_detects_tampered_artifact(tmp_path: Path) -> None:
+    bundle = _build_bundle()
+    export_deterministic_artifact_set(tmp_path, bundle=bundle)
+    target = tmp_path / FILENAME_BUNDLE
+    target.write_text('{"tampered":true}\n', encoding="utf-8")
+    result = validate_export_artifact_set(tmp_path)
+    assert result.ok is False
+    assert any("hash mismatch" in e for e in result.errors)
+
+
+def test_export_validation_detects_missing_artifact(tmp_path: Path) -> None:
+    bundle = _build_bundle()
+    export_deterministic_artifact_set(tmp_path, bundle=bundle)
+    (tmp_path / FILENAME_EXPLORATION).unlink()
+    result = validate_export_artifact_set(tmp_path)
+    assert result.ok is False
+    assert any(FILENAME_EXPLORATION in e for e in result.errors)
 

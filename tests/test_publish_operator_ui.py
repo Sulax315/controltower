@@ -71,3 +71,43 @@ def test_publish_operator_surface_handles_empty_default(sample_config_path) -> N
     assert 'id="publish-operator-surface"' in text
     assert 'id="publish-operator-header-strip"' in text
     assert 'id="publish-operator-evidence"' in text
+
+
+def test_publish_operator_surface_reports_missing_bundle_path(sample_config_path) -> None:
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get("/publish/operator", params={"bundle": "Z:/does/not/exist.json"})
+    assert res.status_code == 200
+    assert 'id="publish-operator-error"' in res.text
+    assert "bundle path does not exist." in res.text
+    assert "Traceback" not in res.text
+
+
+def test_publish_operator_surface_reports_missing_bundle_query_value(sample_config_path) -> None:
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get("/publish/operator", params={"bundle": "   "})
+    assert res.status_code == 200
+    assert 'id="publish-operator-error"' in res.text
+    assert "bundle query parameter is required." in res.text
+    assert "Traceback" not in res.text
+
+
+def test_publish_operator_surface_reports_invalid_json(sample_config_path, tmp_path: Path) -> None:
+    bundle_path = tmp_path / "broken.json"
+    bundle_path.write_text("{not-json", encoding="utf-8")
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get("/publish/operator", params={"bundle": str(bundle_path)})
+    assert res.status_code == 200
+    assert 'id="publish-operator-error"' in res.text
+    assert "bundle file contains invalid JSON." in res.text
+    assert "Traceback" not in res.text
+
+
+def test_publish_operator_surface_reports_incomplete_bundle(sample_config_path, tmp_path: Path) -> None:
+    bundle_path = tmp_path / "incomplete.json"
+    bundle_path.write_text(json.dumps({"command_brief": {}, "exploration": {}}), encoding="utf-8")
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get("/publish/operator", params={"bundle": str(bundle_path)})
+    assert res.status_code == 200
+    assert 'id="publish-operator-error"' in res.text
+    assert "incomplete bundle:" in res.text
+    assert "Traceback" not in res.text

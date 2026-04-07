@@ -8,6 +8,38 @@ import pytest
 import yaml
 
 
+@pytest.fixture(autouse=True)
+def deterministic_orchestration_notification_transport(monkeypatch):
+    """Keep orchestration tests independent of local signal-cli installation."""
+
+    def _fake_notify_controltower_event(event, **kwargs):
+        status = str(kwargs.get("status") or "INFO").upper()
+        project = str(kwargs.get("project") or "Control Tower")
+        message = "\n".join(
+            [
+                "[CONTROL TOWER]",
+                f"Event: {event}",
+                f"Project: {project}",
+                f"Status: {status}",
+            ]
+        )
+        return {
+            "event": str(event),
+            "message": message,
+            "artifact_path": "test://notification_artifact.json",
+            "delivery": {
+                "success": True,
+                "selected_channel": "test_stub",
+                "delivery_state": "send_succeeded",
+            },
+        }
+
+    monkeypatch.setattr(
+        "controltower.services.orchestration.notify_controltower_event",
+        _fake_notify_controltower_event,
+    )
+
+
 @pytest.fixture
 def sample_schedulelab_root(tmp_path: Path) -> Path:
     root = tmp_path / "schedulelab_published"

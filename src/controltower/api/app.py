@@ -30,13 +30,8 @@ from controltower.services.intelligence_vault_bridge import (
 )
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
-from controltower.schedule_intake.output_contracts import (
-    CommandBriefContract,
-    EngineSnapshot,
-    ExplorationContract,
-    ScheduleIntelligenceBundle,
-)
 from controltower.schedule_intake.publish_assembly import build_publish_packet
+from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
 from controltower.services.controltower import ControlTowerService
 from controltower.services.intelligence_packets import (
     GeneratePacketRequest,
@@ -999,11 +994,11 @@ def create_app_from_config(config) -> FastAPI:
         load_error = None
         if bundle:
             try:
-                p = Path(bundle).expanduser().resolve()
-                raw = json.loads(p.read_text(encoding="utf-8"))
-                packet = build_publish_packet(_bundle_from_jsonable(raw))
-            except Exception as exc:  # noqa: BLE001
+                packet = build_publish_packet(load_publish_bundle(bundle))
+            except BundleValidationError as exc:
                 load_error = str(exc)
+            except Exception:
+                load_error = "bundle could not be processed."
         return templates.TemplateResponse(
             request,
             "publish_operator.html",
@@ -1381,41 +1376,6 @@ def _with_review_action(path: str, action: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["action"] = action
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
-
-
-def _bundle_from_jsonable(raw: dict[str, Any]) -> ScheduleIntelligenceBundle:
-    es = raw.get("engine_snapshot", {})
-    cb = raw.get("command_brief", {})
-    ex = raw.get("exploration", {})
-    return ScheduleIntelligenceBundle(
-        engine_snapshot=EngineSnapshot(
-            graph_summary=dict(es.get("graph_summary") or {}),
-            logic_quality=dict(es.get("logic_quality") or {}),
-            top_driver=dict(es["top_driver"]) if es.get("top_driver") is not None else None,
-            risks=tuple(dict(x) for x in (es.get("risks") or [])),
-            delta_summary=dict(es["delta_summary"]) if es.get("delta_summary") is not None else None,
-            command_brief_lines=tuple(es.get("command_brief_lines") or ("", "", "", "", "")),
-        ),
-        command_brief=CommandBriefContract(
-            finish=str(cb.get("finish", "")),
-            driver=str(cb.get("driver", "")),
-            risks=str(cb.get("risks", "")),
-            delta=str(cb.get("delta", "")),
-            action=str(cb.get("action", "")),
-        ),
-        exploration=ExplorationContract(
-            immediate_predecessors=tuple(ex.get("immediate_predecessors") or ()),
-            immediate_successors=tuple(ex.get("immediate_successors") or ()),
-            upstream_closure=tuple(ex.get("upstream_closure") or ()),
-            downstream_closure=tuple(ex.get("downstream_closure") or ()),
-            shortest_path=tuple(ex.get("shortest_path") or ()),
-            all_simple_paths=tuple(tuple(p) for p in (ex.get("all_simple_paths") or ())),
-            shared_ancestors=tuple(ex.get("shared_ancestors") or ()),
-            shared_descendants=tuple(ex.get("shared_descendants") or ()),
-            driver_structure=ex.get("driver_structure"),
-            impact_span=ex.get("impact_span"),
-        ),
-    )
 
 
 app = create_app()
