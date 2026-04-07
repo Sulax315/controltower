@@ -93,6 +93,56 @@ def test_api_orchestrator_routes_404_when_disabled(sample_config_path: Path) -> 
     assert r.status_code == 404
 
 
+def test_api_orchestrator_status_public_unauthenticated_when_disabled(sample_config_path: Path) -> None:
+    app = create_app(str(sample_config_path))
+    client = TestClient(app)
+    r = client.get("/api/orchestrator/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body.get("enabled"), bool)
+    assert body["enabled"] is False
+
+
+def test_api_orchestrator_status_public_unauthenticated_when_enabled(orch_enabled_config_path: Path) -> None:
+    app = create_app(str(orch_enabled_config_path))
+    client = TestClient(app)
+    r = client.get("/api/orchestrator/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("enabled") is True
+    assert body.get("status") == "ok"
+    assert isinstance(body.get("service_root"), str)
+    assert isinstance(body.get("runtime_dir"), str)
+
+
+def test_api_orchestrator_status_public_under_prod_auth(orch_enabled_prod_review_config_path: Path) -> None:
+    app = create_app(str(orch_enabled_prod_review_config_path))
+    client = TestClient(app, base_url="https://testserver")
+    r = client.get("/api/orchestrator/status")
+    assert r.status_code == 200
+    assert r.json().get("enabled") is True
+    assert r.json().get("status") == "ok"
+
+
+def test_orchestrator_env_overrides_yaml_enabled_flag(
+    sample_config_path: Path, orch_mcp_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROLTOWER_ORCHESTRATOR_SUBSTRATE_ENABLED is applied after YAML load (env wins)."""
+    raw = yaml.safe_load(sample_config_path.read_text(encoding="utf-8")) or {}
+    runtime = tmp_path / "orch_runtime_envtest"
+    runtime.mkdir(parents=True, exist_ok=True)
+    raw["orchestrator_substrate"] = {
+        "enabled": False,
+        "mcp_service_root": str(orch_mcp_root),
+        "runtime_dir": str(runtime),
+    }
+    path = tmp_path / "controltower_orch_env.yaml"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    monkeypatch.setenv("CONTROLTOWER_ORCHESTRATOR_SUBSTRATE_ENABLED", "true")
+    config = load_config(path)
+    assert config.orchestrator_substrate.enabled is True
+
+
 def test_api_orchestrator_reads_when_enabled(orch_enabled_config_path: Path) -> None:
     app = create_app(str(orch_enabled_config_path))
     client = TestClient(app)

@@ -1,0 +1,46 @@
+{
+  "product_name": "Control Tower — Schedule Intelligence Engine",
+  "build_status": "reset_in_progress",
+  "build_health": "green",
+  "overall_completion_percent": 74,
+  "current_phase": {
+    "id": "phase_5",
+    "name": "Narrative and Output Contracts",
+    "weight_percent": 15
+  },
+  "current_track": {
+    "id": "track_5a",
+    "name": "Command Brief",
+    "weight_percent": 5
+  },
+  "current_objective": "Produce a deterministic 5-line command brief from real analysis signals (Track 5A).",
+  "current_blocker": null,
+  "last_completed_milestone": "Track 4C — Delta analysis: ScheduleDeltaResult, compare_schedule_exports, compare_schedule_csv_paths, harness --delta, tests/test_delta_analysis.py.",
+  "next_required_action": "Implement Track 5A (command brief) per build_control/03_ACCEPTANCE_CRITERIA.md using structured engine outputs.",
+  "primary_input": "Asta Powerproject CSV export",
+  "primary_output": "Deterministic schedule command brief plus evidence payload",
+  "active_build_lane": [
+    "Phase 5A — Command Brief",
+    "Phase 5B — Evidence Payload"
+  ],
+  "out_of_scope_for_now": [
+    "UI redesign",
+    "Arena/Publish refinement",
+    "MCP integration",
+    "Approval workflows",
+    "Obsidian as canonical source of truth",
+    "Orchestration-first work"
+  ],
+  "governance_files": [
+    "build_control/00_MASTER_PLAN.md",
+    "build_control/01_PRODUCT_DEFINITION.md",
+    "build_control/02_BUILD_MANIFEST.md",
+    "build_control/03_ACCEPTANCE_CRITERIA.md",
+    "build_control/04_DECISION_LOG.md",
+    "build_control/05_CONTINUITY_PROTOCOL.md",
+    "build_control/06_STATUS_BOARD.md",
+    "build_control/07_ASTA_CSV_COLUMN_MAPPING.md",
+    "build_control/08_PHASE2C_VALIDATION_EVIDENCE.md",
+    "build_control/state.json"
+  ]
+}

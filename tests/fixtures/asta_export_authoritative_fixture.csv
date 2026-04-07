@@ -1,0 +1,8 @@
+Task ID,Task name,Unique task ID,Duration,Duration remaining,Start,Finish,Early start,Early finish,Late start,Late finish,Total float,Free float,Critical,Predecessors,Successors,Critical path drag,Phase Exec,Control Account,Area Zone,Level,CSI,System,Percent complete,Original start,Original finish
+100,"Pour slab, Level 1",U-100,10d,4d,4/1/2026,4/14/2026,4/1/2026,4/14/2026,4/3/2026,4/16/2026,2d,0d,FALSE,99,"101, 102",0d,P1,CA-01,West,L3,03 30 00,HVAC,45%,3/15/2026,3/28/2026
+101,Steel delivery,U-101,5d,0d,4/10/2026,4/16/2026,4/10/2026,4/16/2026,4/10/2026,4/16/2026,0d,0d,TRUE,100,103,1.5d,P1,CA-01,East,L2,05 12 00,Structural,100%,4/1/2026,4/8/2026
+102,Placeholder none fields,U-102,0d,0d,<None>,<None>,,,,,<None>,<None>,FALSE,<None>,<None>,<None>,<None>,<None>,<None>,<None>,<None>,<None>,0%,,
+103,Bad date row,U-103,2d,2d,bad-date,4/20/2026,4/15/2026,4/20/2026,4/15/2026,4/20/2026,0d,0d,FALSE,101,,0d,P2,,,,,,50%,4/10/2026,4/18/2026
+,Missing Task ID row,U-X,,,,,,,,,,,FALSE,,,,,,,,,,,,
+104,ISO date variant,U-104,1d,1d,2026-04-22,2026-04-23,2026-04-22,2026-04-23,2026-04-22,2026-04-23,0d,0d,FALSE,103,105,0d,P2,,,,,,0%,2026-04-01,2026-04-02
+105,Trailing preds spaces,U-105,1d,0d,4/24/2026,4/24/2026,4/24/2026,4/24/2026,4/24/2026,4/24/2026,0d,0d,FALSE," 104 , ",,0d,P2,,,,,,0%,4/20/2026,4/21/2026
