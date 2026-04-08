@@ -119,12 +119,10 @@ def test_desktop_visual_contracts_keep_command_surface_dominant():
     assert re.search(r"\.brief-line\s*\{[^}]*padding:\s*7px 10px", css, re.S)
     assert re.search(r"\.brief-line\s*\{[^}]*line-height:\s*1\.35", css, re.S)
     assert re.search(r"\.command-brief-support\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit, minmax\(240px, 1fr\)\)", css, re.S)
-    assert re.search(r"body\.publish\s*\{[^}]*background:\s*#d7dfd0", css, re.S)
-    assert re.search(r"body\.publish \.app-shell-header\s*\{[^}]*background:\s*#c5d0bc[^}]*backdrop-filter:\s*none", css, re.S)
-    assert re.search(r"body\.publish \.app-topbar\s*\{[^}]*min-height:\s*40px[^}]*gap:\s*8px", css, re.S)
-    assert re.search(r"body\.publish \.app-topbar\.is-publish\s*\{[^}]*grid-template-columns:\s*minmax\(140px, auto\) minmax\(0, 1fr\)", css, re.S)
-    assert re.search(r"body\.publish \.workspace-nav a\s*\{[^}]*padding:\s*5px 8px[^}]*border-radius:\s*2px[^}]*background:\s*transparent", css, re.S)
-    assert re.search(r"body\.publish \.workspace-status\s*\{[^}]*display:\s*none", css, re.S)
+    # Phase 32B+: single operator flow — legacy compact publish-only shell overrides removed; flow chrome is shared + hidden system routes
+    assert ".app-topbar--operator-flow" in css
+    assert ".shell-legacy-routes" in css
+    assert ".entry-shell--single-flow" in css
     assert re.search(r"\.ct-layout\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1\.82fr\) minmax\(260px, 0\.78fr\)[^}]*gap:\s*12px", css, re.S)
     assert re.search(r"\.ct-header\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.35fr\) repeat\(2, minmax\(170px, 0\.72fr\)\)[^}]*padding:\s*8px 10px", css, re.S)
     assert re.search(r"\.ct-command-strip\s*\{[^}]*border:\s*1px solid rgba\(0, 0, 0, 0\.1\)", css, re.S)

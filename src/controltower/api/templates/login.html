@@ -1,17 +1,13 @@
 {% extends "layout.html" %}
 {% block content %}
-<section class="tower-shell review-shell">
-  <article class="card review-summary-card">
-    <div class="review-summary-head">
-      <div>
-        <div class="headline-kicker">
-          <span class="label">Public Access</span>
-          <span class="count-pill count-pill-watch">AUTH REQUIRED</span>
-        </div>
-        <h2>Sign In</h2>
-        <p class="lede">Control Tower is publicly reachable over HTTPS, but application content now requires an authenticated operator session.</p>
-      </div>
+<section class="product-auth-shell">
+  <article class="product-auth-brief card">
+    <div class="headline-kicker">
+      <span class="label">Secure Browser Access</span>
+      <span class="count-pill count-pill-watch">SESSION GATE</span>
     </div>
+    <h2>Control Tower Operator Sign-In</h2>
+    <p class="lede">Authenticated access is required before opening deterministic launch and operator surfaces.</p>
     {% if auth_action == "login_failed" %}
     <p class="review-banner review-banner-danger">Sign-in failed. Check the configured username and password.</p>
     {% elif auth_action == "logged_out" %}
@@ -24,10 +20,10 @@
     {% endif %}
   </article>
 
-  <section class="grid two">
-    <article class="card">
-      <h3>Operator Login</h3>
-      <form method="post" action="{{ auth_context.login_path }}" class="review-form">
+  <section class="product-auth-grid">
+    <article class="card product-auth-form-card">
+      <h3>Operator Credentials</h3>
+      <form method="post" action="{{ auth_context.login_path }}" class="review-form product-auth-form">
         <input type="hidden" name="next_path" value="{{ next_path }}">
         <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
         <label class="review-form-field">
@@ -43,12 +39,12 @@
         </div>
       </form>
     </article>
-    <article class="card">
+    <article class="card product-auth-posture-card">
       <h3>Access Posture</h3>
       <ul class="flat-list">
-        <li>Public hostname and TLS remain available to anonymous users.</li>
-        <li>The login screen is the only public entry point for normal browser access.</li>
-        <li>Protected UI and API routes redirect or return `401` until authentication succeeds.</li>
+        <li>Authentication controls browser projection and execution access only.</li>
+        <li>Deterministic schedule intelligence remains outside browser templates.</li>
+        <li>Protected browser routes stay gated until the operator session is established.</li>
       </ul>
     </article>
   </section>

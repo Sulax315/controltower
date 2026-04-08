@@ -18,11 +18,11 @@
 ## Operator Surface Validation
 
 - Command brief clarity (1-5):
-- Evidence precision (1-5):
-- Graph comprehension (1-5):
+- Evidence trust (1-5):
+- Graph usability (1-5):
 - Interaction flow (1-5):
 - Export usefulness (1-5):
-- Stakeholder readability (1-5):
+- Stakeholder clarity (1-5):
 
 ## Real-Use Notes
 

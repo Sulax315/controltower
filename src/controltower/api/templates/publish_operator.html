@@ -1,11 +1,11 @@
 {% extends "layout.html" %}
 {% block content %}
-<section class="ct-layout" id="publish-operator-surface" {% if auto_print %}data-auto-print="true"{% endif %}>
+<section class="ct-layout operator-shell" id="publish-operator-surface" {% if auto_print %}data-auto-print="true"{% endif %}>
   <div class="ct-main">
     <div class="ct-header" id="publish-operator-header">
       <div class="ct-project">
-        <div class="ct-block-label">Publish Operator Surface</div>
-        <div class="ct-project-name">PublishPacket Renderer</div>
+        <div class="ct-block-label">Operator Surface</div>
+        <div class="ct-project-name">Deterministic Publish Packet</div>
         {% if publish_bundle_path %}
         <div class="ct-meta">{{ publish_bundle_path }}</div>
         {% endif %}
@@ -29,8 +29,9 @@
     {% set viz = p.visualization if p and p.visualization else None %}
     {% set vnote = publish_validation_note or {} %}
     {% set vcats = publish_validation_categories or [] %}
+    {% set vlabels = publish_validation_category_labels or {} %}
 
-    <div class="ct-print-note">Stakeholder handout mode: deterministic output from existing publish packet artifacts.</div>
+    <div class="ct-print-note">Authoritative deterministic projection from existing publish artifacts.</div>
 
     <section class="ct-section" id="publish-operator-header-strip">
       <div class="ct-command-header">
@@ -226,7 +227,7 @@
         <div class="ct-validation-grid">
           {% for category in vcats %}
           <div class="ct-validation-row">
-            <div class="ct-validation-row-head">{{ category.replace('_', ' ')|title }}</div>
+            <div class="ct-validation-row-head">{{ vlabels.get(category, category.replace('_', ' ')|title) }}</div>
             <label>Score
               <select name="score_{{ category }}">
                 {% set current_score = (vnote.category_scores[category] if vnote and vnote.category_scores and category in vnote.category_scores else 3) %}
@@ -320,13 +321,26 @@
         const visible = inFocus(node.task_id);
         g.setAttribute("class", `ct-graph-node ${node.is_driver_path ? "is-driver" : ""} ${node.is_risk_flagged ? "is-risk" : ""} ${state.selectedTaskId === node.task_id ? "is-selected" : ""} ${visible ? "" : "is-muted"}`);
         g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
+        g.setAttribute("role", "button");
+        g.setAttribute("tabindex", "0");
+        g.setAttribute("aria-label", `${node.task_id} ${node.lane} node`);
         g.addEventListener("click", () => { state.selectedTaskId = node.task_id; state.focusMode = "selected_trace"; refresh(); });
+        g.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            state.selectedTaskId = node.task_id;
+            state.focusMode = "selected_trace";
+            refresh();
+          }
+        });
 
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         rect.setAttribute("width", String(nodeBox.w));
         rect.setAttribute("height", String(nodeBox.h));
         rect.setAttribute("rx", "3");
         rect.setAttribute("ry", "3");
+        const tip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        tip.textContent = `${node.task_id} | lane: ${node.lane}${node.is_risk_flagged ? " | risk-flagged" : ""}${node.is_finish_target ? " | finish-target" : ""}`;
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
         label.setAttribute("x", "8");
         label.setAttribute("y", "18");
@@ -335,6 +349,7 @@
         role.setAttribute("x", "8");
         role.setAttribute("y", "34");
         role.textContent = node.lane;
+        g.appendChild(tip);
         g.appendChild(rect);
         g.appendChild(label);
         g.appendChild(role);

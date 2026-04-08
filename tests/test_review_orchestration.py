@@ -712,7 +712,7 @@ def test_app_auth_protects_ui_and_api_routes_in_prod(sample_config_path):
 
     login_page = client.get("/login?next_path=/publish")
     assert login_page.status_code == 200
-    assert "Control Tower is publicly reachable over HTTPS" in login_page.text
+    assert "Control Tower Operator Sign-In" in login_page.text
     csrf_token = _extract_csrf_token(login_page.text)
 
     login = client.post(

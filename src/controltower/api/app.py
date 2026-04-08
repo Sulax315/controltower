@@ -90,6 +90,15 @@ AUTH_CSRF_SESSION_KEY = "controltower_csrf_token"
 DEFAULT_DEV_SESSION_SECRET = "controltower-dev-session"
 PUBLIC_PATH_PREFIXES = ("/login", "/logout", "/reviews/login", "/reviews/logout", "/static")
 PUBLIC_EXACT_PATHS = {"/favicon.ico", "/healthz", "/api/orchestrator/status"}
+VALIDATION_CATEGORY_LABELS: dict[str, str] = {
+    "entry_upload_flow": "Entry / Upload",
+    "command_brief_clarity": "Command Brief Clarity",
+    "evidence_precision": "Evidence Trust",
+    "graph_comprehension": "Graph Usability",
+    "interaction_flow": "Interaction Flow",
+    "export_usefulness": "Export Usefulness",
+    "stakeholder_readability": "Stakeholder Clarity",
+}
 
 
 class AppAuthGuardMiddleware(BaseHTTPMiddleware):
@@ -188,7 +197,7 @@ def create_app_from_config(config) -> FastAPI:
             _template_payload(
                 request,
                 page_title="Sign In",
-                page_kicker="Public Control Tower access now requires application-layer authentication.",
+                page_kicker="Operator authentication gate for browser entry and publish surfaces.",
                 page_mode="auth",
                 next_path=_safe_next_path(next_path),
                 auth_error=auth_error,
@@ -258,8 +267,8 @@ def create_app_from_config(config) -> FastAPI:
                 latest_run=latest_run,
                 recent_runs=recent_runs,
                 upload_error=upload_error,
-                page_title="Control Tower Entry",
-                page_kicker="Authenticated browser entry for deterministic run execution and operator access",
+                page_title="Control Tower Browser Entry",
+                page_kicker="Deterministic run launch and operator surface access",
                 page_mode="runs-home",
             ),
         )
@@ -1235,6 +1244,7 @@ def create_app_from_config(config) -> FastAPI:
                 publish_run_id=run_id,
                 publish_validation_note=validation_note,
                 publish_validation_categories=VALIDATION_CATEGORIES,
+                publish_validation_category_labels=VALIDATION_CATEGORY_LABELS,
                 validation_saved=request.query_params.get("validation_saved"),
                 page_title="Publish Operator",
                 page_kicker="Deterministic PublishPacket operator surface",

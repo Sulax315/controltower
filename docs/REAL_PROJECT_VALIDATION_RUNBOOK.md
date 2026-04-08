@@ -1,8 +1,9 @@
-# Real-Project Validation Runbook
+# Real-Project Validation Runbook (Phase 32)
 
-This runbook defines the deterministic Phase 30 validation and hardening loop for the browser product entry and authoritative operator surface:
+This runbook defines the deterministic Phase 32 real-project validation and hardening loop for browser entry/upload and the authoritative operator surface:
 
 - `/`
+- `/entry/upload`
 - `/publish/operator/{run_id}`
 
 The goal is to validate real weekly schedule-review utility using the browser-first product flow and capture friction in a structured, run-linked way without introducing a second product surface.
@@ -31,15 +32,15 @@ The goal is to validate real weekly schedule-review utility using the browser-fi
 
 ## Structured Friction Categories
 
-Each category is scored 1..5 with optional friction notes:
+Each category is scored 1..5 with optional friction notes. Operator-facing labels and run-artifact keys:
 
-- `command_brief_clarity`
-- `evidence_precision`
-- `graph_comprehension`
-- `interaction_flow`
-- `export_usefulness`
-- `stakeholder_readability`
-- `entry_upload_flow`
+- `Entry / Upload` -> `entry_upload_flow`
+- `Command Brief Clarity` -> `command_brief_clarity`
+- `Evidence Trust` -> `evidence_precision`
+- `Graph Usability` -> `graph_comprehension`
+- `Interaction Flow` -> `interaction_flow`
+- `Export Usefulness` -> `export_usefulness`
+- `Stakeholder Clarity` -> `stakeholder_readability`
 
 Additional bounded text fields:
 
@@ -70,6 +71,10 @@ Apply hardening only when all conditions hold:
 
 ## Durable Session Output
 
-For each validation session, copy `docs/REAL_PROJECT_VALIDATION_SESSION_TEMPLATE.md`,
-fill it with the run-specific evidence and decisions, and store it in your governed notes location.
+For each validation session:
+
+1. Execute the checklist in `docs/REAL_PROJECT_VALIDATION_CHECKLIST.md`.
+2. Copy `docs/REAL_PROJECT_VALIDATION_SESSION_TEMPLATE.md`.
+3. Fill it with run-specific evidence, friction, and hardening decisions.
+4. Store the completed note in your governed notes location with the run_id in the filename.
 

@@ -74,6 +74,9 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert "Authoritative finish target" in text
     assert "REAL-PROJECT VALIDATION" in text
     assert "Save Validation Note" in text
+    assert "Entry / Upload" in text
+    assert "Evidence Trust" in text
+    assert "Graph Usability" in text
     assert text.index('id="publish-operator-command-brief"') < text.index('id="publish-operator-evidence"')
 
 
