@@ -9,47 +9,75 @@
 </head>
 <body class="{{ page_mode or 'support' }}">
   {% set current_path = request.url.path %}
-  {% set surface_label = "Meeting-ready command center" if current_path.startswith("/publish") else "Support surface" %}
+  {% set is_publish_surface = current_path.startswith("/publish") %}
+  {% set is_auth_surface = page_mode == "auth" %}
+  {% set is_operator_flow = (current_path == "/" or is_publish_surface) %}
+  {% set surface_label = "Operator publish surface" if is_publish_surface else "Entry and launch surface" %}
   <div class="app-shell">
-    <header class="app-shell-header{% if page_mode == 'publish' %} app-shell-header-publish{% endif %}">
+    <header class="app-shell-header{% if is_publish_surface %} app-shell-header-publish{% endif %}{% if is_operator_flow and not is_auth_surface %} app-shell-header--operator-flow{% endif %}">
       <div class="app-frame">
-        <div class="app-topbar{% if page_mode == 'publish' %} is-publish{% endif %}">
+        <div class="app-topbar{% if is_publish_surface %} is-publish{% endif %}{% if is_operator_flow and not is_auth_surface %} app-topbar--operator-flow{% endif %}">
           <div class="app-brand">
-            {% if page_mode not in ["publish", "auth"] %}
             <div class="eyebrow">Bratek Operations</div>
-            {% endif %}
             <strong>{{ config.app.product_name }}</strong>
           </div>
-          {% if page_mode != "auth" %}
+          {# Phase 32B: single operator flow — no multi-surface nav on entry or publish surfaces #}
+          {% if not is_auth_surface and not is_operator_flow %}
           <nav class="workspace-nav" aria-label="Primary">
-            <a href="/publish" class="nav-primary {% if current_path.startswith('/publish') %}is-active{% endif %}" {% if current_path.startswith('/publish') %}aria-current="page"{% endif %}>Publish</a>
+            <a href="/" class="nav-primary {% if current_path == '/' %}is-active{% endif %}" {% if current_path == '/' %}aria-current="page"{% endif %}>Entry</a>
+            <a href="/publish" class="nav-support {% if current_path.startswith('/publish') %}is-active{% endif %}" {% if current_path.startswith('/publish') %}aria-current="page"{% endif %}>Operator</a>
           </nav>
           {% endif %}
-          {% if auth_context.identity and auth_context.auth_mode == "session" %}
+          {% if not is_auth_surface and is_operator_flow %}
+          <div class="app-topbar-end">
+            <details class="shell-legacy-routes">
+              <summary class="shell-legacy-routes__summary">System routes</summary>
+              <div class="shell-legacy-routes__panel">
+                <p class="utility-note">Direct URLs only — not part of the operator product flow.</p>
+                <ul class="shell-legacy-routes__list">
+                  <li><a href="/control">Legacy control</a></li>
+                  <li><a href="/runs">Run history</a></li>
+                  <li><a href="/projects">Projects</a></li>
+                  <li><a href="/arena">Arena</a></li>
+                  <li><a href="/packets/new">Packets</a></li>
+                  <li><a href="/exports/latest">Exports</a></li>
+                  <li><a href="/diagnostics">Diagnostics</a></li>
+                </ul>
+              </div>
+            </details>
+            {% if auth_context.identity and auth_context.auth_mode == "session" %}
+            <form method="post" action="{{ auth_context.logout_path }}" class="review-inline-form">
+              <input type="hidden" name="next_path" value="/login">
+              <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+              <button type="submit" class="button secondary">Sign Out</button>
+            </form>
+            {% endif %}
+          </div>
+          {% elif auth_context.identity and auth_context.auth_mode == "session" %}
           <form method="post" action="{{ auth_context.logout_path }}" class="review-inline-form">
             <input type="hidden" name="next_path" value="/login">
             <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
             <button type="submit" class="button secondary">Sign Out</button>
           </form>
           {% endif %}
-          {% if page_mode not in ["publish", "auth"] %}
+          {% if not is_auth_surface and not is_operator_flow %}
           <div class="workspace-status">
-            <span class="label">Surface</span>
+            <span class="label">Mode</span>
             <strong>{{ surface_label }}</strong>
           </div>
           {% endif %}
         </div>
-        {% if page_mode not in ["publish", "auth"] %}
+        {% if not is_auth_surface and not is_operator_flow %}
         <div class="workspace-header">
           <div class="workspace-title-block">
-            <div class="eyebrow">{{ config.app.product_name }}</div>
+            <div class="eyebrow">Deterministic operator system</div>
             <h1>{{ page_title or config.app.product_name }}</h1>
-            <p class="deck">{{ page_kicker or "Meeting-ready command output with bounded supporting evidence" }}</p>
+            <p class="deck">{{ page_kicker or "Projection and execution access only from deterministic artifacts" }}</p>
           </div>
           <aside class="utility-panel">
-            <span class="label">Operator posture</span>
+            <span class="label">Governance posture</span>
             <strong>{{ surface_label }}</strong>
-            <p class="utility-note">Run the meeting from the command brief first. Deep dives, history, and debug surfaces stay available without becoming the default experience.</p>
+            <p class="utility-note">Browser UI is a projection and execution surface only. Intelligence remains in deterministic engine artifacts and server-prepared contracts.</p>
           </aside>
         </div>
         {% endif %}

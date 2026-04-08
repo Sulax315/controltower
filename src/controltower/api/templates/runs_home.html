@@ -1,54 +1,63 @@
 {% extends "layout.html" %}
 {% block content %}
-<section class="card" id="runs-home-upload">
-  <h2>Upload Schedule CSV</h2>
-  <p class="utility-note">Upload a single Asta CSV. Deterministic execution runs server-side and redirects directly to the operator surface.</p>
-  {% if upload_error %}
-  <div class="utility-note" id="runs-home-upload-error">Error: {{ upload_error }}</div>
-  {% endif %}
-  <form method="post" action="/entry/upload" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
-    <label for="csv_file">Schedule CSV</label>
-    <input id="csv_file" name="csv_file" type="file" accept=".csv,text/csv" required>
-    <button type="submit" class="button">Execute Run</button>
-  </form>
-</section>
+{# Phase 32B: single flow — upload → run → /publish/operator/{run_id}; no surface choices on landing #}
+<section class="entry-shell entry-shell--single-flow">
+  <section class="card entry-primary-upload" id="runs-home-upload">
+    <span class="label">Start here</span>
+    <h2 class="entry-primary-title">Upload schedule</h2>
+    <p class="utility-note">Choose one Asta schedule CSV. The run executes on the server and opens the operator surface automatically.</p>
+    {% if upload_error %}
+    <div class="review-banner review-banner-danger" id="runs-home-upload-error">{{ upload_error }}</div>
+    {% endif %}
+    <form method="post" action="/entry/upload" enctype="multipart/form-data" class="entry-upload-form entry-upload-form--primary">
+      <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+      <label class="entry-upload-label" for="csv_file">Schedule file (.csv)</label>
+      <input id="csv_file" name="csv_file" type="file" accept=".csv,text/csv" required>
+      <button type="submit" class="button primary entry-upload-submit">Upload schedule</button>
+    </form>
+  </section>
 
-<section class="card" id="runs-home-latest">
-  <h2>Open Latest Run</h2>
-  {% if latest_run %}
-  <p><a class="button" href="/publish/operator/{{ latest_run.run_id }}">Open Latest Operator Surface</a></p>
-  {% else %}
-  <p class="utility-note">No publishable runs are available yet.</p>
-  {% endif %}
-</section>
-
-<section class="card" id="runs-home-recent">
-  <h2>Recent Runs</h2>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>run_id</th>
-        <th>created_at</th>
-        <th>status</th>
-        <th>detail</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for run in recent_runs %}
-      <tr>
-        <td>{{ run.run_id }}</td>
-        <td>{{ run.created_at }}</td>
-        <td>{{ run.status }}</td>
-        <td><a href="/publish/operator/{{ run.run_id }}">Open</a></td>
-      </tr>
-      {% endfor %}
-      {% if not recent_runs %}
-      <tr>
-        <td colspan="4">No runs have been executed yet.</td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+  <details class="entry-prior-runs">
+    <summary class="entry-prior-runs__summary">Prior runs <span class="entry-prior-runs__hint">(optional — same operator surface)</span></summary>
+    <div class="entry-prior-runs__body">
+      <section class="card entry-latest" id="runs-home-latest">
+        <h3 class="entry-prior-runs__h3">Latest publishable run</h3>
+        {% if latest_run %}
+        <p class="entry-latest-id">{{ latest_run.run_id }}</p>
+        <p><a class="button secondary" href="/publish/operator/{{ latest_run.run_id }}">Open operator surface</a></p>
+        {% else %}
+        <p class="utility-note">No publishable runs yet. Upload a schedule above.</p>
+        {% endif %}
+      </section>
+      <section class="card entry-recent" id="runs-home-recent">
+        <h3 class="entry-prior-runs__h3">Recent publishable runs</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>run_id</th>
+              <th>created_at</th>
+              <th>status</th>
+              <th>open</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for run in recent_runs %}
+            <tr>
+              <td>{{ run.run_id }}</td>
+              <td>{{ run.created_at }}</td>
+              <td>{{ run.status }}</td>
+              <td><a href="/publish/operator/{{ run.run_id }}">Open</a></td>
+            </tr>
+            {% endfor %}
+            {% if not recent_runs %}
+            <tr>
+              <td colspan="4">No runs yet.</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </details>
 </section>
 {% endblock %}
