@@ -5131,7 +5131,9 @@ body.publish .text-link:hover {
   }
 
   body.publish .ct-header-actions,
-  body.publish .ct-print-note {
+  body.publish .ct-print-note,
+  body.publish .ct-meta,
+  body.publish .ct-block-label {
     display: none !important;
   }
 
@@ -5161,8 +5163,33 @@ body.publish .text-link:hover {
     page-break-inside: avoid;
   }
 
+  body.publish #publish-operator-surface #publish-operator-header-strip,
+  body.publish #publish-operator-surface #publish-operator-command-brief,
+  body.publish #publish-operator-surface #publish-operator-evidence,
+  body.publish #publish-operator-surface .ct-evidence-group {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
   body.publish #publish-operator-surface .ct-evidence-group > summary {
     cursor: default;
+  }
+
+  body.publish #publish-operator-surface details {
+    display: block;
+  }
+
+  body.publish #publish-operator-surface details > summary {
+    display: grid;
+  }
+
+  body.publish #publish-operator-surface details > :not(summary) {
+    display: block !important;
+  }
+
+  body.publish #publish-operator-surface .ct-inline-chain,
+  body.publish #publish-operator-surface .ct-inline-metrics {
+    display: flex !important;
   }
 
   body.publish #publish-operator-evidence {

@@ -86,6 +86,20 @@ def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_pat
     assert printed.status_code == 200
     assert needle_finish in normal.text
     assert needle_finish in printed.text
+    assert inner["command_brief"]["driver"] in normal.text
+    assert inner["command_brief"]["driver"] in printed.text
+    assert inner["command_brief"]["risks"] in normal.text
+    assert inner["command_brief"]["risks"] in printed.text
+    assert inner["command_brief"]["need"] in normal.text
+    assert inner["command_brief"]["need"] in printed.text
+    assert inner["command_brief"]["doing"] in normal.text
+    assert inner["command_brief"]["doing"] in printed.text
+    assert "Driver Evidence" in normal.text
+    assert "Driver Evidence" in printed.text
+    assert "Risk Evidence" in normal.text
+    assert "Risk Evidence" in printed.text
+    assert "Inline Structural View" in normal.text
+    assert "Inline Structural View" in printed.text
 
 
 def test_publish_operator_empty_when_no_publishable_run(sample_config_path) -> None:

@@ -1066,6 +1066,9 @@ def create_app_from_config(config) -> FastAPI:
         if not ok:
             raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
         bundle_path = str(run.get("bundle_path") or "").strip()
+        # Phase 21 decision: keep PDF export transport-thin by reusing the existing
+        # deterministic operator surface and browser print-to-PDF flow. We intentionally
+        # avoid server-side HTML->PDF infrastructure or duplicate template stacks here.
         return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print))
 
     def _render_publish_operator(request: Request, *, bundle: str | None, auto_print: bool = False):
