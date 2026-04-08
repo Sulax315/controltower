@@ -5,11 +5,11 @@
 - Build health: GREEN
 - Overall completion: 99%
 - Current phase: Phase 10 - Productization
-- Current track: Track 10A - Command Brief Perfection
-- Current objective: Improve operator surface to be meeting-ready with stronger hierarchy/readability while preserving deterministic backend outputs.
+- Current track: Track 10C - Operator Workflow Layer
+- Current objective: Deliver lightweight run comparison, clear what-changed surfacing, and operator decision support over existing deterministic run artifacts with no backend analysis changes and no new engine logic.
 - Current blocker: None
-- Last completed milestone: Phase 9 - Browser-Native Execution Layer COMPLETE
-- Next required action: Implement Track 10A command brief perfection for meeting-ready operator communication
+- Last completed milestone: Track 10B - Stakeholder Output (PDF / Export) COMPLETE
+- Next required action: Implement Track 10C operator workflow lane over existing artifacts
 ---
 ## Phase Status
 ### Phase 5 - Core Intelligence
@@ -53,20 +53,16 @@ Control Tower is now browser-accessible via run-based execution:
 ### Phase 10 - Productization
 Status: ACTIVE
 Tracks:
-- 10A Command Brief Perfection - READY
-- 10B Stakeholder Output (PDF / Export) - PLANNED
-- 10C Operator Workflow Layer - PLANNED
+- 10A Command Brief Perfection - COMPLETE
+- 10B Stakeholder Output (PDF / Export) - COMPLETE
+- 10C Operator Workflow Layer - READY
 - 10D Signal & Notification Layer - OPTIONAL
 
-## Current Track Objective (10A)
+## Current Track Objective (10C)
 Define:
-- Improve operator surface to be meeting-ready
-- Strengthen hierarchy and readability
-- Ensure command brief communicates:
-- finish
-- delta
-- driver
-- risks
-- actions
-- No backend changes
+- Enable lightweight run comparison for operators
+- Surface what changed between runs in a clear workflow
+- Provide operator decision support over existing run artifacts
+- No backend analysis changes
+- No new engine logic
 - No new analysis

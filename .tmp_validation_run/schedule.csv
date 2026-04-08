@@ -1,0 +1,3 @@
+Task ID,Task name,Unique task ID,Duration,Duration remaining,Start,Finish,Early start,Early finish,Late start,Late finish,Total float,Free float,Critical,Predecessors,Successors,Critical path drag,Phase Exec,Control Account,Area Zone,Level,CSI,System,Percent complete,Original start,Original finish
+100,Start,,,,,,,,,,,,TRUE,,200,,,,,,,,,,
+200,Finish,,,,,,,,,,,,TRUE,100,,,,,,,,,,,
