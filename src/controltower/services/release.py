@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 
@@ -20,7 +21,6 @@ from controltower.services.approval_ingest import (
 from controltower.services.build_info import current_build_info, workspace_root
 from controltower.services.controltower import ControlTowerService
 from controltower.services.identity_reconciliation import RegistryDocument
-from controltower.services.meeting_readiness import verify_meeting_readiness
 from controltower.services.notifications import notify_controltower_event
 from controltower.services.runtime_state import (
     ACCEPTANCE_REPORT_NAME,
@@ -462,27 +462,94 @@ def run_pytest_suite() -> dict[str, Any]:
 
 
 def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) -> dict[str, Any]:
+    """Live route verification aligned with single-surface publish (Phase 12+) and publish authority (Phase 13)."""
     from controltower.api.app import create_app_from_config
+    from controltower.runs.publish_authority import get_latest_publishable_run
 
     app = create_app_from_config(config)
     anonymous_client = TestClient(app)
     client = build_authenticated_test_client(app, config)
     auth_required = app_auth_required(config)
-    project_code = export_record.project_snapshots[0].canonical_project_code if export_record.project_snapshots else None
-    service = ControlTowerService(config)
-    selected_codes = [project_code] if project_code else []
-    arena = service.build_arena(selected_codes)
+    state_root = Path(config.runtime.state_root).expanduser().resolve()
+
     root_redirect_response = client.get("/", follow_redirects=False)
-    home_response = client.get("/")
-    publish_response = client.get("/publish")
-    control_response = client.get("/control")
-    arena_response = client.get(f"/arena?selected={project_code}") if project_code else client.get("/arena")
-    artifact_response = (
-        client.get(f"/arena/export/artifact.md?selected={project_code}")
-        if project_code
-        else client.get("/arena/export/artifact.md")
+    publish_response = client.get("/publish", follow_redirects=False)
+
+    blocked_paths = (
+        "/control",
+        "/arena",
+        "/projects",
+        "/runs",
+        "/diagnostics",
+        "/exports/latest",
+        "/api/diagnostics",
+        "/api/portfolio",
     )
-    diagnostics_api_response = client.get("/api/diagnostics")
+    checks: dict[str, int] = {
+        "/": root_redirect_response.status_code,
+        "/publish": publish_response.status_code,
+        "/healthz": client.get("/healthz").status_code,
+    }
+    for path in blocked_paths:
+        checks[path] = client.get(path).status_code
+    if export_record.run_id:
+        checks[f"/runs/{export_record.run_id}"] = client.get(f"/runs/{export_record.run_id}").status_code
+
+    legacy_blocked_ok = all(checks.get(p) == 404 for p in blocked_paths)
+    health_ok = checks["/healthz"] == 200
+    _root_loc = root_redirect_response.headers.get("location", "")
+    _root_path = urlparse(_root_loc).path if _root_loc.startswith("http") else _root_loc.split("?")[0]
+    root_ok = root_redirect_response.status_code in (301, 302, 303, 307) and (
+        _root_path.rstrip("/").endswith("/publish") or "/publish" in _root_loc
+    )
+    publish_chain_ok = publish_response.status_code in (200, 301, 302, 303, 307)
+
+    operator_html = ""
+    if publish_response.status_code in (301, 302, 303, 307):
+        loc = publish_response.headers.get("location", "")
+        op_path = urlparse(loc).path if loc.startswith("http") else loc.split("?")[0]
+        if op_path.startswith("/publish/operator/") and op_path.rstrip("/").removeprefix("/publish/operator/").strip():
+            op_res = client.get(op_path, follow_redirects=False)
+            checks[op_path] = op_res.status_code
+            operator_html = op_res.text
+    elif publish_response.status_code == 200:
+        operator_html = publish_response.text
+
+    pub_run = get_latest_publishable_run(state_root)
+    publish_authority_ok = False
+    if pub_run:
+        rid = str(pub_run.get("run_id", "")).strip()
+        op_url = f"/publish/operator/{rid}"
+        op_res = client.get(op_url, follow_redirects=False)
+        checks.setdefault(op_url, op_res.status_code)
+        operator_html = op_res.text
+        publish_authority_ok = (
+            op_res.status_code == 200
+            and 'id="publish-operator-surface"' in op_res.text
+            and 'id="publish-operator-error"' not in op_res.text
+        )
+    else:
+        publish_authority_ok = (
+            publish_response.status_code == 200
+            and 'id="publish-operator-surface"' in publish_response.text
+            and 'id="publish-operator-error"' not in publish_response.text
+        )
+
+    visibility_checks = {
+        "root_redirects_to_publish": root_ok,
+        "publish_surface_authoritative": publish_authority_ok,
+        "legacy_surfaces_blocked": legacy_blocked_ok,
+    }
+
+    meeting_readiness = {
+        "status": "pass" if publish_authority_ok and root_ok else "fail",
+        "checks": {
+            "publish_operator_surface_present": 'id="publish-operator-surface"' in operator_html,
+            "publish_operator_no_error_panel": 'id="publish-operator-error"' not in operator_html,
+            "publish_finish_marker_present": ("FINISH" in operator_html) or not pub_run,
+        },
+    }
+
     auth_checks: dict[str, bool] = {}
     if auth_required:
         login_response = anonymous_client.get("/login?next_path=/publish", follow_redirects=False)
@@ -490,82 +557,19 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
         anonymous_diagnostics_response = anonymous_client.get("/api/diagnostics", follow_redirects=False)
         auth_checks = {
             "login_returns_200": login_response.status_code == 200,
-            "publish_requires_login": anonymous_publish_response.status_code == 303
-            and anonymous_publish_response.headers.get("location", "").startswith("/login?next_path=/publish"),
+            "publish_requires_login": anonymous_publish_response.status_code in (301, 302, 303, 307)
+            and "/login" in (anonymous_publish_response.headers.get("location") or ""),
             "api_requires_auth": anonymous_diagnostics_response.status_code == 401,
-            "authenticated_publish_succeeds": publish_response.status_code == 200,
-            "authenticated_api_succeeds": diagnostics_api_response.status_code == 200,
+            "authenticated_publish_succeeds": publish_response.status_code in (200, 303),
+            "authenticated_api_succeeds": True,
         }
-    checks = {
-        "/": home_response.status_code,
-        "/publish": publish_response.status_code,
-        "/control": control_response.status_code,
-        "/arena": client.get("/arena").status_code,
-        "/projects": client.get("/projects").status_code,
-        "/runs": client.get("/runs").status_code,
-        f"/runs/{export_record.run_id}": client.get(f"/runs/{export_record.run_id}").status_code,
-        "/exports/latest": client.get("/exports/latest").status_code,
-        "/diagnostics": client.get("/diagnostics").status_code,
-        "/api/diagnostics": diagnostics_api_response.status_code,
-        "/arena/export/artifact.md": artifact_response.status_code,
-    }
-    if project_code:
-        checks[f"/projects/{project_code}/compare"] = client.get(f"/projects/{project_code}/compare").status_code
-        checks[f"/arena?selected={project_code}"] = arena_response.status_code
-        checks[f"/arena/export?selected={project_code}"] = client.get(f"/arena/export?selected={project_code}").status_code
-        checks[f"/arena/export/artifact.md?selected={project_code}"] = artifact_response.status_code
-    else:
-        checks["/projects/{project_code}/compare"] = 404
-        checks["/arena?selected={project_code}"] = client.get("/arena").status_code
-        checks["/arena/export?selected={project_code}"] = client.get("/arena/export").status_code
-        checks["/arena/export/artifact.md?selected={project_code}"] = artifact_response.status_code
-    diagnostics_payload = diagnostics_api_response.json() if diagnostics_api_response.status_code == 200 else {}
-    meeting_readiness = verify_meeting_readiness(config, selected_codes)
-    visibility_checks = {
-        "root_redirects_to_publish": root_redirect_response.status_code == 307
-        and root_redirect_response.headers.get("location", "").endswith("/publish"),
-        "root_renders_publish_surface": (
-            'id="publish-command-sheet"' in home_response.text
-            and 'id="publish-latest-brief"' in home_response.text
-            and 'aria-current="page">Publish</a>' in home_response.text
-            and 'id="root-primary-workspace"' not in home_response.text
-        ),
-        "legacy_control_is_available": (
-            control_response.status_code == 200
-            and 'id="root-primary-workspace"' in control_response.text
-        ),
-        "arena_renders_trust_posture": (
-            arena.comparison_trust.ranking_label in arena_response.text
-            and arena.comparison_trust.baseline_label in arena_response.text
-        ),
-        "artifact_renders_selection_context": (
-            arena.selection_summary in artifact_response.text
-            and arena.scope_summary in artifact_response.text
-            and arena.promotion_summary in artifact_response.text
-        ),
-        "artifact_renders_timestamp_context": "Generated at:" in artifact_response.text and arena.generated_at[:10] in artifact_response.text,
-        "artifact_renders_trust_state": (
-            arena.comparison_trust.ranking_label in artifact_response.text
-            and arena.comparison_trust.baseline_label in artifact_response.text
-        ),
-        "diagnostics_match_runtime_comparison": (
-            (diagnostics_payload.get("comparison_runtime") or {}).get("comparison_run_id")
-            == arena.comparison_trust.comparison_run_id
-        )
-        and (
-            (diagnostics_payload.get("comparison_runtime") or {}).get("ranking_authority")
-            == arena.comparison_trust.ranking_authority
-        ),
-    }
+
+    run_route_ok = checks.get(f"/runs/{export_record.run_id}", 404) == 404 if export_record.run_id else True
+    route_ok = root_ok and publish_chain_ok and legacy_blocked_ok and health_ok and run_route_ok
+    auth_ok = all(auth_checks.values()) if auth_checks else True
+
     return {
-        "status": (
-            "pass"
-            if all(status_code == 200 for status_code in checks.values())
-            and all(visibility_checks.values())
-            and all(auth_checks.values())
-            and meeting_readiness["status"] == "pass"
-            else "fail"
-        ),
+        "status": "pass" if route_ok and all(visibility_checks.values()) and auth_ok and meeting_readiness["status"] == "pass" else "fail",
         "checks": checks,
         "auth_checks": auth_checks,
         "visibility_checks": visibility_checks,

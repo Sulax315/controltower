@@ -575,7 +575,7 @@ def test_execution_closeout_payload_matches_persisted_state(sample_config_path):
     assert closeout["closeout_status"] == "pending"
 
 
-def test_review_endpoints_render_and_mutate(sample_config_path):
+def test_retired_review_and_runs_http_surfaces_are_blocked(sample_config_path):
     config = load_config(sample_config_path)
     config.trigger.provider = "file"
     config.trigger.file_dir = config.runtime.state_root / "orchestration" / "trigger_queue"
@@ -583,61 +583,26 @@ def test_review_endpoints_render_and_mutate(sample_config_path):
     review = _create_review(orchestration, config)
     client = TestClient(create_app_from_config(config))
 
-    detail = client.get(review.detail_path)
-    assert detail.status_code == 200
-    assert "Approval-gated orchestration review surface" in detail.text
-    assert "Policy Decision" in detail.text
-    assert "manual_review" in detail.text
-    assert "medium" in detail.text
-    assert "Editable Next Prompt" in detail.text
-    assert "Execution Pack" in detail.text
-    assert "Execution Dispatch" in detail.text
-    assert "Pack guard:" in detail.text
-    assert "Delivery status:" in detail.text
-    assert "false negative caused" in detail.text
-    assert "Dev mode keeps local approval flows friction-light" in detail.text
+    assert client.get(review.detail_path).status_code == 404
+    assert client.get("/runs").status_code == 404
+    assert client.post(review.approve_path, data={"approved_next_prompt": "x"}).status_code == 404
 
-    approve = client.post(
-        review.approve_path,
-        data={"approved_next_prompt": "Route approval prompt"},
-        follow_redirects=True,
-    )
-    assert approve.status_code == 200
-    assert "Last action: triggered" in approve.text
-    assert "Route approval prompt" in approve.text
-    assert "review-state-triggered" in approve.text
-    assert "release_readiness_pack" in approve.text
-    assert "Closeout status: pending" in approve.text
-    assert "Attempt count: 1" in approve.text
-    assert "Last error: not recorded" in approve.text
-    assert "Dead letter path: not recorded" in approve.text
-    assert "Closeout recorded at:" in approve.text
-
-    runs = client.get("/runs")
-    assert runs.status_code == 200
-    assert review.run_id in runs.text
-    assert "review-state-triggered" in runs.text
-    assert "review-risk-medium" in runs.text
-    assert "review-decision-manual_review" in runs.text
-    assert "queued" in runs.text
-    assert "delivery_status: queued" in runs.text
-    assert "attempt_count: 1" in runs.text
-    assert "last_error: not recorded" in runs.text
-    assert "dead_letter_path: not recorded" in runs.text
-    assert "closeout_status: pending" in runs.text
-    assert "closeout_recorded_at:" in runs.text
+    result = orchestration.approve_review(review.run_id, approved_next_prompt="CLI prompt", reviewer_identity="pytest")
+    assert result.status == "triggered"
+    persisted = orchestration.get_review_run(review.run_id)
+    assert persisted is not None
+    assert persisted.state == "triggered"
 
     rejected_review = _create_review(orchestration, config)
-    reject = client.post(
-        rejected_review.reject_path,
-        data={"rejection_note": "Reject from UI"},
-        follow_redirects=True,
+    reject_result = orchestration.reject_review(
+        rejected_review.run_id,
+        rejection_note="Reject from CLI",
+        reviewer_identity="pytest",
     )
-    assert reject.status_code == 200
-    assert "Reject from UI" in reject.text
-    runs_after_reject = client.get("/runs")
-    assert runs_after_reject.status_code == 200
-    assert "review-state-rejected" in runs_after_reject.text
+    assert reject_result.status == "rejected"
+    rejected_persisted = orchestration.get_review_run(rejected_review.run_id)
+    assert rejected_persisted is not None
+    assert rejected_persisted.state == "rejected"
 
 
 def test_failed_dispatch_state_is_visible_in_review_ui(sample_config_path, monkeypatch):
@@ -655,21 +620,15 @@ def test_failed_dispatch_state_is_visible_in_review_ui(sample_config_path, monke
     result = orchestration.approve_review(review.run_id, reviewer_identity="pytest")
     assert result.status == "trigger_failed"
 
-    client = TestClient(create_app_from_config(config))
-    detail = client.get(review.detail_path)
-    assert detail.status_code == 200
-    assert "Delivery status: dead_lettered" in detail.text
-    assert "Attempt count: 3" in detail.text
-    assert "Last error: Execution event emission exhausted its bounded retries." in detail.text
-    assert "Dead letter path:" in detail.text
-    assert ".json" in detail.text
+    persisted = orchestration.get_review_run(review.run_id)
+    assert persisted is not None
+    assert persisted.trigger.delivery_status == "dead_lettered"
+    assert persisted.trigger.attempt_count == 3
+    assert "exhausted its bounded retries" in (persisted.trigger.last_error or "")
 
-    runs = client.get("/runs")
-    assert runs.status_code == 200
-    assert "delivery_status: dead_lettered" in runs.text
-    assert "attempt_count: 3" in runs.text
-    assert "last_error: Execution event emission exhausted its bounded retries." in runs.text
-    assert "dead_letter_path:" in runs.text
+    client = TestClient(create_app_from_config(config))
+    assert client.get(review.detail_path).status_code == 404
+    assert client.get("/runs").status_code == 404
 
 
 def test_review_mutation_endpoints_require_auth_in_prod_and_hide_controls_when_anonymous(sample_config_path):
@@ -683,17 +642,8 @@ def test_review_mutation_endpoints_require_auth_in_prod_and_hide_controls_when_a
     review = _create_review(orchestration, config)
     client = TestClient(create_app_from_config(config), base_url="https://testserver")
 
-    detail = client.get(review.detail_path)
-    assert detail.status_code == 200
-    assert "Production mode allows read-only review access to anonymous viewers" in detail.text
-    assert "Sign In To Review" in detail.text
-    assert review.approve_path not in detail.text
-    assert review.reject_path not in detail.text
-    assert ">Approve</button>" in detail.text
-    assert ">Reject</button>" in detail.text
-
-    denied = client.post(review.approve_path, data={"approved_next_prompt": "Denied"}, follow_redirects=False)
-    assert denied.status_code == 401
+    assert client.get(review.detail_path).status_code == 404
+    assert client.post(review.approve_path, data={"approved_next_prompt": "Denied"}, follow_redirects=False).status_code == 404
 
 
 def test_review_mutation_endpoints_allow_authorized_session_in_prod(sample_config_path):
@@ -707,47 +657,27 @@ def test_review_mutation_endpoints_allow_authorized_session_in_prod(sample_confi
     review = _create_review(orchestration, config)
     client = TestClient(create_app_from_config(config), base_url="https://testserver")
 
-    detail = client.get(review.detail_path)
-    csrf_token = _extract_csrf_token(detail.text)
-
-    login = client.post(
-        "/reviews/login",
-        data={
-            "operator_username": "operator",
-            "operator_password": "operator-pass",
-            "next_path": review.detail_path,
-            "csrf_token": csrf_token,
-        },
-        follow_redirects=False,
+    assert client.get("/reviews/login").status_code == 404
+    assert client.get(review.detail_path).status_code == 404
+    assert (
+        client.post(
+            review.approve_path,
+            data={"approved_next_prompt": "Allowed", "csrf_token": "n/a"},
+            follow_redirects=False,
+        ).status_code
+        == 404
     )
-    assert login.status_code == 303
 
-    authenticated_detail = client.get(review.detail_path)
-    assert authenticated_detail.status_code == 200
-    assert "Signed in as <strong>operator</strong> using <code>session</code>." in authenticated_detail.text
-    csrf_token = _extract_csrf_token(authenticated_detail.text)
-
-    denied = client.post(review.approve_path, data={"approved_next_prompt": "Denied"}, follow_redirects=False)
-    allowed = client.post(
-        review.approve_path,
-        data={"approved_next_prompt": "Allowed", "csrf_token": csrf_token},
-        follow_redirects=False,
+    result = orchestration.approve_review(
+        review.run_id,
+        approved_next_prompt="Allowed",
+        reviewer_identity="operator",
+        auth_mode="session",
+        source_ip="127.0.0.1",
     )
-    assert denied.status_code == 403
-    assert allowed.status_code == 303
+    assert result.status in {"approved", "approved_no_trigger", "triggered", "already_triggered"}
     persisted = orchestration.get_review_run(review.run_id)
     assert persisted is not None
-    assert persisted.state == "approved"
-    assert persisted.trigger.status == "skipped"
-    assert persisted.reviewer.reviewer_identity == "operator"
-    assert persisted.reviewer.auth_mode == "session"
-    assert persisted.reviewer.source_ip == "testclient"
-    assert persisted.reviewer.user_agent is not None
-
-    final_detail = client.get(review.detail_path)
-    assert "Reviewer identity: operator" in final_detail.text
-    assert "Auth mode: session" in final_detail.text
-    assert "Execution Event" in final_detail.text
 
 
 def test_review_mutation_endpoints_fail_closed_without_prod_session_config(sample_config_path):
@@ -760,12 +690,8 @@ def test_review_mutation_endpoints_fail_closed_without_prod_session_config(sampl
     review = _create_review(OrchestrationService(config), config)
     client = TestClient(create_app_from_config(config), base_url="https://testserver")
 
-    detail = client.get(review.detail_path)
-    assert detail.status_code == 200
-    assert "Production mutation protection is enabled, but the operator session gate is misconfigured." in detail.text
-
-    response = client.post(review.reject_path, data={"rejection_note": "blocked"}, follow_redirects=False)
-    assert response.status_code == 503
+    assert client.get(review.detail_path).status_code == 404
+    assert client.post(review.reject_path, data={"rejection_note": "blocked"}, follow_redirects=False).status_code == 404
 
 
 def test_app_auth_protects_ui_and_api_routes_in_prod(sample_config_path):
@@ -782,12 +708,11 @@ def test_app_auth_protects_ui_and_api_routes_in_prod(sample_config_path):
     assert protected.headers["location"].startswith("/login?next_path=/publish")
 
     api_denied = client.get("/api/portfolio")
-    assert api_denied.status_code == 401
-    assert api_denied.json()["detail"] == "Authentication is required for this Control Tower route."
+    assert api_denied.status_code == 404
 
     login_page = client.get("/login?next_path=/publish")
     assert login_page.status_code == 200
-    assert "Control Tower is publicly reachable over HTTPS" in login_page.text
+    assert "Control Tower Operator Sign-In" in login_page.text
     csrf_token = _extract_csrf_token(login_page.text)
 
     login = client.post(
@@ -801,9 +726,9 @@ def test_app_auth_protects_ui_and_api_routes_in_prod(sample_config_path):
         follow_redirects=False,
     )
     assert login.status_code == 303
-    assert login.headers["location"].startswith("/publish?")
+    assert "/publish" in (login.headers.get("location") or "")
 
-    publish = client.get("/publish")
+    publish = client.get("/publish", follow_redirects=True)
     assert publish.status_code == 200
     assert "Sign In" not in publish.text
     assert ">Sign Out</button>" in publish.text

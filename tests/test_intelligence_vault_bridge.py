@@ -9,11 +9,15 @@ from fastapi.testclient import TestClient
 from controltower.api.app import create_app
 from controltower.config import load_config
 from controltower.obsidian.intelligence_vault import _list_intel_packet_stems
+from controltower.services.intelligence_packets import load_packet
 from controltower.services.intelligence_vault_bridge import (
+    build_packet_bridge_context,
     read_vault_markdown_html,
     relative_vault_path,
+    resolve_paths_for_packet,
     resolve_project_index_path,
 )
+from tests.packet_service_helpers import generate_and_write_packet, publish_packet_and_sync_obsidian
 
 
 def test_relative_vault_path_under_root(tmp_path):
@@ -38,81 +42,76 @@ def test_list_intel_packet_stems_prefers_newer_mtime(tmp_path):
     assert stems[0].endswith("pkt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
 
-def test_packet_detail_renders_vault_bridge(sample_config_path):
+def test_vault_bridge_context_tracks_sync_status(sample_config_path):
     config = load_config(sample_config_path)
+    pid = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W23",
+        title="bridge html",
+        operator_notes="",
+    )
+    record = load_packet(config.runtime.state_root, pid)
+    assert record is not None
+    before = build_packet_bridge_context(record, config)
+    assert before["status"] in {"unknown", "not_synced"}
+
+    publish_packet_and_sync_obsidian(config, pid)
+    record2 = load_packet(config.runtime.state_root, pid)
+    assert record2 is not None
+    after = build_packet_bridge_context(record2, config)
+    assert after["status"] == "synced"
+
     app = create_app(str(sample_config_path))
     client = TestClient(app)
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W23",
-            "title": "bridge html",
-            "operator_notes": "",
-        },
-    )
-    pid = gen.json()["packet_id"]
-    r = client.get(f"/packets/{pid}")
-    assert r.status_code == 200
-    assert "Intelligence vault" in r.text
-    assert "Unknown" in r.text or "Not synced" in r.text or "Synced" in r.text
-
-    assert client.post(f"/api/packets/{pid}/publish", json={}).status_code == 200
-    r2 = client.get(f"/packets/{pid}")
-    assert r2.status_code == 200
-    assert "Synced" in r2.text
-    assert f"/vault/intelligence/packets/{pid}/note" in r2.text
+    assert client.get(f"/vault/intelligence/packets/{pid}/note").status_code == 404
 
 
-def test_vault_note_route_renders(sample_config_path):
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W24",
-            "title": "vault route",
-            "operator_notes": "",
-        },
-    )
-    pid = gen.json()["packet_id"]
-    client.post(f"/api/packets/{pid}/publish", json={})
-    r = client.get(f"/vault/intelligence/packets/{pid}/note")
-    assert r.status_code == 200
-    assert "Executive Summary" in r.text or "executive" in r.text.lower()
-
-
-def test_vault_note_route_missing_file_graceful(sample_config_path):
+def test_vault_note_markdown_renders_after_sync(sample_config_path):
     config = load_config(sample_config_path)
+    pid = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W24",
+        title="vault route",
+        operator_notes="",
+    )
+    publish_packet_and_sync_obsidian(config, pid)
+    record = load_packet(config.runtime.state_root, pid)
+    assert record is not None
+    paths = resolve_paths_for_packet(record, config)
+    ok, html = read_vault_markdown_html(config, Path(paths["packet"]))
+    assert ok is True
+    assert "executive" in html.lower()
+
     app = create_app(str(sample_config_path))
     client = TestClient(app)
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W25",
-            "title": "missing",
-            "operator_notes": "",
-        },
+    assert client.get(f"/vault/intelligence/packets/{pid}/note").status_code == 404
+
+
+def test_vault_note_missing_file_graceful_via_reader(sample_config_path):
+    config = load_config(sample_config_path)
+    pid = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W25",
+        title="missing",
+        operator_notes="",
     )
-    pid = gen.json()["packet_id"]
-    client.post(f"/api/packets/{pid}/publish", json={})
-    record = __import__(
-        "controltower.services.intelligence_packets",
-        fromlist=["load_packet"],
-    ).load_packet(config.runtime.state_root, pid)
-    paths = __import__(
-        "controltower.services.intelligence_vault_bridge",
-        fromlist=["resolve_paths_for_packet"],
-    ).resolve_paths_for_packet(record, config)
+    publish_packet_and_sync_obsidian(config, pid)
+    record = load_packet(config.runtime.state_root, pid)
+    assert record is not None
+    paths = resolve_paths_for_packet(record, config)
     Path(paths["packet"]).unlink()
-    r = client.get(f"/vault/intelligence/packets/{pid}/note")
-    assert r.status_code == 200
-    assert "Artifact not found" in r.text
+    ok, _html = read_vault_markdown_html(config, Path(paths["packet"]))
+    assert ok is False
+
+    app = create_app(str(sample_config_path))
+    client = TestClient(app)
+    assert client.get(f"/vault/intelligence/packets/{pid}/note").status_code == 404
 
 
 def test_resolve_project_index_path(sample_config_path):

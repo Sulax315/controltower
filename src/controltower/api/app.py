@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 import re
@@ -11,7 +12,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from pydantic import ValidationError
 
-from fastapi import Body, FastAPI, Form, HTTPException, Request
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -33,6 +34,22 @@ from controltower.services.intelligence_vault_bridge import (
 )
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
+from controltower.schedule_intake.publish_assembly import build_publish_packet
+from controltower.schedule_intake.publish_assembly import build_publish_visualization
+from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
+from controltower.runs.execution import execute_run
+from controltower.runs.publish_authority import (
+    assess_run_publishability,
+    get_latest_publishable_run,
+)
+from controltower.runs.registry import get_run, list_runs
+from controltower.runs.validation import (
+    VALIDATION_CATEGORIES,
+    VALIDATION_MD_FILENAME,
+    load_validation_note,
+    save_validation_note,
+    validation_artifact_paths,
+)
 from controltower.services.controltower import ControlTowerService
 from controltower.services.intelligence_packets import (
     GeneratePacketRequest,
@@ -621,6 +638,8 @@ REQUIRED_UI_TEMPLATES = (
     "layout.html",
     "publish.html",
     "publish_present.html",
+    "publish_operator.html",
+    "runs_home.html",
     "projects.html",
     "project_compare.html",
     "project_detail.html",
@@ -640,6 +659,15 @@ AUTH_CSRF_SESSION_KEY = "controltower_csrf_token"
 DEFAULT_DEV_SESSION_SECRET = "controltower-dev-session"
 PUBLIC_PATH_PREFIXES = ("/login", "/logout", "/reviews/login", "/reviews/logout", "/static")
 PUBLIC_EXACT_PATHS = {"/favicon.ico", "/healthz", "/api/orchestrator/status"}
+VALIDATION_CATEGORY_LABELS: dict[str, str] = {
+    "entry_upload_flow": "Entry / Upload",
+    "command_brief_clarity": "Command Brief Clarity",
+    "evidence_precision": "Evidence Trust",
+    "graph_comprehension": "Graph Usability",
+    "interaction_flow": "Interaction Flow",
+    "export_usefulness": "Export Usefulness",
+    "stakeholder_readability": "Stakeholder Clarity",
+}
 
 
 class AppAuthGuardMiddleware(BaseHTTPMiddleware):
@@ -686,6 +714,15 @@ def create_app_from_config(config) -> FastAPI:
     templates.env.filters["urlquote"] = lambda value: quote(str(value or ""), safe="")
     app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
+    @app.middleware("http")
+    async def primary_surface_only(request: Request, call_next):
+        path = request.url.path or "/"
+        if _is_allowed_primary_surface_path(path):
+            return await call_next(request)
+        if _is_allowed_infra_path(path):
+            return await call_next(request)
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
     def _template_payload(request: Request, **context: object) -> dict[str, object]:
         payload = {
             "config": config,
@@ -729,7 +766,7 @@ def create_app_from_config(config) -> FastAPI:
             _template_payload(
                 request,
                 page_title="Sign In",
-                page_kicker="Public Control Tower access now requires application-layer authentication.",
+                page_kicker="Operator authentication gate for browser entry and publish surfaces.",
                 page_mode="auth",
                 next_path=_safe_next_path(next_path),
                 auth_error=auth_error,
@@ -778,9 +815,82 @@ def create_app_from_config(config) -> FastAPI:
         _ensure_auth_csrf_token(request, rotate=True)
         return RedirectResponse(url=_with_auth_action(_safe_next_path(next_path, default="/login"), "logged_out"), status_code=303)
 
+    def _publishable_recent_runs(limit: int = 10) -> list[dict[str, object]]:
+        publishable: list[dict[str, object]] = []
+        for run in list_runs(config.runtime.state_root):
+            ok, _ = assess_run_publishability(config.runtime.state_root, run)
+            if ok:
+                publishable.append(run)
+            if len(publishable) >= limit:
+                break
+        return publishable
+
+    def _render_runs_home(request: Request, *, status_code: int = 200, upload_error: str | None = None):
+        recent_runs = _publishable_recent_runs(limit=10)
+        latest_run = recent_runs[0] if recent_runs else None
+        response = templates.TemplateResponse(
+            request,
+            "runs_home.html",
+            _template_payload(
+                request,
+                latest_run=latest_run,
+                recent_runs=recent_runs,
+                upload_error=upload_error,
+                page_title="Control Tower Browser Entry",
+                page_kicker="Deterministic run launch and operator surface access",
+                page_mode="runs-home",
+            ),
+        )
+        response.status_code = status_code
+        return response
+
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
-        return RedirectResponse(url=str(request.url.replace(path="/publish")), status_code=307)
+        return _render_runs_home(request)
+
+    @app.post("/entry/upload")
+    async def entry_upload(request: Request, csv_file: UploadFile | None = File(None), csrf_token: str = Form("")):
+        _verify_auth_csrf(request, csrf_token)
+        wants_json = _wants_json_response(request)
+        if csv_file is None:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload is required."})
+            return _render_runs_home(request, status_code=400, upload_error="A CSV upload is required.")
+        raw_name = (csv_file.filename or "").strip()
+        filename = Path(raw_name).name.strip()
+        if not filename:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file filename is required."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV filename is required.")
+        if not filename.lower().endswith(".csv"):
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file must be a .csv upload."})
+            return _render_runs_home(request, status_code=400, upload_error="Only .csv uploads are supported.")
+        payload = await csv_file.read()
+        if len(payload) == 0:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload cannot be empty."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV upload cannot be empty.")
+        uploads_root = config.runtime.state_root / "runs" / "_uploads"
+        uploads_root.mkdir(parents=True, exist_ok=True)
+        upload_path = uploads_root / f"{secrets.token_hex(8)}_{filename}"
+        upload_path.write_bytes(payload)
+        try:
+            run_id = execute_run(upload_path, state_root=config.runtime.state_root)
+        except Exception as exc:
+            if wants_json:
+                return JSONResponse(status_code=500, content={"detail": f"Deterministic execution failed: {exc}"})
+            return _render_runs_home(
+                request,
+                status_code=500,
+                upload_error=f"Deterministic execution failed: {exc}",
+            )
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=500, detail="Run metadata not found after execution.")
+        if wants_json:
+            return {"run_id": run_id, "status": run["status"]}
+        return RedirectResponse(url=f"/publish/operator/{run_id}", status_code=303)
 
     @app.get("/control", response_class=HTMLResponse)
     def portfolio_overview(request: Request):
@@ -1201,8 +1311,55 @@ def create_app_from_config(config) -> FastAPI:
             ),
         )
 
+    @app.post("/runs")
+    async def runs_execute(request: Request, csv_file: UploadFile | None = File(None)):
+        wants_json = _wants_json_response(request)
+        if csv_file is None:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload is required."})
+            return _render_runs_home(request, status_code=400, upload_error="A CSV upload is required.")
+        raw_name = (csv_file.filename or "").strip()
+        filename = Path(raw_name).name.strip()
+        if not filename:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file filename is required."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV filename is required.")
+        if not filename.lower().endswith(".csv"):
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file must be a .csv upload."})
+            return _render_runs_home(request, status_code=400, upload_error="Only .csv uploads are supported.")
+        payload = await csv_file.read()
+        if len(payload) == 0:
+            if wants_json:
+                return JSONResponse(status_code=400, content={"detail": "csv_file upload cannot be empty."})
+            return _render_runs_home(request, status_code=400, upload_error="CSV upload cannot be empty.")
+        uploads_root = config.runtime.state_root / "runs" / "_uploads"
+        uploads_root.mkdir(parents=True, exist_ok=True)
+        upload_path = uploads_root / f"{secrets.token_hex(8)}_{filename}"
+        upload_path.write_bytes(payload)
+        run_id = execute_run(upload_path, state_root=config.runtime.state_root)
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=500, detail="Run metadata not found after execution.")
+        if wants_json:
+            return {"run_id": run_id, "status": run["status"]}
+        return RedirectResponse(url=f"/runs/{run_id}", status_code=303)
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail(request: Request, run_id: str):
+        run_record = get_run(config.runtime.state_root, run_id)
+        if run_record is not None:
+            return templates.TemplateResponse(
+                request,
+                "run_detail.html",
+                _template_payload(
+                    request,
+                    run_record=run_record,
+                    page_title=f"Run {run_record['run_id']}",
+                    page_kicker="Run registry detail and deterministic artifact pointers",
+                    page_mode="run-detail",
+                ),
+            )
         record = service.get_run(run_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Run not found")
@@ -1366,30 +1523,13 @@ def create_app_from_config(config) -> FastAPI:
         orch_notice: str | None = None,
         orch_err: str | None = None,
     ):
-        try:
-            publish = service.build_publish_view(run_id=run, artifact_id=artifact, project_code=project)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Run not found")
-        orch_panel = build_orchestrator_publish_panel(
-            config,
-            workflow_id=orch_wf,
-            action_notice=orch_notice,
-            action_error=orch_err,
-        )
-        return templates.TemplateResponse(
-            request,
-            "publish.html",
-            _template_payload(
-                request,
-                publish=publish,
-                orch_panel=orch_panel,
-                review_auth=_review_auth_context(orchestration, request),
-                auto_print=bool(print),
-                page_title="Publish",
-                page_kicker="Meeting-ready command brief and deliverable workspace",
-                page_mode="publish",
-            ),
-        )
+        latest_run = get_latest_publishable_run(config.runtime.state_root)
+        if latest_run is None:
+            return _render_publish_operator(request, bundle=None, auto_print=bool(print))
+        run_id = str(latest_run.get("run_id") or "").strip()
+        if not run_id:
+            return _render_publish_operator(request, bundle=None, auto_print=bool(print))
+        return RedirectResponse(url=f"/publish/operator/{run_id}", status_code=303)
 
     def _require_orchestrator_substrate_enabled() -> None:
         if not config.orchestrator_substrate.enabled:
@@ -1611,6 +1751,134 @@ def create_app_from_config(config) -> FastAPI:
                 page_title="Publish Presentation",
                 page_kicker="Meeting-ready command brief presentation mode",
                 page_mode="publish-present",
+            ),
+        )
+
+    @app.get("/publish/operator", response_class=HTMLResponse)
+    def publish_operator_view(request: Request, bundle: str | None = None, print: int = 0):
+        return _render_publish_operator(request, bundle=bundle, auto_print=bool(print), run_id=None)
+
+    @app.get("/publish/operator/{run_id}", response_class=HTMLResponse)
+    def publish_operator_run_view(request: Request, run_id: str, print: int = 0):
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        ok, reason = assess_run_publishability(config.runtime.state_root, run)
+        if not ok:
+            raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
+        bundle_path = str(run.get("bundle_path") or "").strip()
+        # Phase 21 decision: keep PDF export transport-thin by reusing the existing
+        # deterministic operator surface and browser print-to-PDF flow. We intentionally
+        # avoid server-side HTML->PDF infrastructure or duplicate template stacks here.
+        return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print), run_id=run_id)
+
+    @app.post("/publish/operator/{run_id}/validation")
+    async def publish_operator_validation_submit(
+        request: Request,
+        run_id: str,
+        reviewer: str = Form(""),
+        schedule_source: str = Form(""),
+        meeting_context: str = Form(""),
+        open_friction: str = Form(""),
+        high_value_hardening: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _verify_auth_csrf(request, csrf_token)
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        ok, reason = assess_run_publishability(config.runtime.state_root, run)
+        if not ok:
+            raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
+        form = await request.form()
+        category_scores: dict[str, int] = {}
+        category_notes: dict[str, str] = {}
+        for category in VALIDATION_CATEGORIES:
+            raw_score = str(form.get(f"score_{category}") or "3").strip()
+            try:
+                score = int(raw_score)
+            except Exception:
+                score = 3
+            category_scores[category] = max(1, min(5, score))
+            category_notes[category] = str(form.get(f"note_{category}") or "")
+        save_validation_note(
+            config.runtime.state_root,
+            run_id=run_id,
+            reviewer=reviewer,
+            schedule_source=schedule_source,
+            meeting_context=meeting_context,
+            category_scores=category_scores,
+            category_notes=category_notes,
+            open_friction=open_friction,
+            high_value_hardening=high_value_hardening,
+        )
+        return RedirectResponse(url=f"/publish/operator/{run_id}?validation_saved=1", status_code=303)
+
+    @app.get("/publish/operator/{run_id}/validation.md")
+    def publish_operator_validation_download(run_id: str):
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        ok, reason = assess_run_publishability(config.runtime.state_root, run)
+        if not ok:
+            raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
+        _, md_path = validation_artifact_paths(config.runtime.state_root, run_id)
+        if not md_path.exists() or not md_path.is_file():
+            raise HTTPException(status_code=404, detail="Validation note not found for this run.")
+        return FileResponse(md_path, media_type="text/markdown; charset=utf-8", filename=VALIDATION_MD_FILENAME)
+
+    def _render_publish_operator(
+        request: Request,
+        *,
+        bundle: str | None,
+        auto_print: bool = False,
+        run_id: str | None = None,
+    ):
+        packet = None
+        command_brief = None
+        load_error = None
+        validation_note = load_validation_note(config.runtime.state_root, run_id) if run_id else None
+        if bundle:
+            try:
+                validated_bundle = load_publish_bundle(bundle)
+                bundle_path = Path(bundle).expanduser().resolve()
+                logic_graph = _load_optional_json_dict(bundle_path.parent / "logic_graph.json")
+                driver_analysis = _load_optional_json_dict(bundle_path.parent / "driver_analysis.json")
+                visualization = build_publish_visualization(
+                    validated_bundle,
+                    logic_graph=logic_graph,
+                    driver_analysis=driver_analysis,
+                )
+                packet = build_publish_packet(validated_bundle, visualization=visualization)
+                command_brief = {
+                    "finish": validated_bundle.command_brief.finish,
+                    "driver": validated_bundle.command_brief.driver,
+                    "risks": validated_bundle.command_brief.risks,
+                    "need": validated_bundle.command_brief.need,
+                    "doing": validated_bundle.command_brief.doing,
+                }
+            except BundleValidationError as exc:
+                load_error = str(exc)
+            except Exception:
+                load_error = "bundle could not be processed."
+        return templates.TemplateResponse(
+            request,
+            "publish_operator.html",
+            _template_payload(
+                request,
+                publish_packet=packet.to_jsonable_dict() if packet is not None else None,
+                publish_command_brief=command_brief,
+                publish_bundle_path=bundle,
+                publish_load_error=load_error,
+                auto_print=auto_print,
+                publish_run_id=run_id,
+                publish_validation_note=validation_note,
+                publish_validation_categories=VALIDATION_CATEGORIES,
+                publish_validation_category_labels=VALIDATION_CATEGORY_LABELS,
+                validation_saved=request.query_params.get("validation_saved"),
+                page_title="Publish Operator",
+                page_kicker="Deterministic PublishPacket operator surface",
+                page_mode="publish publish-operator",
             ),
         )
 
@@ -1977,6 +2245,38 @@ def _with_review_action(path: str, action: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["action"] = action
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _wants_json_response(request: Request) -> bool:
+    accepts = (request.headers.get("accept") or "").lower()
+    return "application/json" in accepts and "text/html" not in accepts
+
+
+def _load_optional_json_dict(path: Path) -> dict[str, Any] | None:
+    try:
+        if not path.exists() or not path.is_file():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+        return None
+    except Exception:
+        return None
+
+
+def _is_allowed_primary_surface_path(path: str) -> bool:
+    if path in {"/", "/publish", "/entry/upload"}:
+        return True
+    if path.startswith("/publish/operator/"):
+        suffix = path.removeprefix("/publish/operator/").strip("/")
+        return bool(suffix)
+    return False
+
+
+def _is_allowed_infra_path(path: str) -> bool:
+    if path in {"/healthz", "/favicon.ico", "/login", "/logout"}:
+        return True
+    return path.startswith("/static/")
 
 
 app = create_app()

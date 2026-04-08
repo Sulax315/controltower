@@ -4,30 +4,27 @@ import json
 from pathlib import Path
 
 import yaml
-from fastapi.testclient import TestClient
 
-from controltower.api.app import create_app, create_app_from_config
 from controltower.config import load_config
 from controltower.obsidian.intelligence_vault import _merge_action_register_longitudinal, _rebuild_portfolio_index
 from controltower.services.intelligence_packets import load_packet
+from tests.packet_service_helpers import (
+    generate_and_write_packet,
+    publish_packet_and_sync_obsidian,
+    sync_obsidian_for_existing_packet,
+)
 
 
 def test_generate_does_not_export_obsidian_vault(sample_config_path):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "Weekly schedule intelligence — vault test",
-            "operator_notes": "",
-        },
+    generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="Weekly schedule intelligence — vault test",
+        operator_notes="",
     )
-    assert gen.status_code == 200, gen.text
     vault = Path(config.obsidian.vault_root)
     projects = vault / "Projects"
     assert not projects.exists() or not any(projects.rglob("*.md"))
@@ -36,24 +33,15 @@ def test_generate_does_not_export_obsidian_vault(sample_config_path):
 def test_publish_writes_skipped_evidence_when_intelligence_vault_disabled(sample_config_path):
     config = load_config(sample_config_path)
     config.obsidian.intelligence_vault_enabled = False
-    app = create_app_from_config(config)
-    client = TestClient(app)
-
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W15",
-            "title": "Weekly schedule intelligence — vault disabled",
-            "operator_notes": "",
-        },
+    packet_id = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W15",
+        title="Weekly schedule intelligence — vault disabled",
+        operator_notes="",
     )
-    assert gen.status_code == 200, gen.text
-    packet_id = gen.json()["packet_id"]
-
-    pub = client.post(f"/api/packets/{packet_id}/publish", json={})
-    assert pub.status_code == 200, pub.text
+    publish_packet_and_sync_obsidian(config, packet_id)
 
     evidence = Path(config.runtime.state_root) / "obsidian_exports" / f"{packet_id}.json"
     assert evidence.is_file()
@@ -68,28 +56,20 @@ def test_publish_writes_skipped_evidence_when_intelligence_vault_disabled(sample
 
 def test_publish_exports_obsidian_vault_with_slug_frontmatter_links_and_evidence(sample_config_path):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "Weekly schedule intelligence — vault test",
-            "operator_notes": "",
-        },
+    packet_id = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="Weekly schedule intelligence — vault test",
+        operator_notes="",
     )
-    assert gen.status_code == 200, gen.text
-    packet_id = gen.json()["packet_id"]
 
     vault = Path(config.obsidian.vault_root)
     project_root = vault / "Projects" / "aurora-hills"
     assert not project_root.is_dir()
 
-    pub = client.post(f"/api/packets/{packet_id}/publish", json={})
-    assert pub.status_code == 200
+    publish_packet_and_sync_obsidian(config, packet_id)
     assert project_root.is_dir()
     assert (project_root / "00 Project Index.md").is_file()
     assert (project_root / "02 Risks" / "Active Risks.md").is_file()
@@ -152,49 +132,31 @@ def test_publish_exports_obsidian_vault_with_slug_frontmatter_links_and_evidence
 
 def test_same_project_same_calendar_date_two_distinct_packet_ids_both_notes_exist(sample_config_path, monkeypatch):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-
     fixed_time = "2026-04-04T10:00:00+00:00"
-    ids_cycle = iter(
-        [
-            "pkt_" + "a" * 32,
-            "pkt_" + "b" * 32,
-        ]
-    )
-
+    ids_cycle = iter(["pkt_" + "a" * 32, "pkt_" + "b" * 32])
     monkeypatch.setattr("controltower.services.intelligence_packets.new_packet_id", lambda: next(ids_cycle))
     monkeypatch.setattr("controltower.services.intelligence_packets.utc_now_iso", lambda: fixed_time)
 
-    gen1 = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "Packet one",
-            "operator_notes": "",
-        },
+    id1 = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="Packet one",
+        operator_notes="",
     )
-    assert gen1.status_code == 200
-    id1 = gen1.json()["packet_id"]
-
-    gen2 = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W15",
-            "title": "Packet two",
-            "operator_notes": "",
-        },
+    id2 = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W15",
+        title="Packet two",
+        operator_notes="",
     )
-    assert gen2.status_code == 200
-    id2 = gen2.json()["packet_id"]
     assert id1 != id2
 
-    assert client.post(f"/api/packets/{id1}/publish", json={}).status_code == 200
-    assert client.post(f"/api/packets/{id2}/publish", json={}).status_code == 200
+    publish_packet_and_sync_obsidian(config, id1)
+    publish_packet_and_sync_obsidian(config, id2)
 
     intel_dir = Path(config.obsidian.vault_root) / "Projects" / "aurora-hills" / "01 Intelligence"
     names = {p.name for p in intel_dir.glob("*.md")}
@@ -204,25 +166,18 @@ def test_same_project_same_calendar_date_two_distinct_packet_ids_both_notes_exis
 
 def test_risk_register_longitudinal_dedupes_republish(sample_config_path, monkeypatch):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-
     monkeypatch.setattr("controltower.services.intelligence_packets.new_packet_id", lambda: "pkt_" + "c" * 32)
     monkeypatch.setattr("controltower.services.intelligence_packets.utc_now_iso", lambda: "2026-05-01T12:00:00+00:00")
 
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "Risk dedupe",
-            "operator_notes": "",
-        },
+    pid = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="Risk dedupe",
+        operator_notes="",
     )
-    assert gen.status_code == 200
-    pid = gen.json()["packet_id"]
-    assert client.post(f"/api/packets/{pid}/publish", json={}).status_code == 200
+    publish_packet_and_sync_obsidian(config, pid)
     risks_path = Path(config.obsidian.vault_root) / "Projects" / "aurora-hills" / "02 Risks" / "Active Risks.md"
     first = risks_path.read_text(encoding="utf-8")
     assert "First Seen:" in first
@@ -236,7 +191,7 @@ def test_risk_register_longitudinal_dedupes_republish(sample_config_path, monkey
         )
 
     before = _hist_line_count(first, pid)
-    assert client.post(f"/api/packets/{pid}/publish", json={}).status_code == 200
+    sync_obsidian_for_existing_packet(config, pid)
     second = risks_path.read_text(encoding="utf-8")
     assert _hist_line_count(second, pid) == before
 
@@ -280,25 +235,18 @@ def test_action_register_longitudinal_merge_stable_first_seen_and_history_dedupe
 
 def test_portfolio_index_lists_multiple_projects(sample_config_path, monkeypatch):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-
     monkeypatch.setattr("controltower.services.intelligence_packets.new_packet_id", lambda: "pkt_" + "e" * 32)
     monkeypatch.setattr("controltower.services.intelligence_packets.utc_now_iso", lambda: "2026-06-01T12:00:00+00:00")
 
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "Multi portfolio",
-            "operator_notes": "",
-        },
+    packet_id = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="Multi portfolio",
+        operator_notes="",
     )
-    assert gen.status_code == 200
-    packet_id = gen.json()["packet_id"]
-    assert client.post(f"/api/packets/{packet_id}/publish", json={}).status_code == 200
+    publish_packet_and_sync_obsidian(config, packet_id)
 
     vault = Path(config.obsidian.vault_root)
     side = vault / "Projects" / "side-yard"
@@ -336,20 +284,15 @@ def test_portfolio_index_lists_multiple_projects(sample_config_path, monkeypatch
 
 def test_load_packet_after_publish_matches_obsidian_stem(sample_config_path):
     config = load_config(sample_config_path)
-    app = create_app(str(sample_config_path))
-    client = TestClient(app)
-    gen = client.post(
-        "/api/packets/generate",
-        json={
-            "project_code": "AURORA_HILLS",
-            "packet_type": "weekly_schedule_intelligence",
-            "reporting_period": "2026-W14",
-            "title": "stem check",
-            "operator_notes": "",
-        },
+    pid = generate_and_write_packet(
+        config,
+        project_code="AURORA_HILLS",
+        packet_type="weekly_schedule_intelligence",
+        reporting_period="2026-W14",
+        title="stem check",
+        operator_notes="",
     )
-    pid = gen.json()["packet_id"]
-    client.post(f"/api/packets/{pid}/publish", json={})
+    publish_packet_and_sync_obsidian(config, pid)
     rec = load_packet(config.runtime.state_root, pid)
     assert rec is not None
     created = rec.created_at[:10]

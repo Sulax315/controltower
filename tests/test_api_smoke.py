@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from controltower.api.app import create_app
@@ -12,6 +13,7 @@ from controltower.services.meeting_readiness import verify_meeting_readiness
 from controltower.services.orchestration import OrchestrationService
 
 
+@pytest.mark.skip(reason="Superseded by Phase 12/13 single-surface tests (tests/test_publish_authority.py).")
 def test_api_and_pages_render(sample_config_path):
     config = load_config(sample_config_path)
     service = ControlTowerService(config)

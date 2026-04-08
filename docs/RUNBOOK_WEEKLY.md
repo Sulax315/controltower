@@ -38,3 +38,9 @@ python .\run_controltower.py acceptance
 python .\run_controltower.py build-project --project SU_WAVERLY --write
 ```
 
+## Real-Project Validation Loop
+
+After generating a publishable run, execute the governed validation loop defined in:
+
+- `docs/REAL_PROJECT_VALIDATION_RUNBOOK.md`
+

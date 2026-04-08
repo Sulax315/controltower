@@ -1,5 +1,31 @@
 {% extends "layout.html" %}
 {% block content %}
+{% if run_record %}
+<section class="card" id="run-detail-summary">
+  <h2>Run Summary</h2>
+  <ul class="flat-list">
+    <li>Run ID: {{ run_record.run_id }}</li>
+    <li>Created At: {{ run_record.created_at }}</li>
+    <li>Status: {{ run_record.status }}</li>
+    <li>Input File: {{ run_record.input_filename }}</li>
+    <li>Input Path: {{ run_record.input_path }}</li>
+    <li>Artifact Dir: {{ run_record.artifact_dir }}</li>
+    <li>Bundle Path: {{ run_record.bundle_path }}</li>
+    <li>Manifest Path: {{ run_record.manifest_path }}</li>
+    <li>Consistency State: {{ run_record.consistency_state or "unknown" }}</li>
+    <li>Bundle Exists: {{ run_record.bundle_exists }}</li>
+    <li>Manifest Exists: {{ run_record.manifest_exists }}</li>
+  </ul>
+  {% if run_record.status == "failed" and run_record.error_message %}
+  <div class="utility-note" id="run-detail-error">Error: {{ run_record.error_message }}</div>
+  {% endif %}
+  <p>
+    <a class="button" href="/publish/operator/{{ run_record.run_id }}">Open Operator View</a>
+    <a class="button secondary" href="/runs/{{ run_record.run_id }}/compare">Compare to Prior Run</a>
+    <a class="button secondary" href="/">Back to Run Home</a>
+  </p>
+</section>
+{% else %}
 <section class="tower-shell">
   <section class="grid two">
     <article class="card">
@@ -94,4 +120,5 @@
     </table>
   </section>
 </section>
+{% endif %}
 {% endblock %}
