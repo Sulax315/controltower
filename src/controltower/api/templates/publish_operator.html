@@ -26,6 +26,9 @@
 
     {% set p = publish_packet or {} %}
     {% set brief = publish_command_brief or {} %}
+    {% set viz = p.visualization if p and p.visualization else None %}
+    {% set vnote = publish_validation_note or {} %}
+    {% set vcats = publish_validation_categories or [] %}
 
     <div class="ct-print-note">Stakeholder handout mode: deterministic output from existing publish packet artifacts.</div>
 
@@ -120,7 +123,11 @@
           <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.driver_evidence %}
               {% for pair in p.evidence.driver_evidence %}
-              <div class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}">
+              <div
+                class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}"
+                data-evidence-kind="driver"
+                data-task-ids="{% if viz and viz.evidence_links and viz.evidence_links.driver_rows and viz.evidence_links.driver_rows|length > loop.index0 %}{{ viz.evidence_links.driver_rows[loop.index0]|join(',') }}{% elif viz and viz.evidence_links %}{{ viz.evidence_links.driver_evidence_task_ids|join(',') }}{% endif %}"
+              >
                 <strong>Signal {{ loop.index }}</strong>
                 <span>{{ pair[1] }}</span>
               </div>
@@ -153,7 +160,11 @@
           <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.risk_evidence %}
               {% for pair in p.evidence.risk_evidence %}
-              <div class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}">
+              <div
+                class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}"
+                data-evidence-kind="risk"
+                data-task-ids="{% if viz and viz.evidence_links and viz.evidence_links.risk_rows and viz.evidence_links.risk_rows|length > loop.index0 %}{{ viz.evidence_links.risk_rows[loop.index0]|join(',') }}{% elif viz and viz.evidence_links %}{{ viz.evidence_links.risk_evidence_task_ids|join(',') }}{% endif %}"
+              >
                 <strong>{{ pair[0] }}</strong>
                 <span>{{ pair[1] }}</span>
               </div>
@@ -165,6 +176,222 @@
         </details>
       </div>
     </section>
+
+    {% if viz %}
+    <section class="ct-section" id="publish-operator-graph">
+      <div class="ct-section-header"><h3>SCHEDULE VISUALIZATION LAYER</h3></div>
+      <div class="ct-graph-toolbar">
+        <button type="button" class="ct-focus-btn" data-focus="driver_path">Isolate Driver Path</button>
+        <button type="button" class="ct-focus-btn" data-focus="top_risk">Isolate Top Risk</button>
+        <button type="button" class="ct-focus-btn" data-focus="selected_trace">Trace Selected to Finish</button>
+      </div>
+      <div class="ct-graph-shell">
+        <svg id="publish-driver-graph-svg" role="img" aria-label="Deterministic driver path graph"></svg>
+        <aside class="ct-graph-legend">
+          <div class="ct-inline-structure-title">Deterministic Key</div>
+          <ul class="ct-graph-key-list">
+            <li><span class="ct-key-swatch is-driver"></span>Driver-path node/link</li>
+            <li><span class="ct-key-swatch is-risk"></span>Risk-flagged node/link</li>
+            <li><span class="ct-key-swatch is-finish"></span>Authoritative finish target</li>
+            <li><span class="ct-key-arrow">-></span>Predecessor to successor direction</li>
+          </ul>
+          <div class="ct-inline-structure-title">Node Context</div>
+          <ul id="publish-driver-node-list" class="ct-graph-node-list"></ul>
+          <div class="ct-trace-readout">
+            <div class="ct-inline-structure-title">Trace To Finish</div>
+            <div id="publish-driver-trace">Select a node to inspect path-to-finish.</div>
+          </div>
+        </aside>
+      </div>
+      <script id="publish-graph-payload" type="application/json">{{ viz | tojson }}</script>
+    </section>
+    {% endif %}
+
+    {% if publish_run_id %}
+    <section class="ct-section" id="publish-operator-validation">
+      <div class="ct-section-header"><h3>REAL-PROJECT VALIDATION</h3></div>
+      {% if validation_saved %}
+      <div class="ct-validation-banner">Validation note saved for run {{ publish_run_id }}.</div>
+      {% endif %}
+      <div class="ct-validation-kicker">
+        Structured friction capture for deterministic hardening. Scope is limited to this operator surface and this run.
+      </div>
+      <form method="post" action="/publish/operator/{{ publish_run_id }}/validation" class="ct-validation-form">
+        <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
+        <div class="ct-validation-meta">
+          <label>Reviewer<input type="text" name="reviewer" value="{{ vnote.reviewer if vnote else '' }}" maxlength="120"></label>
+          <label>Schedule Source<input type="text" name="schedule_source" value="{{ vnote.schedule_source if vnote else '' }}" maxlength="240"></label>
+          <label>Meeting Context<input type="text" name="meeting_context" value="{{ vnote.meeting_context if vnote else '' }}" maxlength="240"></label>
+        </div>
+        <div class="ct-validation-grid">
+          {% for category in vcats %}
+          <div class="ct-validation-row">
+            <div class="ct-validation-row-head">{{ category.replace('_', ' ')|title }}</div>
+            <label>Score
+              <select name="score_{{ category }}">
+                {% set current_score = (vnote.category_scores[category] if vnote and vnote.category_scores and category in vnote.category_scores else 3) %}
+                {% for n in [1,2,3,4,5] %}
+                <option value="{{ n }}" {% if current_score == n %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Observed Friction
+              <input
+                type="text"
+                name="note_{{ category }}"
+                value="{{ vnote.category_notes[category] if vnote and vnote.category_notes and category in vnote.category_notes else '' }}"
+                maxlength="600"
+              >
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+        <label>Open Friction
+          <textarea name="open_friction" rows="3" maxlength="2000">{{ vnote.open_friction if vnote else '' }}</textarea>
+        </label>
+        <label>High-Value Hardening Candidate
+          <textarea name="high_value_hardening" rows="3" maxlength="2000">{{ vnote.high_value_hardening if vnote else '' }}</textarea>
+        </label>
+        <div class="ct-validation-actions">
+          <button type="submit" class="ct-focus-btn">Save Validation Note</button>
+          {% if vnote.saved_at %}
+          <div class="ct-validation-stamp">Last saved: {{ vnote.saved_at }}</div>
+          {% endif %}
+        </div>
+      </form>
+    </section>
+    {% endif %}
   </div>
 </section>
+<script>
+  (function () {
+    const payloadEl = document.getElementById("publish-graph-payload");
+    const svg = document.getElementById("publish-driver-graph-svg");
+    const nodeList = document.getElementById("publish-driver-node-list");
+    const traceEl = document.getElementById("publish-driver-trace");
+    if (!payloadEl || !svg || !nodeList || !traceEl) return;
+    let payload;
+    try { payload = JSON.parse(payloadEl.textContent || "{}"); } catch (_) { return; }
+    if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.links)) return;
+
+    const laneY = { upstream: 56, path: 150, downstream: 244 };
+    const rankX = (rank) => 56 + Number(rank || 0) * 180;
+    const nodeBox = { w: 140, h: 42 };
+    const byId = new Map(payload.nodes.map((n) => [n.task_id, n]));
+    const nodePos = new Map(payload.nodes.map((n) => [n.task_id, { x: rankX(n.rank), y: laneY[n.lane] || laneY.path }]));
+    const state = { selectedTaskId: null, focusMode: "driver_path" };
+
+    function inFocus(taskId) {
+      if (state.focusMode === "driver_path") return (payload.focus_sets?.driver_path || []).includes(taskId);
+      if (state.focusMode === "top_risk") return (payload.focus_sets?.top_risk || []).includes(taskId);
+      if (state.focusMode === "selected_trace") {
+        const selectedPath = payload.path_to_finish_by_task_id?.[state.selectedTaskId || ""];
+        return Array.isArray(selectedPath) && selectedPath.includes(taskId);
+      }
+      return true;
+    }
+
+    function draw() {
+      const maxRank = Math.max(...payload.nodes.map((n) => Number(n.rank || 0)), 1);
+      svg.setAttribute("viewBox", `0 0 ${140 + rankX(maxRank + 1)} 300`);
+      svg.innerHTML = '<defs><marker id="ct-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto"><polygon points="0 0, 8 3.5, 0 7" fill="#4b5a45"></polygon></marker></defs>';
+
+      for (const link of payload.links) {
+        const from = nodePos.get(link.from_task_id);
+        const to = nodePos.get(link.to_task_id);
+        if (!from || !to) continue;
+        const visible = inFocus(link.from_task_id) || inFocus(link.to_task_id);
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        path.setAttribute("x1", String(from.x + nodeBox.w));
+        path.setAttribute("y1", String(from.y + nodeBox.h / 2));
+        path.setAttribute("x2", String(to.x));
+        path.setAttribute("y2", String(to.y + nodeBox.h / 2));
+        path.setAttribute("class", `ct-graph-link ${link.is_driver_path ? "is-driver" : ""} ${link.is_risk_flagged ? "is-risk" : ""} ${visible ? "" : "is-muted"}`);
+        path.setAttribute("marker-end", "url(#ct-arrow)");
+        svg.appendChild(path);
+      }
+
+      for (const node of payload.nodes) {
+        const p = nodePos.get(node.task_id);
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const visible = inFocus(node.task_id);
+        g.setAttribute("class", `ct-graph-node ${node.is_driver_path ? "is-driver" : ""} ${node.is_risk_flagged ? "is-risk" : ""} ${state.selectedTaskId === node.task_id ? "is-selected" : ""} ${visible ? "" : "is-muted"}`);
+        g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
+        g.addEventListener("click", () => { state.selectedTaskId = node.task_id; state.focusMode = "selected_trace"; refresh(); });
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("width", String(nodeBox.w));
+        rect.setAttribute("height", String(nodeBox.h));
+        rect.setAttribute("rx", "3");
+        rect.setAttribute("ry", "3");
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", "8");
+        label.setAttribute("y", "18");
+        label.textContent = node.task_id + (node.is_finish_target ? " (finish)" : "");
+        const role = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        role.setAttribute("x", "8");
+        role.setAttribute("y", "34");
+        role.textContent = node.lane;
+        g.appendChild(rect);
+        g.appendChild(label);
+        g.appendChild(role);
+        svg.appendChild(g);
+      }
+    }
+
+    function syncEvidence() {
+      const selected = state.selectedTaskId;
+      document.querySelectorAll("[data-evidence-kind]").forEach((el) => {
+        const ids = (el.getAttribute("data-task-ids") || "").split(",").map((s) => s.trim()).filter(Boolean);
+        const on = !!selected && ids.includes(selected);
+        el.classList.toggle("is-linked-node", on);
+      });
+    }
+
+    function drawNodeList() {
+      nodeList.innerHTML = "";
+      for (const node of payload.nodes) {
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ct-node-btn";
+        btn.textContent = `${node.task_id} · ${node.lane}${node.is_risk_flagged ? " · risk" : ""}`;
+        btn.addEventListener("click", () => { state.selectedTaskId = node.task_id; state.focusMode = "selected_trace"; refresh(); });
+        if (state.selectedTaskId === node.task_id) btn.classList.add("is-selected");
+        if (!inFocus(node.task_id)) btn.classList.add("is-muted");
+        li.appendChild(btn);
+        nodeList.appendChild(li);
+      }
+    }
+
+    function drawTrace() {
+      if (!state.selectedTaskId) {
+        traceEl.textContent = "Select a node to inspect path-to-finish.";
+        return;
+      }
+      const path = payload.path_to_finish_by_task_id?.[state.selectedTaskId];
+      if (!Array.isArray(path) || path.length === 0) {
+        traceEl.textContent = `No structural path to finish from ${state.selectedTaskId}.`;
+        return;
+      }
+      traceEl.textContent = path.join(" -> ");
+    }
+
+    function refresh() {
+      draw();
+      drawNodeList();
+      drawTrace();
+      syncEvidence();
+    }
+
+    document.querySelectorAll(".ct-focus-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.focusMode = btn.getAttribute("data-focus") || "driver_path";
+        if (state.focusMode !== "selected_trace") state.selectedTaskId = null;
+        refresh();
+      });
+    });
+    refresh();
+  })();
+</script>
 {% endblock %}

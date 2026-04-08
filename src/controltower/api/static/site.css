@@ -4825,6 +4825,275 @@ body.publish .surface {
   line-height: 1.2;
 }
 
+.ct-evidence-line.is-linked-node {
+  border-left: 2px solid #3f6f7a;
+  background: #e5eff2;
+  padding-left: 4px;
+}
+
+#publish-operator-graph {
+  border-width: 1px;
+}
+
+.ct-graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #edf2e9;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.ct-focus-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid rgba(64, 78, 59, 0.2);
+  background: #dfe8d8;
+  color: #2f3d2a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ct-graph-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.35fr);
+  gap: 0;
+  background: #f4f7f1;
+}
+
+#publish-driver-graph-svg {
+  width: 100%;
+  min-height: 300px;
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f8faf6;
+}
+
+.ct-graph-link {
+  stroke: #72846a;
+  stroke-width: 1.3;
+}
+
+.ct-graph-link.is-driver {
+  stroke: #3f5f38;
+  stroke-width: 2.1;
+}
+
+.ct-graph-link.is-risk {
+  stroke: #9a5a42;
+}
+
+.ct-graph-link.is-muted {
+  opacity: 0.2;
+}
+
+.ct-graph-node rect {
+  fill: #e7eee0;
+  stroke: #6f8265;
+  stroke-width: 1;
+}
+
+.ct-graph-node text {
+  fill: #2f3d2a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ct-graph-node.is-driver rect {
+  fill: #d9e8cc;
+  stroke: #3f5f38;
+}
+
+.ct-graph-node.is-risk rect {
+  fill: #f3e1d8;
+  stroke: #9a5a42;
+}
+
+.ct-graph-node.is-selected rect {
+  stroke: #2d6f91;
+  stroke-width: 2;
+}
+
+.ct-graph-node.is-muted {
+  opacity: 0.23;
+}
+
+.ct-graph-legend {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.ct-graph-key-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  color: #2f3d2a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ct-key-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border: 1px solid #6f8265;
+  background: #e7eee0;
+  vertical-align: middle;
+}
+
+.ct-key-swatch.is-driver {
+  border-color: #3f5f38;
+  background: #d9e8cc;
+}
+
+.ct-key-swatch.is-risk {
+  border-color: #9a5a42;
+  background: #f3e1d8;
+}
+
+.ct-key-swatch.is-finish {
+  border-color: #2d6f91;
+  background: #d9e9f0;
+}
+
+.ct-key-arrow {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  color: #4b5a45;
+  font-weight: 900;
+  text-align: center;
+}
+
+.ct-graph-node-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+
+.ct-node-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(64, 78, 59, 0.16);
+  background: #ecf1e7;
+  color: #2f3d2a;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 6px 7px;
+  cursor: pointer;
+}
+
+.ct-node-btn.is-selected {
+  border-color: #2d6f91;
+  background: #d9e9f0;
+}
+
+.ct-node-btn.is-muted {
+  opacity: 0.45;
+}
+
+.ct-trace-readout {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  padding-top: 6px;
+  color: #2f3d2a;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+#publish-operator-validation {
+  border-width: 1px;
+}
+
+.ct-validation-banner {
+  padding: 6px 10px;
+  background: #d9e9f0;
+  color: #254858;
+  font-size: 11px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ct-validation-kicker {
+  padding: 7px 10px;
+  color: #4b5a45;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #eef3ea;
+}
+
+.ct-validation-form {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  background: #f4f7f1;
+}
+
+.ct-validation-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ct-validation-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.ct-validation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1.6fr);
+  gap: 8px;
+  align-items: end;
+  padding: 6px 0;
+  border-bottom: 1px dotted rgba(64, 78, 59, 0.18);
+}
+
+.ct-validation-row-head {
+  color: #2f3d2a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ct-validation-form label {
+  display: grid;
+  gap: 3px;
+  color: #4b5a45;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ct-validation-form input,
+.ct-validation-form select,
+.ct-validation-form textarea {
+  width: 100%;
+  border: 1px solid rgba(64, 78, 59, 0.22);
+  background: #ffffff;
+  color: #2f3d2a;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.ct-validation-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ct-validation-stamp {
+  color: #5b6a55;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .ct-meta-table {
   margin-top: 0;
   border: 0;
@@ -5171,6 +5440,11 @@ body.publish .text-link:hover {
     gap: 3px;
   }
 
+  .ct-validation-meta,
+  .ct-validation-row {
+    grid-template-columns: 1fr;
+  }
+
   .ct-project-name,
   .ct-finish-date,
   .ct-status-value {
@@ -5259,6 +5533,7 @@ body.publish .text-link:hover {
   body.publish #publish-operator-surface #publish-operator-header-strip,
   body.publish #publish-operator-surface #publish-operator-command-brief,
   body.publish #publish-operator-surface #publish-operator-evidence,
+  body.publish #publish-operator-surface #publish-operator-graph,
   body.publish #publish-operator-surface .ct-evidence-group {
     break-inside: avoid-page;
     page-break-inside: avoid;
@@ -5294,6 +5569,36 @@ body.publish .text-link:hover {
   body.publish #publish-operator-evidence {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  body.publish #publish-operator-graph .ct-graph-toolbar {
+    display: none !important;
+  }
+
+  body.publish #publish-operator-graph .ct-graph-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.publish #publish-driver-graph-svg {
+    min-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid #cfd6dd;
+  }
+
+  body.publish #publish-operator-graph .ct-graph-link.is-muted,
+  body.publish #publish-operator-graph .ct-graph-node.is-muted,
+  body.publish #publish-operator-graph .ct-node-btn.is-muted {
+    opacity: 1;
+  }
+
+  body.publish #publish-operator-graph .ct-node-btn {
+    border: 0;
+    background: transparent;
+    padding: 2px 0;
+  }
+
+  body.publish #publish-operator-validation {
+    display: none;
   }
 }
 

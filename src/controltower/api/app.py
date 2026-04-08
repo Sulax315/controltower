@@ -31,6 +31,7 @@ from controltower.services.intelligence_vault_bridge import (
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
 from controltower.schedule_intake.publish_assembly import build_publish_packet
+from controltower.schedule_intake.publish_assembly import build_publish_visualization
 from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
 from controltower.runs.execution import execute_run
 from controltower.runs.publish_authority import (
@@ -38,6 +39,7 @@ from controltower.runs.publish_authority import (
     get_latest_publishable_run,
 )
 from controltower.runs.registry import get_run, list_runs
+from controltower.runs.validation import VALIDATION_CATEGORIES, load_validation_note, save_validation_note
 from controltower.services.controltower import ControlTowerService
 from controltower.services.intelligence_packets import (
     GeneratePacketRequest,
@@ -1055,7 +1057,7 @@ def create_app_from_config(config) -> FastAPI:
 
     @app.get("/publish/operator", response_class=HTMLResponse)
     def publish_operator_view(request: Request, bundle: str | None = None, print: int = 0):
-        return _render_publish_operator(request, bundle=bundle, auto_print=bool(print))
+        return _render_publish_operator(request, bundle=bundle, auto_print=bool(print), run_id=None)
 
     @app.get("/publish/operator/{run_id}", response_class=HTMLResponse)
     def publish_operator_run_view(request: Request, run_id: str, print: int = 0):
@@ -1069,16 +1071,73 @@ def create_app_from_config(config) -> FastAPI:
         # Phase 21 decision: keep PDF export transport-thin by reusing the existing
         # deterministic operator surface and browser print-to-PDF flow. We intentionally
         # avoid server-side HTML->PDF infrastructure or duplicate template stacks here.
-        return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print))
+        return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print), run_id=run_id)
 
-    def _render_publish_operator(request: Request, *, bundle: str | None, auto_print: bool = False):
+    @app.post("/publish/operator/{run_id}/validation")
+    async def publish_operator_validation_submit(
+        request: Request,
+        run_id: str,
+        reviewer: str = Form(""),
+        schedule_source: str = Form(""),
+        meeting_context: str = Form(""),
+        open_friction: str = Form(""),
+        high_value_hardening: str = Form(""),
+        csrf_token: str = Form(""),
+    ):
+        _verify_auth_csrf(request, csrf_token)
+        run = get_run(config.runtime.state_root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        ok, reason = assess_run_publishability(config.runtime.state_root, run)
+        if not ok:
+            raise HTTPException(status_code=409, detail=reason or "Run is not publishable.")
+        form = await request.form()
+        category_scores: dict[str, int] = {}
+        category_notes: dict[str, str] = {}
+        for category in VALIDATION_CATEGORIES:
+            raw_score = str(form.get(f"score_{category}") or "3").strip()
+            try:
+                score = int(raw_score)
+            except Exception:
+                score = 3
+            category_scores[category] = max(1, min(5, score))
+            category_notes[category] = str(form.get(f"note_{category}") or "")
+        save_validation_note(
+            config.runtime.state_root,
+            run_id=run_id,
+            reviewer=reviewer,
+            schedule_source=schedule_source,
+            meeting_context=meeting_context,
+            category_scores=category_scores,
+            category_notes=category_notes,
+            open_friction=open_friction,
+            high_value_hardening=high_value_hardening,
+        )
+        return RedirectResponse(url=f"/publish/operator/{run_id}?validation_saved=1", status_code=303)
+
+    def _render_publish_operator(
+        request: Request,
+        *,
+        bundle: str | None,
+        auto_print: bool = False,
+        run_id: str | None = None,
+    ):
         packet = None
         command_brief = None
         load_error = None
+        validation_note = load_validation_note(config.runtime.state_root, run_id) if run_id else None
         if bundle:
             try:
                 validated_bundle = load_publish_bundle(bundle)
-                packet = build_publish_packet(validated_bundle)
+                bundle_path = Path(bundle).expanduser().resolve()
+                logic_graph = _load_optional_json_dict(bundle_path.parent / "logic_graph.json")
+                driver_analysis = _load_optional_json_dict(bundle_path.parent / "driver_analysis.json")
+                visualization = build_publish_visualization(
+                    validated_bundle,
+                    logic_graph=logic_graph,
+                    driver_analysis=driver_analysis,
+                )
+                packet = build_publish_packet(validated_bundle, visualization=visualization)
                 command_brief = {
                     "finish": validated_bundle.command_brief.finish,
                     "driver": validated_bundle.command_brief.driver,
@@ -1100,6 +1159,10 @@ def create_app_from_config(config) -> FastAPI:
                 publish_bundle_path=bundle,
                 publish_load_error=load_error,
                 auto_print=auto_print,
+                publish_run_id=run_id,
+                publish_validation_note=validation_note,
+                publish_validation_categories=VALIDATION_CATEGORIES,
+                validation_saved=request.query_params.get("validation_saved"),
                 page_title="Publish Operator",
                 page_kicker="Deterministic PublishPacket operator surface",
                 page_mode="publish publish-operator",
@@ -1474,6 +1537,18 @@ def _with_review_action(path: str, action: str) -> str:
 def _wants_json_response(request: Request) -> bool:
     accepts = (request.headers.get("accept") or "").lower()
     return "application/json" in accepts and "text/html" not in accepts
+
+
+def _load_optional_json_dict(path: Path) -> dict[str, Any] | None:
+    try:
+        if not path.exists() or not path.is_file():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+        return None
+    except Exception:
+        return None
 
 
 def _is_allowed_primary_surface_path(path: str) -> bool:

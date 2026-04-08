@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from controltower.config import load_config
 from controltower.runs.execution import execute_run
 from controltower.runs.registry import create_run
 from controltower.schedule_intake.export_artifacts import FILENAME_BUNDLE
+from controltower.runs.validation import VALIDATION_JSON_FILENAME
 from controltower.schedule_intake.asta_csv import ASTA_EXPORT_HEADERS
 import csv
 import io
@@ -41,6 +43,8 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert 'id="publish-operator-evidence"' in text
     assert 'id="publish-operator-evidence-driver"' in text
     assert 'id="publish-operator-evidence-risk"' in text
+    assert 'id="publish-operator-graph"' in text
+    assert 'id="publish-driver-graph-svg"' in text
     assert "id=\"publish-operator-error\"" not in text
     assert inner["command_brief"]["finish"] in text
     assert inner["command_brief"]["driver"] in text
@@ -63,6 +67,13 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert 'id="publish-operator-evidence-driver" open' not in text
     assert 'id="publish-operator-evidence-risk" open' not in text
     assert "Expand to review" in text
+    assert "Isolate Driver Path" in text
+    assert "Trace Selected to Finish" in text
+    assert "SCHEDULE VISUALIZATION LAYER" in text
+    assert "Deterministic Key" in text
+    assert "Authoritative finish target" in text
+    assert "REAL-PROJECT VALIDATION" in text
+    assert "Save Validation Note" in text
     assert text.index('id="publish-operator-command-brief"') < text.index('id="publish-operator-evidence"')
 
 
@@ -80,6 +91,8 @@ def test_publish_operator_surface_print_mode_renders_stakeholder_handout(sample_
     assert "Inline Structural View" in text
     assert "Priority Action" in text
     assert "Execute Now" in text
+    assert 'id="publish-operator-graph"' in text
+    assert "Deterministic Key" in text
 
 
 def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_path, tmp_path: Path) -> None:
@@ -110,6 +123,10 @@ def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_pat
     assert "Risk Evidence" in printed.text
     assert "Inline Structural View" in normal.text
     assert "Inline Structural View" in printed.text
+    assert "SCHEDULE VISUALIZATION LAYER" in normal.text
+    assert "SCHEDULE VISUALIZATION LAYER" in printed.text
+    assert "Deterministic Key" in normal.text
+    assert "Deterministic Key" in printed.text
 
 
 def test_publish_operator_empty_when_no_publishable_run(sample_config_path) -> None:
@@ -174,3 +191,44 @@ def test_publish_operator_incomplete_bundle_run_returns_409(sample_config_path, 
     client = TestClient(create_app(str(sample_config_path)))
     res = client.get(f"/publish/operator/{run_id}")
     assert res.status_code == 409
+
+
+def test_publish_operator_validation_save_writes_run_linked_artifact(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    client = TestClient(create_app(str(sample_config_path)))
+    page = client.get(f"/publish/operator/{run_id}")
+    assert page.status_code == 200
+    match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert match is not None
+    token = match.group(1)
+    payload = {
+        "csrf_token": token,
+        "reviewer": "operator-1",
+        "schedule_source": "weekly-export",
+        "meeting_context": "weekly review",
+        "open_friction": "Need quicker confidence for graph-to-evidence transitions.",
+        "high_value_hardening": "Add deterministic label hints from normalized intake.",
+        "score_command_brief_clarity": "4",
+        "score_evidence_precision": "3",
+        "score_graph_comprehension": "4",
+        "score_interaction_flow": "3",
+        "score_export_usefulness": "4",
+        "score_stakeholder_readability": "4",
+        "note_command_brief_clarity": "Clear enough for weekly cadence.",
+        "note_evidence_precision": "Some rows need tighter node mapping.",
+        "note_graph_comprehension": "Path direction is legible.",
+        "note_interaction_flow": "Focus controls are usable.",
+        "note_export_usefulness": "Printed pack is workable.",
+        "note_stakeholder_readability": "Legend helps non-operators.",
+    }
+    post = client.post(f"/publish/operator/{run_id}/validation", data=payload, follow_redirects=False)
+    assert post.status_code == 303
+    assert post.headers["location"].startswith(f"/publish/operator/{run_id}?validation_saved=1")
+
+    artifact = config.runtime.state_root / "runs" / run_id / "artifacts" / VALIDATION_JSON_FILENAME
+    assert artifact.exists()
+    saved = json.loads(artifact.read_text(encoding="utf-8"))
+    assert saved["run_id"] == run_id
+    assert saved["reviewer"] == "operator-1"
+    assert "category_scores" in saved

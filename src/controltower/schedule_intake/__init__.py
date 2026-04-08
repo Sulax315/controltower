@@ -99,6 +99,7 @@ from .publish_assembly import (
     build_publish_kpis,
     build_publish_packet,
     build_publish_risks,
+    build_publish_visualization,
     build_publish_verdict,
 )
 from .export_artifacts import (
@@ -194,6 +195,7 @@ __all__ = [
     "build_publish_actions",
     "build_publish_evidence",
     "build_publish_packet",
+    "build_publish_visualization",
     "compute_sha256_bytes",
     "collect_schedule_risk_findings",
     "compare_schedule_csv_paths",

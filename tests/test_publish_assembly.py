@@ -8,6 +8,7 @@ from controltower.schedule_intake import (
     build_publish_evidence,
     build_publish_header,
     build_publish_packet,
+    build_publish_visualization,
     build_schedule_graph_summary,
     build_schedule_intelligence_bundle,
     build_schedule_logic_graph,
@@ -86,7 +87,30 @@ def test_full_integration_publish_packet_jsonable_stable() -> None:
     b = _bundle()
     p = build_publish_packet(b)
     jd = p.to_jsonable_dict()
-    assert tuple(jd.keys()) == ("actions", "drivers", "evidence", "header", "kpis", "risks", "verdict")
+    assert tuple(jd.keys()) == ("actions", "drivers", "evidence", "header", "kpis", "risks", "verdict", "visualization")
     assert jd["header"]["finish_line"].startswith("FINISH:")
     assert jd["verdict"]["action_token"].startswith("NEED:")
     assert isinstance(jd["kpis"]["node_count"], int)
+
+
+def test_publish_visualization_projects_driver_path_and_risk_overlay() -> None:
+    b = _bundle()
+    logic_graph = {
+        "edges": [
+            {"from_task_id": "1", "to_task_id": "2"},
+            {"from_task_id": "2", "to_task_id": "3"},
+        ]
+    }
+    driver_analysis = {
+        "authoritative_finish_target": {"task_id": "3"},
+        "driver_path": ["1", "2", "3"],
+    }
+    viz = build_publish_visualization(b, logic_graph=logic_graph, driver_analysis=driver_analysis)
+    assert viz is not None
+    assert viz["finish_task_id"] == "3"
+    assert viz["driver_path_task_ids"] == ["1", "2", "3"]
+    assert any(node["task_id"] == "3" and node["is_finish_target"] for node in viz["nodes"])
+    assert any(link["from_task_id"] == "2" and link["to_task_id"] == "3" for link in viz["links"])
+    assert "evidence_links" in viz
+    assert "driver_rows" in viz["evidence_links"]
+    assert "risk_rows" in viz["evidence_links"]
