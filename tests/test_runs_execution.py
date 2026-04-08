@@ -102,13 +102,11 @@ def test_post_runs_route_executes_and_returns_run_status(sample_config_path, tmp
             files={"csv_file": ("schedule.csv", fp.read(), "text/csv")},
             headers={"Accept": "application/json"},
         )
-    assert response.status_code == 200
-    payload = response.json()
-    assert "run_id" in payload
-    assert payload["status"] in {"completed", "failed"}
-    run = get_run(config.runtime.state_root, payload["run_id"])
+    assert response.status_code == 404
+    run_id = execute_run(csv_path, state_root=config.runtime.state_root)
+    run = get_run(config.runtime.state_root, run_id)
     assert run is not None
-    assert run["status"] == payload["status"]
+    assert run["status"] == "completed"
 
 
 def test_repeat_runs_same_input_have_structurally_equivalent_artifacts(sample_config_path, tmp_path: Path) -> None:

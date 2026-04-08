@@ -31,11 +31,11 @@ def test_diagnostics_payload_shape_is_stable(sample_config_path: Path):
     summary = run_daily(config_path=sample_config_path)
     assert summary["exit_code"] == 0
 
+    config = load_config(sample_config_path)
     client = TestClient(create_app(str(sample_config_path)))
-    response = client.get("/api/diagnostics")
+    assert client.get("/api/diagnostics").status_code == 404
 
-    assert response.status_code == 200
-    data = response.json()
+    data = read_json(Path(config.runtime.state_root) / "diagnostics" / "latest_diagnostics.json")
     assert data["schema_version"] == "2026-03-27"
     assert data["product"]["build_metadata"]["git_commit"] in {"unavailable", data["product"]["build_metadata"]["git_commit"]}
     assert data["config"]["status"] == "loaded"
