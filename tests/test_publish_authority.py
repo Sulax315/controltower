@@ -33,11 +33,13 @@ def _write_schedule_csv(tmp_path: Path) -> Path:
     return path
 
 
-def test_root_redirects_to_publish(sample_config_path) -> None:
+def test_root_renders_browser_entry_surface(sample_config_path) -> None:
     client = TestClient(create_app(str(sample_config_path)))
-    r = client.get("/", follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"].endswith("/publish")
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'id="runs-home-upload"' in r.text
+    assert 'id="runs-home-latest"' in r.text
+    assert 'id="runs-home-recent"' in r.text
 
 
 def test_publish_redirects_to_latest_publishable_operator(sample_config_path, tmp_path: Path) -> None:

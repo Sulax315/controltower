@@ -10,6 +10,7 @@ VALIDATION_JSON_FILENAME = "operator_validation.json"
 VALIDATION_MD_FILENAME = "operator_validation.md"
 VALIDATION_SCHEMA_VERSION = "operator_validation_v1"
 VALIDATION_CATEGORIES = (
+    "entry_upload_flow",
     "command_brief_clarity",
     "evidence_precision",
     "graph_comprehension",

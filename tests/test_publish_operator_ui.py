@@ -232,3 +232,9 @@ def test_publish_operator_validation_save_writes_run_linked_artifact(sample_conf
     assert saved["run_id"] == run_id
     assert saved["reviewer"] == "operator-1"
     assert "category_scores" in saved
+    assert "entry_upload_flow" in saved["category_scores"]
+
+    md_download = client.get(f"/publish/operator/{run_id}/validation.md")
+    assert md_download.status_code == 200
+    assert "text/markdown" in (md_download.headers.get("content-type") or "")
+    assert "Operator Validation" in md_download.text

@@ -20,6 +20,10 @@ Its purpose is to ingest exported schedule data from Asta Powerproject and conve
 - what risks are present in the schedule logic
 - what action is needed now
 
+The intended product access pattern is direct browser use at `https://controltower.bratek.io` through an authenticated operator workflow, not manual run identifier handling.
+
+Browser access alone is not sufficient. The browser-visible product experience must be polished, production-grade, and operator-serious; the currently visible utility-style shell is not acceptable as end-state product UI.
+
 ### What this product is not
 Control Tower is not:
 
@@ -43,6 +47,10 @@ The system must support real weekly schedule analysis and real stakeholder updat
 
 ## Core Job To Be Done
 When the user exports schedule data from Asta Powerproject, the system should deterministically analyze that export and produce a concise, accurate, meeting-ready schedule brief and supporting evidence that reduce manual analysis effort and improve consistency.
+
+Core usage flow expectation: open `https://controltower.bratek.io`, authenticate, upload CSV, launch deterministic server-side execution, automatically open resulting operator surface, and reopen latest/recent runs from the browser.
+
+Core usage quality expectation: this flow must execute inside a coherent, desktop-class browser product shell that matches the quality and seriousness of the deterministic intelligence already produced by Layers 1-2.
 
 ---
 
@@ -141,9 +149,15 @@ Responsibilities:
 
 ### Layer 3 — Operator Surface
 Responsibilities:
+- browser-based run access from authenticated entry
+- browser CSV upload and deterministic analysis launch initiation
+- operator-grade browser front door and shell for launch/reopen/review actions
+- polished presentation hierarchy for latest/recent deterministic run access
+- coherent browser experience for upload, analysis access, operator review, and export handoff
 - review output
 - inspect evidence
 - export/present intelligence
+- reopen latest/recent runs from browser entry without manual run_id lookup
 
 Layer 1 is now complete and trustworthy through deterministic engine Phases 14-18.
 
@@ -182,6 +196,10 @@ The final product should become a trusted schedule analysis companion for weekly
 
 The system should eventually support polished review and export surfaces, but only after the schedule intelligence engine is solid.
 
+End-state product access is direct authenticated browser use at `https://controltower.bratek.io`, with upload-to-execution-to-operator review flow as standard operation.
+
+End-state browser experience must read as a serious desktop-class web application for operators, not a leftover utility page, dev console, or thin internal launcher.
+
 ---
 
 ## Post-Engine Execution Phases
@@ -204,11 +222,14 @@ Completed to date:
 - Phase 23 — Decision Reinforcement (COMPLETE)
 - Phase 24 — Operator Workflow Discipline / Controlled Interaction (COMPLETE)
 - Phase 25 — Operator Readability and Density Tuning (COMPLETE)
+- Phase 26 — Schedule Visualization Layer (COMPLETE)
+- Phase 27 — Interactive Analysis Views (COMPLETE)
+- Phase 28 — Exportable Graphics / Stakeholder Packs (COMPLETE)
 
 ### Remaining Governed Roadmap
-- Phase 26 — Schedule Visualization Layer  
-  Deterministic schedule graph, driver-path, and risk-overlay visualization on the operator surface; projection-only from existing artifacts.
-- Phase 27 — Interactive Analysis Views  
-  Interactive analysis tied to deterministic artifacts and visualization, including evidence-to-graph interrogation, focus/isolation, and trace behavior.
-- Phase 28 — Exportable Graphics / Stakeholder Packs  
-  Exportable stakeholder graphics and packs derived from the same authoritative artifacts and views.
+- Phase 29 — Browser Entry, Upload, and Run Access  
+  Authenticated root browser entry at `https://controltower.bratek.io` with browser CSV upload, deterministic server-side execution launch, automatic redirect to resulting operator surface, and latest/recent run reopening from browser entry while preserving single-surface discipline and projection-only governance.
+- Phase 30 — Browser Product Shell Overhaul  
+  Total replacement of browser-visible entry shell and browser-facing UI patterns that do not meet product intent; deliver a polished operator-grade front door, serious desktop-class visual language, coherent hierarchy for launch/reopen flows, and removal of leftover utility-style browser patterns.
+- Phase 31 — Browser Surface Polish, Cohesion, and Production Hardening  
+  Browser-wide cohesion and production hardening between entry shell and operator surface, including final polish of spacing/hierarchy/readability, consistency of interaction flow, and validation that the browser product experience matches intended product quality without weakening deterministic governance.

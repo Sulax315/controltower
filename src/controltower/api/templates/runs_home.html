@@ -2,14 +2,25 @@
 {% block content %}
 <section class="card" id="runs-home-upload">
   <h2>Upload Schedule CSV</h2>
+  <p class="utility-note">Upload a single Asta CSV. Deterministic execution runs server-side and redirects directly to the operator surface.</p>
   {% if upload_error %}
   <div class="utility-note" id="runs-home-upload-error">Error: {{ upload_error }}</div>
   {% endif %}
-  <form method="post" action="/runs" enctype="multipart/form-data">
+  <form method="post" action="/entry/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ auth_csrf_token }}">
     <label for="csv_file">Schedule CSV</label>
     <input id="csv_file" name="csv_file" type="file" accept=".csv,text/csv" required>
     <button type="submit" class="button">Execute Run</button>
   </form>
+</section>
+
+<section class="card" id="runs-home-latest">
+  <h2>Open Latest Run</h2>
+  {% if latest_run %}
+  <p><a class="button" href="/publish/operator/{{ latest_run.run_id }}">Open Latest Operator Surface</a></p>
+  {% else %}
+  <p class="utility-note">No publishable runs are available yet.</p>
+  {% endif %}
 </section>
 
 <section class="card" id="runs-home-recent">
@@ -29,7 +40,7 @@
         <td>{{ run.run_id }}</td>
         <td>{{ run.created_at }}</td>
         <td>{{ run.status }}</td>
-        <td><a href="/runs/{{ run.run_id }}">Open</a></td>
+        <td><a href="/publish/operator/{{ run.run_id }}">Open</a></td>
       </tr>
       {% endfor %}
       {% if not recent_runs %}

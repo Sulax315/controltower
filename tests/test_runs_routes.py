@@ -35,6 +35,36 @@ def test_post_runs_blocked(sample_config_path) -> None:
     assert res.status_code == 404
 
 
+def test_root_entry_page_renders(sample_config_path) -> None:
+    app = create_app(str(sample_config_path))
+    client = TestClient(app)
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'id="runs-home-upload"' in res.text
+    assert 'id="runs-home-latest"' in res.text
+    assert 'id="runs-home-recent"' in res.text
+
+
+def test_entry_upload_redirects_to_operator_surface(sample_config_path, tmp_path: Path) -> None:
+    app = create_app(str(sample_config_path))
+    client = TestClient(app)
+    schedule_csv = _write_schedule_csv(tmp_path)
+    home = client.get("/")
+    marker = 'name="csrf_token" value="'
+    assert marker in home.text
+    csrf_token = home.text.split(marker, 1)[1].split('"', 1)[0]
+    with schedule_csv.open("rb") as handle:
+        response = client.post(
+            "/entry/upload",
+            files={"csv_file": ("schedule.csv", handle, "text/csv")},
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    location = response.headers.get("location", "")
+    assert location.startswith("/publish/operator/")
+
+
 def test_run_detail_route_blocked(sample_config_path, tmp_path: Path) -> None:
     config = load_config(sample_config_path)
     run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)

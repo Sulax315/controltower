@@ -255,6 +255,9 @@
         <div class="ct-validation-actions">
           <button type="submit" class="ct-focus-btn">Save Validation Note</button>
           {% if vnote.saved_at %}
+          <a class="ct-focus-btn" href="/publish/operator/{{ publish_run_id }}/validation.md">Open Validation Markdown</a>
+          {% endif %}
+          {% if vnote.saved_at %}
           <div class="ct-validation-stamp">Last saved: {{ vnote.saved_at }}</div>
           {% endif %}
         </div>
