@@ -39,6 +39,8 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert 'id="publish-operator-header-strip"' in text
     assert 'id="publish-operator-command-brief"' in text
     assert 'id="publish-operator-evidence"' in text
+    assert 'id="publish-operator-evidence-driver"' in text
+    assert 'id="publish-operator-evidence-risk"' in text
     assert "id=\"publish-operator-error\"" not in text
     assert inner["command_brief"]["finish"] in text
     assert inner["command_brief"]["driver"] in text
@@ -50,6 +52,9 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert "Risks" in text
     assert "Need" in text
     assert "Doing" in text
+    assert "Inline Structural View" in text
+    assert "Driver Evidence" in text
+    assert "Risk Evidence" in text
     assert text.index('id="publish-operator-command-brief"') < text.index('id="publish-operator-evidence"')
 
 
@@ -63,6 +68,8 @@ def test_publish_operator_surface_print_mode_renders_stakeholder_handout(sample_
     assert 'id="publish-operator-surface"' in text
     assert 'data-auto-print="true"' in text
     assert "Print / PDF" in text
+    assert 'id="publish-operator-evidence-driver"' in text
+    assert "Inline Structural View" in text
 
 
 def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_path, tmp_path: Path) -> None:

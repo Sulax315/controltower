@@ -84,24 +84,73 @@
 
     <section class="ct-section ct-evidence-table" id="publish-operator-evidence">
       <div class="ct-section-header"><h3>EVIDENCE GRID</h3></div>
-      <div class="ct-table ct-table-2">
-        <div class="ct-table-header"><div>Driver Evidence</div><div>Risk Evidence</div></div>
-        <div class="ct-table-row">
-          <div>
+      <div class="ct-evidence-grid">
+        <details class="ct-evidence-group" id="publish-operator-evidence-driver" open>
+          <summary>
+            <span>Driver Evidence</span>
+            <strong>{{ p.evidence.driver_evidence|length if p.evidence and p.evidence.driver_evidence else 0 }} rows</strong>
+          </summary>
+          <div class="ct-inline-structure">
+            <div class="ct-inline-structure-title">Inline Structural View</div>
+            <div class="ct-inline-chain">
+              <span>Task {{ p.drivers.top_driver_task_id if p.drivers and p.drivers.top_driver_task_id else "n/a" }}</span>
+              <span aria-hidden="true">-></span>
+              <span>Driver Brief</span>
+              <span aria-hidden="true">-></span>
+              <span>Finish Brief</span>
+            </div>
+            <div class="ct-inline-metrics">
+              <span>Edges: {{ p.kpis.edge_count if p.kpis else 0 }}</span>
+              <span>Open Sources: {{ p.kpis.open_sources if p.kpis else 0 }}</span>
+              <span>Open Sinks: {{ p.kpis.open_sinks if p.kpis else 0 }}</span>
+            </div>
+          </div>
+          <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.driver_evidence %}
               {% for pair in p.evidence.driver_evidence %}
-              <div class="ct-evidence-line"><strong>{{ pair[0] }}</strong><span>{{ pair[1] }}</span></div>
+              <div class="ct-evidence-line">
+                <strong>Signal {{ loop.index }}</strong>
+                <span>{{ pair[1] }}</span>
+              </div>
               {% endfor %}
+            {% else %}
+              <div class="ct-evidence-line"><strong>Signal</strong><span>No driver evidence available.</span></div>
             {% endif %}
           </div>
-          <div>
+        </details>
+
+        <details class="ct-evidence-group" id="publish-operator-evidence-risk" open>
+          <summary>
+            <span>Risk Evidence</span>
+            <strong>{{ p.evidence.risk_evidence|length if p.evidence and p.evidence.risk_evidence else 0 }} rows</strong>
+          </summary>
+          <div class="ct-inline-structure">
+            <div class="ct-inline-structure-title">Inline Structural View</div>
+            <div class="ct-inline-chain">
+              <span>Risk {{ p.risks.top_risk_id if p.risks and p.risks.top_risk_id else "n/a" }}</span>
+              <span aria-hidden="true">-></span>
+              <span>Severity {{ p.risks.top_risk_severity if p.risks and p.risks.top_risk_severity else "Unknown" }}</span>
+              <span aria-hidden="true">-></span>
+              <span>Risks Brief</span>
+            </div>
+            <div class="ct-inline-metrics">
+              <span>Total Risks: {{ p.risks.total_risk_count if p.risks else 0 }}</span>
+              <span>Status Flag: {{ p.header.status_flags[0] if p.header and p.header.status_flags and p.header.status_flags|length > 0 else "none" }}</span>
+            </div>
+          </div>
+          <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.risk_evidence %}
               {% for pair in p.evidence.risk_evidence %}
-              <div class="ct-evidence-line"><strong>{{ pair[0] }}</strong><span>{{ pair[1] }}</span></div>
+              <div class="ct-evidence-line">
+                <strong>{{ pair[0] }}</strong>
+                <span>{{ pair[1] }}</span>
+              </div>
               {% endfor %}
+            {% else %}
+              <div class="ct-evidence-line"><strong>Risk</strong><span>No risk evidence available.</span></div>
             {% endif %}
           </div>
-        </div>
+        </details>
       </div>
     </section>
   </div>
