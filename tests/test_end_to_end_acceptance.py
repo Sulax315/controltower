@@ -63,13 +63,16 @@ def _build_bundle():
     graph = build_schedule_logic_graph(_E2E_ACTIVITIES)
     gs = build_schedule_graph_summary(graph)
     lq = analyze_logic_quality(graph)
-    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs)
+    da = build_driver_analysis(graph)
+    assert da is not None
+    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs, driver_analysis=da)
     top = rank_driver_candidates(graph, limit=1)[0]
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+    brief = build_command_brief(graph_summary=gs, driver_analysis=da, risks=risks)
     exploration = build_exploration_contract()
     return build_schedule_intelligence_bundle(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -107,7 +110,7 @@ def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) ->
     publish_packet = build_publish_packet(loaded_bundle)
     packet_json = publish_packet.to_jsonable_dict()
     assert packet_json["header"]["finish_line"].startswith("FINISH:")
-    assert packet_json["verdict"]["action_token"].startswith("ACTION:")
+    assert packet_json["verdict"]["action_token"].startswith("NEED:")
     assert isinstance(packet_json["kpis"]["risk_count"], int)
 
     config = load_config(sample_config_path)

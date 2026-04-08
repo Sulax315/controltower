@@ -15,6 +15,7 @@ from controltower.schedule_intake import (
     FILENAME_NORMALIZED_INTAKE,
     NORMALIZED_INTAKE_SCHEMA_VERSION,
     build_command_brief,
+    build_driver_analysis,
     build_exploration_contract,
     build_export_manifest,
     build_normalized_intake_payload,
@@ -52,13 +53,16 @@ def _build_bundle():
     graph = build_schedule_logic_graph(_BUNDLE_ACTIVITIES)
     gs = build_schedule_graph_summary(graph)
     lq = analyze_logic_quality(graph)
-    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs)
+    da = build_driver_analysis(graph)
+    assert da is not None
+    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs, driver_analysis=da)
     top = rank_driver_candidates(graph, limit=1)[0]
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+    brief = build_command_brief(graph_summary=gs, driver_analysis=da, risks=risks)
     exploration = build_exploration_contract()
     return build_schedule_intelligence_bundle(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -168,7 +172,7 @@ def test_command_brief_export_integrity(tmp_path: Path) -> None:
         driver_analysis=_synthetic_driver_analysis(),
     )
     payload = json.loads((tmp_path / FILENAME_COMMAND_BRIEF).read_text(encoding="utf-8"))
-    assert tuple(payload.keys()) == ("action", "delta", "driver", "finish", "risks")
+    assert tuple(payload.keys()) == ("doing", "driver", "finish", "need", "risks")
     assert payload["finish"].startswith("FINISH:")
 
 

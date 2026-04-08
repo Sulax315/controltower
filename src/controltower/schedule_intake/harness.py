@@ -297,8 +297,11 @@ def run_summary(
             gs = build_schedule_graph_summary(graph)
             ranked = rank_driver_candidates(graph, limit=1)
             drv = ranked[0] if ranked else None
-            risks = collect_schedule_risk_findings(graph, graph_summary=gs)
-            cb = build_command_brief(graph_summary=gs, driver=drv, risks=risks, delta=None)
+            driver_analysis_obj = build_driver_analysis(graph)
+            if driver_analysis_obj is None:
+                raise ValueError("No structural finish candidate available for deterministic driver detection.")
+            risks = collect_schedule_risk_findings(graph, graph_summary=gs, driver_analysis=driver_analysis_obj)
+            cb = build_command_brief(graph_summary=gs, driver_analysis=driver_analysis_obj, risks=risks)
             for ln in cb.as_lines():
                 print(ln)
         _print_exploration_queries(
@@ -317,8 +320,16 @@ def run_summary(
             lq = analyze_logic_quality(graph)
             ranked = rank_driver_candidates(graph, limit=1)
             top = ranked[0] if ranked else None
-            risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs)
-            brief_obj = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+            driver_analysis_obj = build_driver_analysis(graph)
+            if driver_analysis_obj is None:
+                raise ValueError("No structural finish candidate available for deterministic driver detection.")
+            risks = collect_schedule_risk_findings(
+                graph,
+                logic_quality=lq,
+                graph_summary=gs,
+                driver_analysis=driver_analysis_obj,
+            )
+            brief_obj = build_command_brief(graph_summary=gs, driver_analysis=driver_analysis_obj, risks=risks)
             ex = build_exploration_contract(
                 immediate_predecessors=immediate_predecessors(graph, upstream_task_id)
                 if upstream_task_id is not None
@@ -346,6 +357,7 @@ def run_summary(
             bundle = build_schedule_intelligence_bundle(
                 graph_summary=gs,
                 logic_quality=lq,
+                driver_analysis=driver_analysis_obj,
                 top_driver=top,
                 risks=risks,
                 delta=None,
@@ -360,9 +372,6 @@ def run_summary(
                 source_sha256_hex=compute_sha256_bytes(src_bytes),
             )
             logic_graph = build_logic_graph_payload(graph)
-            driver_analysis_obj = build_driver_analysis(graph)
-            if driver_analysis_obj is None:
-                raise ValueError("No structural finish candidate available for deterministic driver detection.")
             driver_analysis = driver_analysis_obj.model_dump(mode="json")
             artifacts, manifest = export_deterministic_artifact_set(
                 export_dir,

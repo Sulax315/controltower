@@ -3,6 +3,7 @@ from __future__ import annotations
 from controltower.schedule_intake import (
     Activity,
     build_command_brief,
+    build_driver_analysis,
     build_exploration_contract,
     build_publish_evidence,
     build_publish_header,
@@ -26,12 +27,15 @@ def _bundle(with_driver: bool = True, with_risk: bool = True):
     )
     gs = build_schedule_graph_summary(graph)
     lq = analyze_logic_quality(graph)
-    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs) if with_risk else ()
+    da = build_driver_analysis(graph)
+    assert da is not None
+    risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs, driver_analysis=da) if with_risk else ()
     top = rank_driver_candidates(graph, limit=1)[0] if with_driver else None
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+    brief = build_command_brief(graph_summary=gs, driver_analysis=da, risks=risks)
     return build_schedule_intelligence_bundle(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -84,5 +88,5 @@ def test_full_integration_publish_packet_jsonable_stable() -> None:
     jd = p.to_jsonable_dict()
     assert tuple(jd.keys()) == ("actions", "drivers", "evidence", "header", "kpis", "risks", "verdict")
     assert jd["header"]["finish_line"].startswith("FINISH:")
-    assert jd["verdict"]["action_token"].startswith("ACTION:")
+    assert jd["verdict"]["action_token"].startswith("NEED:")
     assert isinstance(jd["kpis"]["node_count"], int)

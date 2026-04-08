@@ -22,8 +22,8 @@ from .normalized_intake import NORMALIZED_INTAKE_SCHEMA_VERSION
 from .output_contracts import CommandBriefContract, EngineSnapshot, ExplorationContract, ScheduleIntelligenceBundle
 
 REQUIRED_BUNDLE_TOP_LEVEL_KEYS = ("engine_snapshot", "command_brief", "exploration")
-REQUIRED_COMMAND_BRIEF_KEYS = ("finish", "driver", "risks", "delta", "action")
-REQUIRED_ENGINE_SNAPSHOT_KEYS = ("graph_summary", "logic_quality", "command_brief_lines")
+REQUIRED_COMMAND_BRIEF_KEYS = ("finish", "driver", "risks", "need", "doing")
+REQUIRED_ENGINE_SNAPSHOT_KEYS = ("graph_summary", "logic_quality", "command_brief_lines", "intelligence_payload")
 REQUIRED_EXPLORATION_KEYS = (
     "immediate_predecessors",
     "immediate_successors",
@@ -227,6 +227,8 @@ def _validate_bundle_json(raw: dict[str, Any]) -> None:
         raise BundleValidationError("incomplete bundle: engine_snapshot.graph_summary must be an object.")
     if not isinstance(engine_snapshot["logic_quality"], dict):
         raise BundleValidationError("incomplete bundle: engine_snapshot.logic_quality must be an object.")
+    if not isinstance(engine_snapshot["intelligence_payload"], dict):
+        raise BundleValidationError("incomplete bundle: engine_snapshot.intelligence_payload must be an object.")
     lines = engine_snapshot["command_brief_lines"]
     if not isinstance(lines, list | tuple) or len(lines) != 5 or any(not isinstance(x, str) for x in lines):
         raise BundleValidationError("incomplete bundle: engine_snapshot.command_brief_lines must contain 5 strings.")
@@ -249,13 +251,14 @@ def _bundle_from_jsonable(raw: dict[str, Any]) -> ScheduleIntelligenceBundle:
             risks=tuple(dict(x) for x in (es.get("risks") or [])),
             delta_summary=dict(es["delta_summary"]) if es.get("delta_summary") is not None else None,
             command_brief_lines=tuple(es.get("command_brief_lines") or ("", "", "", "", "")),
+                intelligence_payload=dict(es.get("intelligence_payload") or {}),
         ),
         command_brief=CommandBriefContract(
             finish=str(cb.get("finish", "")),
             driver=str(cb.get("driver", "")),
             risks=str(cb.get("risks", "")),
-            delta=str(cb.get("delta", "")),
-            action=str(cb.get("action", "")),
+            need=str(cb.get("need", "")),
+            doing=str(cb.get("doing", "")),
         ),
         exploration=ExplorationContract(
             immediate_predecessors=tuple(ex.get("immediate_predecessors") or ()),

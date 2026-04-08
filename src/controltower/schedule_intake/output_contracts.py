@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from controltower.intelligence.assembly import build_intelligence_payload
 from .command_brief import CommandBrief
 from .delta_analysis import ScheduleDeltaResult
-from .drivers import DriverCandidate
+from .drivers import DriverAnalysis, DriverCandidate
 from .graph_summary import ScheduleGraphSummary
 from .logic_quality import LogicQualitySignals
 from .risks import RiskFinding
@@ -26,8 +27,8 @@ class CommandBriefContract:
     finish: str
     driver: str
     risks: str
-    delta: str
-    action: str
+    need: str
+    doing: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -64,6 +65,7 @@ class EngineSnapshot:
     risks: tuple[dict[str, Any], ...]
     delta_summary: dict[str, Any] | None
     command_brief_lines: tuple[str, str, str, str, str]
+    intelligence_payload: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -90,8 +92,8 @@ def build_command_brief_contract(brief: CommandBrief) -> CommandBriefContract:
         finish=brief.finish,
         driver=brief.driver,
         risks=brief.risks,
-        delta=brief.delta,
-        action=brief.action,
+        need=brief.need,
+        doing=brief.doing,
     )
 
 
@@ -126,11 +128,18 @@ def build_engine_snapshot(
     *,
     graph_summary: ScheduleGraphSummary,
     logic_quality: LogicQualitySignals,
+    driver_analysis: DriverAnalysis,
     top_driver: DriverCandidate | None,
     risks: tuple[RiskFinding, ...],
     delta: ScheduleDeltaResult | None,
     command_brief: CommandBrief,
 ) -> EngineSnapshot:
+    payload = build_intelligence_payload(
+        graph_summary=graph_summary,
+        driver_analysis=driver_analysis,
+        risks=risks,
+        command_brief=command_brief,
+    )
     return EngineSnapshot(
         graph_summary=graph_summary.__dict__,
         logic_quality={
@@ -151,6 +160,7 @@ def build_engine_snapshot(
         risks=tuple(r.model_dump() for r in risks),
         delta_summary=delta.summary_counts.model_dump() if delta is not None else None,
         command_brief_lines=command_brief.as_lines(),
+        intelligence_payload=payload,
     )
 
 
@@ -158,6 +168,7 @@ def build_schedule_intelligence_bundle(
     *,
     graph_summary: ScheduleGraphSummary,
     logic_quality: LogicQualitySignals,
+    driver_analysis: DriverAnalysis,
     top_driver: DriverCandidate | None,
     risks: tuple[RiskFinding, ...],
     delta: ScheduleDeltaResult | None,
@@ -168,6 +179,7 @@ def build_schedule_intelligence_bundle(
     snapshot = build_engine_snapshot(
         graph_summary=graph_summary,
         logic_quality=logic_quality,
+        driver_analysis=driver_analysis,
         top_driver=top_driver,
         risks=risks,
         delta=delta,

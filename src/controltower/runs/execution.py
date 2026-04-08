@@ -4,10 +4,10 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
+from controltower.intelligence import build_command_brief
 from controltower.schedule_intake import (
     FILENAME_BUNDLE,
     FILENAME_MANIFEST,
-    build_command_brief,
     build_driver_analysis,
     build_exploration_contract,
     build_logic_graph_payload,
@@ -104,11 +104,21 @@ def _build_bundle_from_csv(
     logic_quality = analyze_logic_quality(graph)
     top_candidates = rank_driver_candidates(graph, limit=1)
     top_driver = top_candidates[0] if top_candidates else None
-    risks = collect_schedule_risk_findings(graph, logic_quality=logic_quality, graph_summary=graph_summary)
-    command_brief = build_command_brief(graph_summary=graph_summary, driver=top_driver, risks=risks, delta=None)
+    risks = collect_schedule_risk_findings(
+        graph,
+        logic_quality=logic_quality,
+        graph_summary=graph_summary,
+        driver_analysis=driver_analysis_obj,
+    )
+    command_brief = build_command_brief(
+        graph_summary=graph_summary,
+        driver_analysis=driver_analysis_obj,
+        risks=risks,
+    )
     bundle = build_schedule_intelligence_bundle(
         graph_summary=graph_summary,
         logic_quality=logic_quality,
+        driver_analysis=driver_analysis_obj,
         top_driver=top_driver,
         risks=risks,
         delta=None,

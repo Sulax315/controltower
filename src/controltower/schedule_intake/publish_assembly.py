@@ -135,7 +135,7 @@ def build_publish_header(bundle: ScheduleIntelligenceBundle) -> PublishHeader:
         flags.append("open_sinks")
     return PublishHeader(
         finish_line=bundle.command_brief.finish,
-        delta_line=bundle.command_brief.delta,
+        delta_line=bundle.command_brief.doing,
         status_flags=tuple(sorted(flags)),
     )
 
@@ -144,7 +144,7 @@ def build_publish_verdict(bundle: ScheduleIntelligenceBundle) -> PublishVerdict:
     return PublishVerdict(
         primary_driver=bundle.command_brief.driver,
         primary_risk=bundle.command_brief.risks,
-        action_token=bundle.command_brief.action,
+        action_token=bundle.command_brief.need,
     )
 
 
@@ -178,7 +178,7 @@ def build_publish_risks(bundle: ScheduleIntelligenceBundle) -> PublishRisks:
 
 
 def build_publish_actions(bundle: ScheduleIntelligenceBundle) -> PublishActions:
-    return PublishActions(action_token=bundle.command_brief.action)
+    return PublishActions(action_token=bundle.command_brief.need)
 
 
 def build_publish_evidence(bundle: ScheduleIntelligenceBundle) -> PublishEvidence:

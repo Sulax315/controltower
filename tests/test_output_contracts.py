@@ -3,6 +3,7 @@ from __future__ import annotations
 from controltower.schedule_intake import (
     Activity,
     build_command_brief,
+    build_driver_analysis,
     build_command_brief_contract,
     build_engine_snapshot,
     build_exploration_contract,
@@ -29,12 +30,14 @@ def test_command_brief_contract_integrity() -> None:
     gs = build_schedule_graph_summary(g)
     risks = collect_schedule_risk_findings(g, graph_summary=gs)
     top = rank_driver_candidates(g, limit=1)[0]
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+    da = build_driver_analysis(g)
+    assert da is not None
+    brief = build_command_brief(graph_summary=gs, driver_analysis=da, risks=risks)
     c = build_command_brief_contract(brief)
     d = c.to_dict()
-    assert tuple(d.keys()) == ("finish", "driver", "risks", "delta", "action")
+    assert tuple(d.keys()) == ("finish", "driver", "risks", "need", "doing")
     assert d["finish"].startswith("FINISH:")
-    assert d["action"].startswith("ACTION:")
+    assert d["need"].startswith("NEED:")
 
 
 def test_exploration_contract_integrity_and_defaults() -> None:
@@ -62,11 +65,14 @@ def test_engine_snapshot_and_bundle_deterministic_serialization() -> None:
     lq = analyze_logic_quality(g)
     risks = collect_schedule_risk_findings(g, graph_summary=gs)
     top = rank_driver_candidates(g, limit=1)[0]
-    brief = build_command_brief(graph_summary=gs, driver=top, risks=risks, delta=None)
+    da = build_driver_analysis(g)
+    assert da is not None
+    brief = build_command_brief(graph_summary=gs, driver_analysis=da, risks=risks)
 
     snap1 = build_engine_snapshot(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -75,6 +81,7 @@ def test_engine_snapshot_and_bundle_deterministic_serialization() -> None:
     snap2 = build_engine_snapshot(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -97,6 +104,7 @@ def test_engine_snapshot_and_bundle_deterministic_serialization() -> None:
     bundle = build_schedule_intelligence_bundle(
         graph_summary=gs,
         logic_quality=lq,
+        driver_analysis=da,
         top_driver=top,
         risks=risks,
         delta=None,
@@ -109,10 +117,17 @@ def test_engine_snapshot_and_bundle_deterministic_serialization() -> None:
         "command_brief_lines",
         "delta_summary",
         "graph_summary",
+        "intelligence_payload",
         "logic_quality",
         "risks",
         "top_driver",
     )
-    assert tuple(jd["command_brief"].keys()) == ("action", "delta", "driver", "finish", "risks")
+    assert tuple(jd["command_brief"].keys()) == ("doing", "driver", "finish", "need", "risks")
     assert jd["engine_snapshot"]["delta_summary"] is None
+    payload = jd["engine_snapshot"]["intelligence_payload"]
+    assert payload["schema_version"] == "intelligence_payload_v1"
+    assert "finish_summary" in payload
+    assert "driver_summary" in payload
+    assert "risk_summary" in payload
+    assert "artifact_references" in payload
 
