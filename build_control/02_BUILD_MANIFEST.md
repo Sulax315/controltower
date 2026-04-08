@@ -186,6 +186,152 @@ Deliverables:
 
 ---
 
+# Phase 7 — Operator Command Surface
+Weight: 10%
+
+## Goal
+Project deterministic engine artifacts into a single operator command surface without introducing new engine logic.
+
+### Track 7A — Command Sheet
+Deliverables:
+- single-surface operator command sheet
+- finish/driver/risk/need/doing projection from engine artifacts
+- deterministic artifact references visible to operator
+
+### Track 7B — Evidence Grid
+Deliverables:
+- evidence grid projection over deterministic output
+- conclusion-to-evidence trace visibility
+- no UI-side reinterpretation of risk/driver outcomes
+
+### Track 7C — Inline Structural Visuals
+Deliverables:
+- inline structural views tied to existing engine artifacts
+- structural context projection for operator review
+- projection-only rendering of underlying intelligence
+
+---
+
+# Phase 8 — Export and Delivery
+Weight: 10%
+
+## Goal
+Deliver print/PDF and consistency pathways over deterministic artifacts.
+
+### Track 8A — Print View
+Deliverables:
+- print-friendly projection of command and evidence content
+- stable formatting for operator review
+
+### Track 8B — PDF Export
+Deliverables:
+- deterministic PDF export pathway
+- command + evidence parity with operator surface
+
+### Track 8C — Export Consistency
+Deliverables:
+- cross-surface consistency checks for projected artifacts
+- no divergence between operator, print, and PDF outputs
+
+---
+
+# Phase 9 — Operator Workflow
+Weight: 5%
+
+## Goal
+Add controlled interaction over existing outputs without changing intelligence generation.
+
+### Track 9A — Run Selection
+Deliverables:
+- operator run selection over existing artifacts
+- deterministic run context in command surface
+
+### Track 9B — Review/Approval State
+Deliverables:
+- explicit operator review state handling
+- controlled approval/review markers over projected outputs
+
+### Track 9C — Export Controls
+Deliverables:
+- governed export controls aligned to approved artifacts
+- no logic mutation through workflow controls
+
+---
+
+# Phase 10 — Schedule Visualization
+Weight: 10%
+
+## Goal
+Provide visualization views that project deterministic schedule intelligence.
+
+### Track 10A — Gantt Projection
+Deliverables:
+- Gantt-style projection from existing engine artifacts
+- timeline view without logic reinterpretation
+
+### Track 10B — PERT / Network View
+Deliverables:
+- network/PERT projection from logic artifacts
+- deterministic structure representation
+
+### Track 10C — Driver Path Visualization
+Deliverables:
+- visual projection of computed driver paths
+- driver evidence continuity across surfaces
+
+### Track 10D — Risk Visualization
+Deliverables:
+- visual projection of computed risk signals
+- risk-to-evidence trace continuity
+
+---
+
+# Phase 11 — Interactive Analysis
+Weight: 5%
+
+## Goal
+Support deterministic interaction patterns across projection layers.
+
+### Track 11A — View Switching
+Deliverables:
+- controlled switching across command/evidence/visual views
+- continuity of selected run context
+
+### Track 11B — Filtering / Highlighting
+Deliverables:
+- deterministic filtering/highlighting over projected artifacts
+- no derived logic beyond existing intelligence outputs
+
+### Track 11C — Evidence-to-Visualization Linking
+Deliverables:
+- bidirectional linking between evidence and visualization surfaces
+- trace-preserving interactions only
+
+---
+
+# Phase 12 — Stakeholder Outputs
+Weight: 5%
+
+## Goal
+Package deterministic artifacts into stakeholder-ready outputs.
+
+### Track 12A — PDF with Graphics
+Deliverables:
+- graphics-enabled PDF outputs grounded in engine artifacts
+- command/evidence consistency maintained
+
+### Track 12B — Image Export
+Deliverables:
+- deterministic image export for key views
+- format-stable render outputs
+
+### Track 12C — Stakeholder Pack Formatting
+Deliverables:
+- stakeholder pack layout and formatting standards
+- projection-only assembly from deterministic artifacts
+
+---
+
 # Build Order Rule
 Work must proceed in phase order unless the manifest is formally revised.
 
@@ -194,8 +340,13 @@ No phase may be treated as complete if any required track deliverable is still u
 ---
 
 # Current Official Direction
-Current build direction is reset execution focused on:
-- Phase 1 completion
-- then Phase 2A and 2B
+Engine completion baseline:
+- Phases 1-6 COMPLETE
+- Deterministic schedule intelligence engine completed through Phases 14-18 execution
+- Engine completion: 100%
 
-No work outside that lane should proceed yet.
+Current build direction is post-engine projection and delivery execution focused on:
+- Phase 7 (Phase 19) Track 7A — Command Sheet
+- then Track 7B and 7C in order
+
+No work outside the governed post-engine lane should proceed yet.

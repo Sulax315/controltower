@@ -145,7 +145,9 @@ Responsibilities:
 - inspect evidence
 - export/present intelligence
 
-This layer must not be advanced until Layer 1 produces trustworthy results.
+Layer 1 is now complete and trustworthy through deterministic engine Phases 14-18.
+
+Layer 3 is now active for projection and delivery execution only. Layer 3 must remain projection-only and may not reinterpret, re-score, or reimplement intelligence already produced by Layer 1.
 
 ---
 
@@ -177,3 +179,22 @@ No polished operator UI is required for MVP completion.
 The final product should become a trusted schedule analysis companion for weekly project management work, reducing manual interpretation burden while improving consistency, clarity, and auditability.
 
 The system should eventually support polished review and export surfaces, but only after the schedule intelligence engine is solid.
+
+---
+
+## Post-Engine Execution Phases
+With completion of the deterministic schedule intelligence engine (Phases 14-18), the build now proceeds to projection and delivery layers.
+
+Execution rules for all post-engine phases:
+- UI is projection-only
+- No logic may be reimplemented in UI
+- All outputs must trace to engine artifacts
+
+Defined post-engine phases:
+- Phase 19 — Operator Command Sheet
+- Phase 20 — Evidence Grid + Inline Structural Views
+- Phase 21 — Export Layer (Print/PDF)
+- Phase 22 — Operator Workflow (Controlled Interaction)
+- Phase 23 — Schedule Visualization Layer
+- Phase 24 — Interactive Analysis Views
+- Phase 25 — Exportable Graphics / Stakeholder Packs

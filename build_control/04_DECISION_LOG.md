@@ -48,3 +48,18 @@ Any future Obsidian integration must mirror or reference repo governance rather 
 
 Status:
 Active
+
+---
+
+## 2026-04-08 — Engine complete; transition to projection/delivery roadmap
+Decision:
+Phases 14-18 are accepted as complete for deterministic schedule intelligence engine delivery, and the governed roadmap now transitions to post-engine projection and delivery execution (Phases 19-25).
+
+Reason:
+Core deterministic intelligence is complete and trustworthy; next value is delivered through operator projection, evidence surfacing, controlled workflow, and export/visualization delivery.
+
+Impact:
+Phase 19 becomes active immediately. Post-engine phases 19-25 are now the governed sequence, with command sheet and evidence surface prioritized before broader visualization work. UI remains projection-only and may not reinterpret engine intelligence.
+
+Status:
+Active

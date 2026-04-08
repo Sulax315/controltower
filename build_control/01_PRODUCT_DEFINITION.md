@@ -6,6 +6,8 @@ Control Tower — Schedule Intelligence Engine
 ## One-Sentence Definition
 A deterministic engine that converts Asta Powerproject CSV exports into PM-grade schedule analysis, narrative briefs, and supporting evidence.
 
+Engine status: Core deterministic schedule intelligence engine is complete through Phases 14-18.
+
 ---
 
 ## Problem
@@ -40,6 +42,8 @@ The product is valuable if it reliably helps the user:
 - detect meaningful change from the prior update
 - prepare a meeting-ready brief faster and more consistently
 
+Post-engine value expansion must come from clearer operator projection, evidence consumption, and delivery surfaces over existing deterministic artifacts, not from replacing or reinventing core engine intelligence.
+
 ---
 
 ## In Scope for Reset MVP
@@ -65,6 +69,8 @@ The product is valuable if it reliably helps the user:
 - deep Obsidian integration
 - generic collaboration features
 
+For post-engine execution, new UI-side analysis logic is also out of scope. Operator, export, and visualization layers must project deterministic engine artifacts only.
+
 ---
 
 ## Required Output Shape
@@ -88,6 +94,8 @@ Must identify the basis for conclusions such as:
 
 ### Structured payload
 Must be machine-readable and stable enough to support future UI layers.
+
+Those future layers are delivery/projection layers and must not reinterpret or regenerate the underlying intelligence.
 
 ---
 
