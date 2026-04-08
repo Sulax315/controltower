@@ -15,6 +15,7 @@ from controltower.schedule_intake import (
     FILENAME_BUNDLE,
     build_command_brief,
     build_exploration_contract,
+    build_normalized_intake_payload,
     build_schedule_graph_summary,
     build_schedule_intelligence_bundle,
     build_schedule_logic_graph,
@@ -31,7 +32,7 @@ from controltower.runs.publish_authority import load_publish_projection_from_bun
 
 def _write_schedule_csv(tmp_path: Path) -> Path:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS))
+    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS), lineterminator="\n")
     writer.writeheader()
     writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "100", "Task name": "Start", "Successors": "200"})
     writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "200", "Task name": "Finish", "Predecessors": "100"})
@@ -40,14 +41,24 @@ def _write_schedule_csv(tmp_path: Path) -> Path:
     return path
 
 
-def _build_bundle():
-    graph = build_schedule_logic_graph(
-        [
-            Activity(task_id="1", successors=["2"]),
-            Activity(task_id="2", predecessors=["1"], successors=["3"]),
-            Activity(task_id="3", predecessors=["2"]),
-        ]
+_E2E_ACTIVITIES = [
+    Activity(task_id="1", successors=["2"]),
+    Activity(task_id="2", predecessors=["1"], successors=["3"]),
+    Activity(task_id="3", predecessors=["2"]),
+]
+
+
+def _e2e_normalized_intake() -> dict:
+    return build_normalized_intake_payload(
+        _E2E_ACTIVITIES,
+        warnings=(),
+        source_display_name="synthetic.json",
+        source_sha256_hex=None,
     )
+
+
+def _build_bundle():
+    graph = build_schedule_logic_graph(_E2E_ACTIVITIES)
     gs = build_schedule_graph_summary(graph)
     lq = analyze_logic_quality(graph)
     risks = collect_schedule_risk_findings(graph, logic_quality=lq, graph_summary=gs)
@@ -68,7 +79,7 @@ def _build_bundle():
 def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) -> None:
     bundle = _build_bundle()
     export_dir = tmp_path / "full_chain"
-    export_deterministic_artifact_set(export_dir, bundle=bundle)
+    export_deterministic_artifact_set(export_dir, bundle=bundle, normalized_intake=_e2e_normalized_intake())
 
     validation = validate_export_artifact_set(export_dir)
     assert validation.ok is True
@@ -103,8 +114,9 @@ def test_end_to_end_deterministic_stable_outputs(tmp_path: Path) -> None:
     bundle = _build_bundle()
     run_a = tmp_path / "run_a"
     run_b = tmp_path / "run_b"
-    export_deterministic_artifact_set(run_a, bundle=bundle)
-    export_deterministic_artifact_set(run_b, bundle=bundle)
+    norm = _e2e_normalized_intake()
+    export_deterministic_artifact_set(run_a, bundle=bundle, normalized_intake=norm)
+    export_deterministic_artifact_set(run_b, bundle=bundle, normalized_intake=norm)
 
     assert export_directory_file_map(run_a) == export_directory_file_map(run_b)
 

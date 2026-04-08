@@ -11,7 +11,8 @@ from .asta_csv import parse_asta_export_csv
 from .command_brief import build_command_brief
 from .delta_analysis import ScheduleDeltaResult, compare_schedule_csv_paths
 from .drivers import rank_driver_candidates
-from .export_artifacts import export_deterministic_artifact_set
+from .export_artifacts import compute_sha256_bytes, export_deterministic_artifact_set
+from .normalized_intake import build_normalized_intake_payload
 from .exploration import (
     all_simple_paths_between,
     downstream_closure,
@@ -43,6 +44,7 @@ def _format_activity_clean(a: Activity, *, index: int) -> str:
     """Readable multi-line summary for validation logs (Phase 2C evidence)."""
     lines = [
         f"--- activity[{index}] ---",
+        f"  source_row_index={a.source_row_index!r}",
         f"  task_id={a.task_id!r}  unique_task_id={a.unique_task_id!r}",
         f"  task_name={a.task_name!r}",
         f"  start={a.start!r}  finish={a.finish!r}  duration_days={a.duration_days!r}  duration_remaining_days={a.duration_remaining_days!r}",
@@ -350,7 +352,18 @@ def run_summary(
                 command_brief=brief_obj,
                 exploration=ex,
             )
-            artifacts, manifest = export_deterministic_artifact_set(export_dir, bundle=bundle)
+            src_bytes = csv_path.read_bytes()
+            normalized_intake = build_normalized_intake_payload(
+                acts,
+                warnings=tuple(result.warnings),
+                source_display_name=csv_path.name,
+                source_sha256_hex=compute_sha256_bytes(src_bytes),
+            )
+            artifacts, manifest = export_deterministic_artifact_set(
+                export_dir,
+                bundle=bundle,
+                normalized_intake=normalized_intake,
+            )
             print(f"export_dir={export_dir}")
             for a in artifacts:
                 print(f"artifact:{a.filename} sha256={a.sha256} bytes={a.byte_count} type={a.artifact_type}")
@@ -360,6 +373,7 @@ def run_summary(
                 f" brief={manifest.command_brief_present}"
                 f" snapshot={manifest.engine_snapshot_present}"
                 f" exploration={manifest.exploration_present}"
+                f" normalized_intake={manifest.normalized_intake_present}"
             )
 
     return 0

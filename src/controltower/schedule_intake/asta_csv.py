@@ -8,6 +8,10 @@ from pathlib import Path
 from .models import Activity
 
 
+class AstaIntakeError(ValueError):
+    """Fatal Asta CSV intake failure (schema, duplicates, or empty extract)."""
+
+
 # Exact CSV headers for the current authoritative Asta export
 ASTA_EXPORT_HEADERS: tuple[str, ...] = (
     "Task ID",
@@ -107,6 +111,45 @@ def _parse_percent_optional(raw: str | None, *, row_label: str, field_name: str,
         return None
 
 
+def _strip_bom_header(cell: str) -> str:
+    s = cell.strip()
+    if s.startswith("\ufeff"):
+        s = s[1:].strip()
+    return s
+
+
+def _read_labeled_rows(path: Path, *, encoding: str) -> list[tuple[int, dict[str, str]]]:
+    """
+    Read CSV into (1-based row index, dict restricted to ASTA_EXPORT_HEADERS keys).
+
+    Raises AstaIntakeError on empty file, missing/duplicate headers, or missing columns.
+    """
+    with path.open(newline="", encoding=encoding) as f:
+        reader = csv.reader(f)
+        try:
+            raw_header = next(reader)
+        except StopIteration as exc:
+            raise AstaIntakeError("CSV is empty") from exc
+        if not raw_header or all(not _strip_bom_header(c) for c in raw_header):
+            raise AstaIntakeError("CSV has no header row")
+        header = [_strip_bom_header(c) for c in raw_header]
+        if len(header) != len(set(header)):
+            raise AstaIntakeError("CSV header contains duplicate column names")
+        missing = [h for h in ASTA_EXPORT_HEADERS if h not in header]
+        if missing:
+            raise AstaIntakeError(f"Missing required column(s): {', '.join(missing)}")
+        col_idx = {name: header.index(name) for name in ASTA_EXPORT_HEADERS}
+
+        out: list[tuple[int, dict[str, str]]] = []
+        for i, cells in enumerate(reader, start=2):
+            if not cells or all(not (c or "").strip() for c in cells):
+                continue
+            padded = (list(cells) + [""] * len(header))[: len(header)]
+            row = {name: padded[col_idx[name]] for name in ASTA_EXPORT_HEADERS}
+            out.append((i, row))
+        return out
+
+
 def _parse_id_list(raw: str | None) -> list[str] | None:
     """Blank or <None> field -> None; otherwise split comma-separated IDs (trimmed)."""
     if raw is None:
@@ -123,112 +166,118 @@ def parse_asta_export_csv(path: Path | str, *, encoding: str = "utf-8-sig") -> A
     """
     Read an Asta CSV export and return activities plus row-level warnings.
 
-    Rows without a usable Task ID are skipped.
+    **Fatal (raises ``AstaIntakeError``):** empty file, bad header, duplicate header names,
+    any missing required column, duplicate ``Task ID`` among kept rows, or no activities
+    after skipping unusable rows.
+
+    **Non-fatal:** rows without Task ID, unparsable scalars (recorded in ``warnings``).
     """
     csv_path = Path(path)
     warnings: list[str] = []
     activities: list[Activity] = []
+    seen_ids: set[str] = set()
 
-    with csv_path.open(newline="", encoding=encoding) as f:
-        reader = csv.DictReader(f)
-        if reader.fieldnames is None:
-            warnings.append("CSV has no header row")
-            return AstaParseResult(activities=[], warnings=warnings)
+    try:
+        labeled_rows = _read_labeled_rows(csv_path, encoding=encoding)
+    except UnicodeDecodeError as exc:
+        raise AstaIntakeError(f"CSV encoding error ({encoding!r}): {exc}") from exc
 
-        header_set = set(reader.fieldnames)
-        missing = [h for h in ASTA_EXPORT_HEADERS if h not in header_set]
-        if missing:
-            warnings.append(f"Missing expected column(s): {', '.join(missing)}")
+    for i, row in labeled_rows:
+        task_raw = row.get("Task ID")
+        task_id_norm = _normalize_scalar_cell(task_raw)
+        row_label = f"row {i}"
+        if task_id_norm is None:
+            warnings.append(f"{row_label}: skipped - missing Task ID")
+            continue
+        if task_id_norm in seen_ids:
+            raise AstaIntakeError(f"Duplicate Task ID {task_id_norm!r} (first duplicate at {row_label})")
+        seen_ids.add(task_id_norm)
 
-        for i, row in enumerate(reader, start=2):
-            task_raw = row.get("Task ID")
-            task_id_norm = _normalize_scalar_cell(task_raw)
-            row_label = f"row {i}"
-            if task_id_norm is None:
-                warnings.append(f"{row_label}: skipped - missing Task ID")
-                continue
+        preds = _parse_id_list(row.get("Predecessors"))
+        succs = _parse_id_list(row.get("Successors"))
 
-            preds = _parse_id_list(row.get("Predecessors"))
-            succs = _parse_id_list(row.get("Successors"))
+        try:
+            act = Activity(
+                task_id=task_id_norm,
+                source_row_index=i,
+                task_name=_normalize_scalar_cell(row.get("Task name")),
+                unique_task_id=_normalize_scalar_cell(row.get("Unique task ID")),
+                duration_days=_parse_days_optional(
+                    row.get("Duration"), row_label=row_label, field_name="Duration", warnings=warnings
+                ),
+                duration_remaining_days=_parse_days_optional(
+                    row.get("Duration remaining"),
+                    row_label=row_label,
+                    field_name="Duration remaining",
+                    warnings=warnings,
+                ),
+                start=_parse_date_optional(
+                    row.get("Start"), row_label=row_label, field_name="Start", warnings=warnings
+                ),
+                finish=_parse_date_optional(
+                    row.get("Finish"), row_label=row_label, field_name="Finish", warnings=warnings
+                ),
+                early_start=_parse_date_optional(
+                    row.get("Early start"), row_label=row_label, field_name="Early start", warnings=warnings
+                ),
+                early_finish=_parse_date_optional(
+                    row.get("Early finish"), row_label=row_label, field_name="Early finish", warnings=warnings
+                ),
+                late_start=_parse_date_optional(
+                    row.get("Late start"), row_label=row_label, field_name="Late start", warnings=warnings
+                ),
+                late_finish=_parse_date_optional(
+                    row.get("Late finish"), row_label=row_label, field_name="Late finish", warnings=warnings
+                ),
+                total_float_days=_parse_days_optional(
+                    row.get("Total float"), row_label=row_label, field_name="Total float", warnings=warnings
+                ),
+                free_float_days=_parse_days_optional(
+                    row.get("Free float"), row_label=row_label, field_name="Free float", warnings=warnings
+                ),
+                critical=_parse_bool_optional(
+                    row.get("Critical"), row_label=row_label, field_name="Critical", warnings=warnings
+                ),
+                predecessors=preds,
+                successors=succs,
+                critical_path_drag_days=_parse_days_optional(
+                    row.get("Critical path drag"),
+                    row_label=row_label,
+                    field_name="Critical path drag",
+                    warnings=warnings,
+                ),
+                phase_exec=_normalize_scalar_cell(row.get("Phase Exec")),
+                control_account=_normalize_scalar_cell(row.get("Control Account")),
+                area_zone=_normalize_scalar_cell(row.get("Area Zone")),
+                level=_normalize_scalar_cell(row.get("Level")),
+                csi=_normalize_scalar_cell(row.get("CSI")),
+                system=_normalize_scalar_cell(row.get("System")),
+                percent_complete=_parse_percent_optional(
+                    row.get("Percent complete"),
+                    row_label=row_label,
+                    field_name="Percent complete",
+                    warnings=warnings,
+                ),
+                original_start=_parse_date_optional(
+                    row.get("Original start"),
+                    row_label=row_label,
+                    field_name="Original start",
+                    warnings=warnings,
+                ),
+                original_finish=_parse_date_optional(
+                    row.get("Original finish"),
+                    row_label=row_label,
+                    field_name="Original finish",
+                    warnings=warnings,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"{row_label}: skipped - could not build Activity ({exc})")
+            continue
 
-            try:
-                act = Activity(
-                    task_id=task_id_norm,
-                    task_name=_normalize_scalar_cell(row.get("Task name")),
-                    unique_task_id=_normalize_scalar_cell(row.get("Unique task ID")),
-                    duration_days=_parse_days_optional(
-                        row.get("Duration"), row_label=row_label, field_name="Duration", warnings=warnings
-                    ),
-                    duration_remaining_days=_parse_days_optional(
-                        row.get("Duration remaining"),
-                        row_label=row_label,
-                        field_name="Duration remaining",
-                        warnings=warnings,
-                    ),
-                    start=_parse_date_optional(
-                        row.get("Start"), row_label=row_label, field_name="Start", warnings=warnings
-                    ),
-                    finish=_parse_date_optional(
-                        row.get("Finish"), row_label=row_label, field_name="Finish", warnings=warnings
-                    ),
-                    early_start=_parse_date_optional(
-                        row.get("Early start"), row_label=row_label, field_name="Early start", warnings=warnings
-                    ),
-                    early_finish=_parse_date_optional(
-                        row.get("Early finish"), row_label=row_label, field_name="Early finish", warnings=warnings
-                    ),
-                    late_start=_parse_date_optional(
-                        row.get("Late start"), row_label=row_label, field_name="Late start", warnings=warnings
-                    ),
-                    late_finish=_parse_date_optional(
-                        row.get("Late finish"), row_label=row_label, field_name="Late finish", warnings=warnings
-                    ),
-                    total_float_days=_parse_days_optional(
-                        row.get("Total float"), row_label=row_label, field_name="Total float", warnings=warnings
-                    ),
-                    free_float_days=_parse_days_optional(
-                        row.get("Free float"), row_label=row_label, field_name="Free float", warnings=warnings
-                    ),
-                    critical=_parse_bool_optional(
-                        row.get("Critical"), row_label=row_label, field_name="Critical", warnings=warnings
-                    ),
-                    predecessors=preds,
-                    successors=succs,
-                    critical_path_drag_days=_parse_days_optional(
-                        row.get("Critical path drag"),
-                        row_label=row_label,
-                        field_name="Critical path drag",
-                        warnings=warnings,
-                    ),
-                    phase_exec=_normalize_scalar_cell(row.get("Phase Exec")),
-                    control_account=_normalize_scalar_cell(row.get("Control Account")),
-                    area_zone=_normalize_scalar_cell(row.get("Area Zone")),
-                    level=_normalize_scalar_cell(row.get("Level")),
-                    csi=_normalize_scalar_cell(row.get("CSI")),
-                    system=_normalize_scalar_cell(row.get("System")),
-                    percent_complete=_parse_percent_optional(
-                        row.get("Percent complete"),
-                        row_label=row_label,
-                        field_name="Percent complete",
-                        warnings=warnings,
-                    ),
-                    original_start=_parse_date_optional(
-                        row.get("Original start"),
-                        row_label=row_label,
-                        field_name="Original start",
-                        warnings=warnings,
-                    ),
-                    original_finish=_parse_date_optional(
-                        row.get("Original finish"),
-                        row_label=row_label,
-                        field_name="Original finish",
-                        warnings=warnings,
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001 — intake must not crash the whole file
-                warnings.append(f"{row_label}: skipped - could not build Activity ({exc})")
-                continue
+        activities.append(act)
 
-            activities.append(act)
+    if not activities:
+        raise AstaIntakeError("No activities with usable Task ID were found in the CSV.")
 
     return AstaParseResult(activities=activities, warnings=warnings)

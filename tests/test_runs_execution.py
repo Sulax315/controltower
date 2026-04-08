@@ -17,7 +17,7 @@ from controltower.schedule_intake.verification import ExportValidationResult, va
 
 def _write_schedule_csv(tmp_path: Path) -> Path:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS))
+    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS), lineterminator="\n")
     writer.writeheader()
     rows = [
         {"Task ID": "100", "Task name": "Start", "Successors": "200", "Critical": "TRUE"},
@@ -86,7 +86,7 @@ def test_execute_run_failure_for_empty_activity_csv(sample_config_path, tmp_path
     record = get_run(config.runtime.state_root, run_id)
     assert record is not None
     assert record["status"] == "failed"
-    assert "no valid activities" in (record["error_message"] or "").lower()
+    assert "no activities with usable task id" in (record["error_message"] or "").lower()
 
 
 def test_post_runs_route_executes_and_returns_run_status(sample_config_path, tmp_path: Path) -> None:

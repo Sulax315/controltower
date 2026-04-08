@@ -18,12 +18,14 @@ SOURCE_COMPONENTS = (
     "output_contracts.EngineSnapshot",
     "output_contracts.ExplorationContract",
     "output_contracts.ScheduleIntelligenceBundle",
+    "normalized_intake.build_normalized_intake_payload",
 )
 
 FILENAME_BUNDLE = "intelligence_bundle.json"
 FILENAME_COMMAND_BRIEF = "command_brief.json"
 FILENAME_ENGINE_SNAPSHOT = "engine_snapshot.json"
 FILENAME_EXPLORATION = "exploration.json"
+FILENAME_NORMALIZED_INTAKE = "normalized_intake.json"
 FILENAME_MANIFEST = "manifest.json"
 
 
@@ -46,6 +48,7 @@ class ExportManifest:
     command_brief_present: bool
     engine_snapshot_present: bool
     exploration_present: bool
+    normalized_intake_present: bool
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -123,13 +126,19 @@ def build_export_manifest(artifacts: tuple[ExportedArtifact, ...]) -> ExportMani
         command_brief_present=FILENAME_COMMAND_BRIEF in names,
         engine_snapshot_present=FILENAME_ENGINE_SNAPSHOT in names,
         exploration_present=FILENAME_EXPLORATION in names,
+        normalized_intake_present=FILENAME_NORMALIZED_INTAKE in names,
     )
+
+
+def export_normalized_intake_document(export_dir: Path, payload: dict[str, Any]) -> ExportedArtifact:
+    return write_json_artifact(export_dir / FILENAME_NORMALIZED_INTAKE, payload)
 
 
 def export_deterministic_artifact_set(
     export_dir: Path,
     *,
     bundle: ScheduleIntelligenceBundle,
+    normalized_intake: dict[str, Any],
 ) -> tuple[tuple[ExportedArtifact, ...], ExportManifest]:
     export_dir.mkdir(parents=True, exist_ok=True)
     artifacts = (
@@ -137,6 +146,7 @@ def export_deterministic_artifact_set(
         export_command_brief_contract(export_dir, bundle.command_brief),
         export_engine_snapshot(export_dir, bundle.engine_snapshot),
         export_exploration_contract(export_dir, bundle.exploration),
+        export_normalized_intake_document(export_dir, normalized_intake),
     )
     manifest = build_export_manifest(artifacts)
     manifest_artifact = write_json_artifact(export_dir / FILENAME_MANIFEST, manifest.to_jsonable_dict())
@@ -145,6 +155,7 @@ def export_deterministic_artifact_set(
         next(a for a in artifacts if a.filename == FILENAME_COMMAND_BRIEF),
         next(a for a in artifacts if a.filename == FILENAME_ENGINE_SNAPSHOT),
         next(a for a in artifacts if a.filename == FILENAME_EXPLORATION),
+        next(a for a in artifacts if a.filename == FILENAME_NORMALIZED_INTAKE),
         manifest_artifact,
     )
     return ordered, manifest

@@ -17,7 +17,7 @@ import io
 
 def _write_schedule_csv(tmp_path: Path) -> Path:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS))
+    writer = csv.DictWriter(buf, fieldnames=list(ASTA_EXPORT_HEADERS), lineterminator="\n")
     writer.writeheader()
     writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "100", "Task name": "Start", "Successors": "200"})
     writer.writerow({h: "" for h in ASTA_EXPORT_HEADERS} | {"Task ID": "200", "Task name": "Finish", "Predecessors": "100"})

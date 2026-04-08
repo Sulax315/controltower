@@ -11,8 +11,10 @@ from .export_artifacts import (
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
     FILENAME_MANIFEST,
+    FILENAME_NORMALIZED_INTAKE,
     compute_sha256_bytes,
 )
+from .normalized_intake import NORMALIZED_INTAKE_SCHEMA_VERSION
 from .output_contracts import CommandBriefContract, EngineSnapshot, ExplorationContract, ScheduleIntelligenceBundle
 
 REQUIRED_BUNDLE_TOP_LEVEL_KEYS = ("engine_snapshot", "command_brief", "exploration")
@@ -35,6 +37,7 @@ REQUIRED_EXPORT_FILES = (
     FILENAME_COMMAND_BRIEF,
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
+    FILENAME_NORMALIZED_INTAKE,
     FILENAME_MANIFEST,
 )
 
@@ -108,9 +111,23 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
         FILENAME_COMMAND_BRIEF,
         FILENAME_ENGINE_SNAPSHOT,
         FILENAME_EXPLORATION,
+        FILENAME_NORMALIZED_INTAKE,
     }
     if manifest_names != expected_manifest_names:
         errors.append("manifest artifacts do not match required export files")
+
+    norm_path = existing.get(FILENAME_NORMALIZED_INTAKE)
+    if norm_path is not None and not errors:
+        try:
+            norm_raw = _load_json_dict(norm_path)
+        except BundleValidationError as exc:
+            errors.append(f"invalid normalized_intake.json: {exc}")
+        else:
+            if norm_raw.get("schema_version") != NORMALIZED_INTAKE_SCHEMA_VERSION:
+                errors.append("normalized_intake.json: unexpected schema_version")
+            acts = norm_raw.get("activities")
+            if not isinstance(acts, list):
+                errors.append("normalized_intake.json: activities must be a list")
 
     return ExportValidationResult(ok=(len(errors) == 0), errors=tuple(errors))
 

@@ -1,6 +1,6 @@
 """Schedule export intake (Asta CSV and related parsers)."""
 
-from .asta_csv import AstaParseResult, parse_asta_export_csv
+from .asta_csv import AstaIntakeError, AstaParseResult, parse_asta_export_csv
 from .command_brief import (
     CommandBrief,
     DeltaSummary,
@@ -89,6 +89,7 @@ from .export_artifacts import (
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
     FILENAME_MANIFEST,
+    FILENAME_NORMALIZED_INTAKE,
     ExportManifest,
     ExportedArtifact,
     build_export_manifest,
@@ -101,12 +102,15 @@ from .export_artifacts import (
     export_schedule_intelligence_bundle,
     write_json_artifact,
 )
+from .normalized_intake import NORMALIZED_INTAKE_SCHEMA_VERSION, build_normalized_intake_payload
 from .risks import RiskFinding, collect_schedule_risk_findings
 
 __all__ = [
+    "AstaIntakeError",
     "Activity",
     "AsymmetricRelationship",
     "AstaParseResult",
+    "NORMALIZED_INTAKE_SCHEMA_VERSION",
     "DriverCandidate",
     "DriverRankDelta",
     "DegreeDistributionStats",
@@ -124,6 +128,7 @@ __all__ = [
     "FILENAME_ENGINE_SNAPSHOT",
     "FILENAME_EXPLORATION",
     "FILENAME_MANIFEST",
+    "FILENAME_NORMALIZED_INTAKE",
     "ExplorationContract",
     "ScheduleIntelligenceBundle",
     "ScheduleDeltaResult",
@@ -149,6 +154,7 @@ __all__ = [
     "build_command_brief_contract",
     "build_engine_snapshot",
     "build_export_manifest",
+    "build_normalized_intake_payload",
     "build_exploration_contract",
     "build_schedule_intelligence_bundle",
     "build_publish_header",

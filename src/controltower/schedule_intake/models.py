@@ -6,11 +6,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Activity(BaseModel):
-    """One row from the authoritative Asta CSV export."""
+    """
+    Canonical normalized activity record for schedule intelligence (Phase 14).
+
+    Produced from the authoritative Asta Powerproject CSV export; consumed by graph,
+    driver, and risk phases. Synthetic activities (unit tests) may omit ``source_row_index``.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=False)
 
     task_id: str = Field(description="Task ID — primary graph key")
+    source_row_index: int | None = Field(
+        default=None,
+        description="1-based physical CSV row number (header is row 1); None for synthetic non-CSV activities",
+    )
     task_name: str | None = None
     unique_task_id: str | None = None
     start: datetime | None = None
