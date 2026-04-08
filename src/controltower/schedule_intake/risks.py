@@ -20,6 +20,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .drivers import DriverAnalysis, build_driver_analysis
 from .graph import InvalidReference, ScheduleLogicGraph
 from .graph_summary import ScheduleGraphSummary, build_schedule_graph_summary
 from .logic_quality import AsymmetricRelationship, LogicQualitySignals, analyze_logic_quality
@@ -33,6 +34,11 @@ RiskType = Literal[
     "low_float",
     "zero_float_non_critical",
     "critical_high_fanout",
+    "orphan_chain_exposure",
+    "finish_target_fragility_open_inbound",
+    "driver_path_low_float_pressure",
+    "driver_path_zero_float_non_critical",
+    "finish_target_not_critical",
 ]
 
 Severity = Literal["high", "medium", "low"]
@@ -46,6 +52,11 @@ _SEVERITY_BY_TYPE: dict[str, Severity] = {
     "critical_high_fanout": "medium",
     "open_start": "low",
     "open_finish": "low",
+    "orphan_chain_exposure": "medium",
+    "finish_target_fragility_open_inbound": "high",
+    "driver_path_low_float_pressure": "medium",
+    "driver_path_zero_float_non_critical": "high",
+    "finish_target_not_critical": "medium",
 }
 
 _SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1}
@@ -58,6 +69,11 @@ _TYPE_OFFSET = {
     "asymmetric_relationship": 50,
     "low_float": 40,
     "critical_high_fanout": 35,
+    "finish_target_fragility_open_inbound": 65,
+    "driver_path_zero_float_non_critical": 62,
+    "orphan_chain_exposure": 52,
+    "driver_path_low_float_pressure": 45,
+    "finish_target_not_critical": 42,
     "open_start": 20,
     "open_finish": 10,
 }
@@ -76,6 +92,8 @@ class RiskFinding(BaseModel):
     task_id: str | None = None
     task_name: str | None = None
     related_task_ids: tuple[str, ...] = ()
+    touches_finish_target: bool = False
+    touches_driver_path: bool = False
     evidence: tuple[tuple[str, str], ...] = Field(description="Sorted (key, value) pairs")
     source_signals: tuple[str, ...] = Field(description="Which signal families produced this row")
     sort_score: int
@@ -93,6 +111,7 @@ def collect_schedule_risk_findings(
     graph: ScheduleLogicGraph,
     logic_quality: LogicQualitySignals | None = None,
     graph_summary: ScheduleGraphSummary | None = None,
+    driver_analysis: DriverAnalysis | None = None,
 ) -> tuple[RiskFinding, ...]:
     """
     Aggregate risks from logic quality, graph summary, and per-activity fields.
@@ -101,12 +120,24 @@ def collect_schedule_risk_findings(
     """
     lq = logic_quality or analyze_logic_quality(graph)
     gs = graph_summary or build_schedule_graph_summary(graph)
+    da = driver_analysis or build_driver_analysis(graph)
+    finish_task_id = da.authoritative_finish_target.task_id if da is not None else None
+    driver_path_ids = frozenset(da.driver_path) if da is not None else frozenset()
     findings: list[RiskFinding] = []
+
+    def _touches(task_id: str | None, related_task_ids: tuple[str, ...]) -> tuple[bool, bool]:
+        touched = set(related_task_ids)
+        if task_id is not None:
+            touched.add(task_id)
+        touches_finish = finish_task_id is not None and finish_task_id in touched
+        touches_driver = bool(touched.intersection(driver_path_ids))
+        return touches_finish, touches_driver
 
     if lq.cycle_witness:
         w = lq.cycle_witness
         rid = "cycle_detected"
         sev = _SEVERITY_BY_TYPE[rid]
+        touches_finish, touches_driver = _touches(w[0], tuple(w))
         findings.append(
             RiskFinding(
                 risk_id=rid,
@@ -115,6 +146,8 @@ def collect_schedule_risk_findings(
                 task_id=w[0],
                 task_name=graph.nodes_by_id[w[0]].task_name,
                 related_task_ids=tuple(w),
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
                 evidence=_evidence(
                     {
                         "cycle_witness_task_ids": ",".join(w),
@@ -131,6 +164,7 @@ def collect_schedule_risk_findings(
         sev = _SEVERITY_BY_TYPE["invalid_reference"]
         act = graph.nodes_by_id.get(ir.referencing_task_id)
         tie = min(99, len(ir.referenced_task_id))
+        touches_finish, touches_driver = _touches(ir.referencing_task_id, (ir.referenced_task_id,))
         findings.append(
             RiskFinding(
                 risk_id=rid,
@@ -139,6 +173,8 @@ def collect_schedule_risk_findings(
                 task_id=ir.referencing_task_id,
                 task_name=act.task_name if act else None,
                 related_task_ids=(ir.referenced_task_id,),
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
                 evidence=_evidence(
                     {
                         "referenced_task_id": ir.referenced_task_id,
@@ -154,6 +190,7 @@ def collect_schedule_risk_findings(
     for ar in lq.asymmetric_relationships:
         rid = f"asymmetric_relationship:{ar.from_task_id}:{ar.to_task_id}"
         sev = _SEVERITY_BY_TYPE["asymmetric_relationship"]
+        touches_finish, touches_driver = _touches(ar.from_task_id, (ar.to_task_id,))
         findings.append(
             RiskFinding(
                 risk_id=rid,
@@ -162,6 +199,8 @@ def collect_schedule_risk_findings(
                 task_id=ar.from_task_id,
                 task_name=graph.nodes_by_id[ar.from_task_id].task_name,
                 related_task_ids=(ar.to_task_id,),
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
                 evidence=_evidence(
                     {
                         "edge_from_task_id": ar.from_task_id,
@@ -183,6 +222,7 @@ def collect_schedule_risk_findings(
         rid = f"open_start:{tid}"
         sev = _SEVERITY_BY_TYPE["open_start"]
         act = graph.nodes_by_id[tid]
+        touches_finish, touches_driver = _touches(tid, ())
         findings.append(
             RiskFinding(
                 risk_id=rid,
@@ -190,6 +230,8 @@ def collect_schedule_risk_findings(
                 severity=sev,
                 task_id=tid,
                 task_name=act.task_name,
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
                 evidence=_evidence(
                     {
                         "inbound_edge_count": "0",
@@ -206,6 +248,7 @@ def collect_schedule_risk_findings(
         rid = f"open_finish:{tid}"
         sev = _SEVERITY_BY_TYPE["open_finish"]
         act = graph.nodes_by_id[tid]
+        touches_finish, touches_driver = _touches(tid, ())
         findings.append(
             RiskFinding(
                 risk_id=rid,
@@ -213,6 +256,8 @@ def collect_schedule_risk_findings(
                 severity=sev,
                 task_id=tid,
                 task_name=act.task_name,
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
                 evidence=_evidence(
                     {
                         "outbound_edge_count": "0",
@@ -225,6 +270,82 @@ def collect_schedule_risk_findings(
             )
         )
 
+    for chain in lq.orphan_chains:
+        anchor = chain[0] if chain else None
+        rid = f"orphan_chain_exposure:{','.join(chain)}"
+        sev = _SEVERITY_BY_TYPE["orphan_chain_exposure"]
+        touches_finish, touches_driver = _touches(anchor, chain)
+        findings.append(
+            RiskFinding(
+                risk_id=rid,
+                risk_type="orphan_chain_exposure",
+                severity=sev,
+                task_id=anchor,
+                task_name=graph.nodes_by_id[anchor].task_name if anchor is not None else None,
+                related_task_ids=tuple(chain),
+                touches_finish_target=touches_finish,
+                touches_driver_path=touches_driver,
+                evidence=_evidence(
+                    {
+                        "component_size": str(len(chain)),
+                        "orphan_chain_task_ids": ",".join(chain),
+                    }
+                ),
+                source_signals=("LogicQualitySignals.orphan_chains", "ScheduleLogicGraph.outbound_edges_by_id"),
+                sort_score=_make_sort_score(sev, "orphan_chain_exposure", min(99, len(chain))),
+            )
+        )
+
+    if finish_task_id is not None:
+        in_deg_finish = len(graph.inbound_edges_by_id.get(finish_task_id, []))
+        finish_act = graph.nodes_by_id[finish_task_id]
+        if in_deg_finish == 0:
+            rid = f"finish_target_fragility_open_inbound:{finish_task_id}"
+            sev = _SEVERITY_BY_TYPE["finish_target_fragility_open_inbound"]
+            touches_finish, touches_driver = _touches(finish_task_id, ())
+            findings.append(
+                RiskFinding(
+                    risk_id=rid,
+                    risk_type="finish_target_fragility_open_inbound",
+                    severity=sev,
+                    task_id=finish_task_id,
+                    task_name=finish_act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
+                    evidence=_evidence(
+                        {
+                            "authoritative_finish_target": finish_task_id,
+                            "inbound_edge_count": "0",
+                        }
+                    ),
+                    source_signals=("DriverAnalysis.authoritative_finish_target", "ScheduleLogicGraph.inbound_edges_by_id"),
+                    sort_score=_make_sort_score(sev, "finish_target_fragility_open_inbound"),
+                )
+            )
+        if finish_act.critical is False:
+            rid = f"finish_target_not_critical:{finish_task_id}"
+            sev = _SEVERITY_BY_TYPE["finish_target_not_critical"]
+            touches_finish, touches_driver = _touches(finish_task_id, ())
+            findings.append(
+                RiskFinding(
+                    risk_id=rid,
+                    risk_type="finish_target_not_critical",
+                    severity=sev,
+                    task_id=finish_task_id,
+                    task_name=finish_act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
+                    evidence=_evidence(
+                        {
+                            "authoritative_finish_target": finish_task_id,
+                            "critical": "False",
+                        }
+                    ),
+                    source_signals=("DriverAnalysis.authoritative_finish_target", "Activity.critical"),
+                    sort_score=_make_sort_score(sev, "finish_target_not_critical"),
+                )
+            )
+
     for tid in sorted(graph.nodes_by_id):
         act = graph.nodes_by_id[tid]
         tf = act.total_float_days
@@ -234,6 +355,7 @@ def collect_schedule_risk_findings(
         if tf is not None and tf <= 0.0 and crit is not True:
             rid = f"zero_float_non_critical:{tid}"
             sev = _SEVERITY_BY_TYPE["zero_float_non_critical"]
+            touches_finish, touches_driver = _touches(tid, ())
             findings.append(
                 RiskFinding(
                     risk_id=rid,
@@ -241,6 +363,8 @@ def collect_schedule_risk_findings(
                     severity=sev,
                     task_id=tid,
                     task_name=act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
                     evidence=_evidence(
                         {
                             "critical": str(crit),
@@ -256,6 +380,7 @@ def collect_schedule_risk_findings(
             rid = f"low_float:{tid}"
             sev = _SEVERITY_BY_TYPE["low_float"]
             tie = min(99, int(tf * 10))
+            touches_finish, touches_driver = _touches(tid, ())
             findings.append(
                 RiskFinding(
                     risk_id=rid,
@@ -263,6 +388,8 @@ def collect_schedule_risk_findings(
                     severity=sev,
                     task_id=tid,
                     task_name=act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
                     evidence=_evidence(
                         {
                             "low_float_max_exclusive_days": str(LOW_FLOAT_MAX_EXCLUSIVE),
@@ -278,6 +405,7 @@ def collect_schedule_risk_findings(
         if crit is True and out_deg >= 2:
             rid = f"critical_high_fanout:{tid}"
             sev = _SEVERITY_BY_TYPE["critical_high_fanout"]
+            touches_finish, touches_driver = _touches(tid, ())
             findings.append(
                 RiskFinding(
                     risk_id=rid,
@@ -285,6 +413,8 @@ def collect_schedule_risk_findings(
                     severity=sev,
                     task_id=tid,
                     task_name=act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
                     evidence=_evidence(
                         {
                             "critical": "True",
@@ -294,6 +424,59 @@ def collect_schedule_risk_findings(
                     ),
                     source_signals=("Activity.critical", "ScheduleLogicGraph.outbound_edges_by_id"),
                     sort_score=_make_sort_score(sev, "critical_high_fanout", min(99, out_deg)),
+                )
+            )
+
+        if tid in driver_path_ids and tf is not None and 0.0 < tf <= LOW_FLOAT_MAX_EXCLUSIVE:
+            rid = f"driver_path_low_float_pressure:{tid}"
+            sev = _SEVERITY_BY_TYPE["driver_path_low_float_pressure"]
+            touches_finish, touches_driver = _touches(tid, ())
+            findings.append(
+                RiskFinding(
+                    risk_id=rid,
+                    risk_type="driver_path_low_float_pressure",
+                    severity=sev,
+                    task_id=tid,
+                    task_name=act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
+                    evidence=_evidence(
+                        {
+                            "driver_path_member": "True",
+                            "low_float_max_exclusive_days": str(LOW_FLOAT_MAX_EXCLUSIVE),
+                            "total_float_days": str(tf),
+                        }
+                    ),
+                    source_signals=("DriverAnalysis.driver_path", "Activity.total_float_days"),
+                    sort_score=_make_sort_score(sev, "driver_path_low_float_pressure", min(99, int(tf * 10))),
+                )
+            )
+        if tid in driver_path_ids and tf is not None and tf <= 0.0 and crit is not True:
+            rid = f"driver_path_zero_float_non_critical:{tid}"
+            sev = _SEVERITY_BY_TYPE["driver_path_zero_float_non_critical"]
+            touches_finish, touches_driver = _touches(tid, ())
+            findings.append(
+                RiskFinding(
+                    risk_id=rid,
+                    risk_type="driver_path_zero_float_non_critical",
+                    severity=sev,
+                    task_id=tid,
+                    task_name=act.task_name,
+                    touches_finish_target=touches_finish,
+                    touches_driver_path=touches_driver,
+                    evidence=_evidence(
+                        {
+                            "critical": str(crit),
+                            "driver_path_member": "True",
+                            "total_float_days": str(tf),
+                        }
+                    ),
+                    source_signals=("DriverAnalysis.driver_path", "Activity.total_float_days", "Activity.critical"),
+                    sort_score=_make_sort_score(
+                        sev,
+                        "driver_path_zero_float_non_critical",
+                        min(99, int(abs(tf) * 10) % 100),
+                    ),
                 )
             )
 

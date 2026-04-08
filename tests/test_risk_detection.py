@@ -91,3 +91,70 @@ def test_fixture_contains_expected_types() -> None:
     assert "open_finish" in types
     assert "cycle_detected" not in types
     assert f[0].severity == "high"
+
+
+def test_orphan_chain_exposure_present() -> None:
+    acts = [
+        Activity(task_id="A", successors=["B"]),
+        Activity(task_id="B", predecessors=["A"]),
+        Activity(task_id="X", successors=["Y"]),
+        Activity(task_id="Y", predecessors=["X"]),
+    ]
+    g = build_schedule_logic_graph(acts)
+    f = collect_schedule_risk_findings(g)
+    orphan = [x for x in f if x.risk_type == "orphan_chain_exposure"]
+    assert len(orphan) == 1
+    assert orphan[0].related_task_ids == ("X", "Y")
+
+
+def test_finish_target_fragility_open_inbound_and_linkage() -> None:
+    acts = [Activity(task_id="solo", critical=False)]
+    g = build_schedule_logic_graph(acts)
+    f = collect_schedule_risk_findings(g)
+    frag = [x for x in f if x.risk_type == "finish_target_fragility_open_inbound"]
+    assert len(frag) == 1
+    assert frag[0].touches_finish_target is True
+    assert frag[0].touches_driver_path is True
+
+
+def test_driver_path_low_float_and_zero_float_non_critical() -> None:
+    acts = [
+        Activity(task_id="1", successors=["2"], total_float_days=1.0, critical=True),
+        Activity(task_id="2", predecessors=["1"], successors=["3"], total_float_days=0.0, critical=False),
+        Activity(task_id="3", predecessors=["2"], total_float_days=6.0, critical=True),
+    ]
+    g = build_schedule_logic_graph(acts)
+    f = collect_schedule_risk_findings(g)
+    low = [x for x in f if x.risk_type == "driver_path_low_float_pressure"]
+    zero = [x for x in f if x.risk_type == "driver_path_zero_float_non_critical"]
+    assert len(low) == 1 and low[0].task_id == "1"
+    assert low[0].touches_driver_path is True
+    assert len(zero) == 1 and zero[0].task_id == "2"
+    assert zero[0].severity == "high"
+
+
+def test_finish_target_not_critical_detection() -> None:
+    acts = [
+        Activity(task_id="1", successors=["2"], critical=True),
+        Activity(task_id="2", predecessors=["1"], critical=False),
+    ]
+    g = build_schedule_logic_graph(acts)
+    f = collect_schedule_risk_findings(g)
+    rows = [x for x in f if x.risk_type == "finish_target_not_critical"]
+    assert len(rows) == 1
+    assert rows[0].task_id == "2"
+    assert rows[0].touches_finish_target is True
+
+
+def test_severity_and_ordering_stable_for_new_types() -> None:
+    acts = [
+        Activity(task_id="a", successors=["b"], total_float_days=1.0, critical=True),
+        Activity(task_id="b", predecessors=["a"], total_float_days=0.0, critical=False),
+    ]
+    g = build_schedule_logic_graph(acts)
+    f1 = collect_schedule_risk_findings(g)
+    f2 = collect_schedule_risk_findings(g)
+    assert f1 == f2
+    by_id = {x.risk_id: x for x in f1}
+    assert by_id["driver_path_zero_float_non_critical:b"].severity == "high"
+    assert by_id["driver_path_low_float_pressure:a"].severity == "medium"
