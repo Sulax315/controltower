@@ -18,7 +18,16 @@ from .delta_analysis import (
     compare_schedule_csv_paths,
     compare_schedule_exports,
 )
-from .drivers import DriverCandidate, rank_driver_candidates
+from .drivers import (
+    DRIVER_ANALYSIS_SCHEMA_VERSION,
+    AuthoritativeFinishTarget,
+    DriverActivityEvidence,
+    DriverAnalysis,
+    DriverCandidate,
+    build_driver_analysis,
+    rank_driver_candidates,
+    select_authoritative_finish_target,
+)
 from .exploration import (
     PathQueryResult,
     ReachabilityResult,
@@ -97,6 +106,7 @@ from .export_artifacts import (
     FILENAME_COMMAND_BRIEF,
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
+    FILENAME_DRIVER_ANALYSIS,
     FILENAME_LOGIC_GRAPH,
     FILENAME_MANIFEST,
     FILENAME_NORMALIZED_INTAKE,
@@ -122,6 +132,9 @@ __all__ = [
     "AstaParseResult",
     "NORMALIZED_INTAKE_SCHEMA_VERSION",
     "DriverCandidate",
+    "DRIVER_ANALYSIS_SCHEMA_VERSION",
+    "DriverActivityEvidence",
+    "DriverAnalysis",
     "DriverRankDelta",
     "DegreeDistributionStats",
     "InvalidReference",
@@ -138,6 +151,7 @@ __all__ = [
     "FILENAME_COMMAND_BRIEF",
     "FILENAME_ENGINE_SNAPSHOT",
     "FILENAME_EXPLORATION",
+    "FILENAME_DRIVER_ANALYSIS",
     "FILENAME_LOGIC_GRAPH",
     "FILENAME_MANIFEST",
     "FILENAME_NORMALIZED_INTAKE",
@@ -205,6 +219,9 @@ __all__ = [
     "is_reachable",
     "parse_asta_export_csv",
     "rank_driver_candidates",
+    "build_driver_analysis",
+    "select_authoritative_finish_target",
+    "AuthoritativeFinishTarget",
     "reachable_downstream_nodes",
     "reachable_upstream_nodes",
     "top_nodes_by_in_degree",

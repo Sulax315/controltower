@@ -8,6 +8,7 @@ from controltower.schedule_intake import (
     FILENAME_BUNDLE,
     FILENAME_MANIFEST,
     build_command_brief,
+    build_driver_analysis,
     build_exploration_contract,
     build_logic_graph_payload,
     build_schedule_graph_summary,
@@ -53,7 +54,7 @@ def execute_run(csv_path: Path, *, state_root: Path) -> str:
         source_bytes = source_path.read_bytes()
         input_file.write_bytes(source_bytes)
 
-        bundle, normalized_intake, logic_graph = _build_bundle_from_csv(
+        bundle, normalized_intake, logic_graph, driver_analysis = _build_bundle_from_csv(
             input_file,
             source_sha256_hex=compute_sha256_bytes(source_bytes),
         )
@@ -63,6 +64,7 @@ def execute_run(csv_path: Path, *, state_root: Path) -> str:
             bundle=bundle,
             normalized_intake=normalized_intake,
             logic_graph=logic_graph,
+            driver_analysis=driver_analysis,
         )
         validation = validate_export_artifact_set(artifacts_dir)
         if not validation.ok:
@@ -82,7 +84,9 @@ def _generate_run_id(source_path: Path) -> str:
     return f"run_{ts}_{suffix}"
 
 
-def _build_bundle_from_csv(csv_path: Path, *, source_sha256_hex: str) -> tuple[ScheduleIntelligenceBundle, dict, dict]:
+def _build_bundle_from_csv(
+    csv_path: Path, *, source_sha256_hex: str
+) -> tuple[ScheduleIntelligenceBundle, dict, dict, dict]:
     parse_result = parse_asta_export_csv(csv_path)
     normalized_intake = build_normalized_intake_payload(
         parse_result.activities,
@@ -92,6 +96,10 @@ def _build_bundle_from_csv(csv_path: Path, *, source_sha256_hex: str) -> tuple[S
     )
     graph = build_schedule_logic_graph(parse_result.activities)
     logic_graph = build_logic_graph_payload(graph)
+    driver_analysis_obj = build_driver_analysis(graph)
+    if driver_analysis_obj is None:
+        raise ValueError("No structural finish candidate available for deterministic driver detection.")
+    driver_analysis = driver_analysis_obj.model_dump(mode="json")
     graph_summary = build_schedule_graph_summary(graph)
     logic_quality = analyze_logic_quality(graph)
     top_candidates = rank_driver_candidates(graph, limit=1)
@@ -107,4 +115,4 @@ def _build_bundle_from_csv(csv_path: Path, *, source_sha256_hex: str) -> tuple[S
         command_brief=command_brief,
         exploration=build_exploration_contract(),
     )
-    return bundle, normalized_intake, logic_graph
+    return bundle, normalized_intake, logic_graph, driver_analysis

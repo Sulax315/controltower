@@ -8,6 +8,7 @@ from typing import Any
 from .export_artifacts import (
     FILENAME_BUNDLE,
     FILENAME_COMMAND_BRIEF,
+    FILENAME_DRIVER_ANALYSIS,
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
     FILENAME_LOGIC_GRAPH,
@@ -15,6 +16,7 @@ from .export_artifacts import (
     FILENAME_NORMALIZED_INTAKE,
     compute_sha256_bytes,
 )
+from .drivers import DRIVER_ANALYSIS_SCHEMA_VERSION
 from .graph import LOGIC_GRAPH_SCHEMA_VERSION
 from .normalized_intake import NORMALIZED_INTAKE_SCHEMA_VERSION
 from .output_contracts import CommandBriefContract, EngineSnapshot, ExplorationContract, ScheduleIntelligenceBundle
@@ -41,6 +43,7 @@ REQUIRED_EXPORT_FILES = (
     FILENAME_EXPLORATION,
     FILENAME_NORMALIZED_INTAKE,
     FILENAME_LOGIC_GRAPH,
+    FILENAME_DRIVER_ANALYSIS,
     FILENAME_MANIFEST,
 )
 
@@ -116,6 +119,7 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
         FILENAME_EXPLORATION,
         FILENAME_NORMALIZED_INTAKE,
         FILENAME_LOGIC_GRAPH,
+        FILENAME_DRIVER_ANALYSIS,
     }
     if manifest_names != expected_manifest_names:
         errors.append("manifest artifacts do not match required export files")
@@ -150,6 +154,25 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
                 errors.append("logic_graph.json: finish_candidates must be a list")
             if not isinstance(graph_raw.get("orphan_chains"), list):
                 errors.append("logic_graph.json: orphan_chains must be a list")
+
+    driver_path = existing.get(FILENAME_DRIVER_ANALYSIS)
+    if driver_path is not None and not errors:
+        try:
+            driver_raw = _load_json_dict(driver_path)
+        except BundleValidationError as exc:
+            errors.append(f"invalid driver_analysis.json: {exc}")
+        else:
+            if driver_raw.get("schema_version") != DRIVER_ANALYSIS_SCHEMA_VERSION:
+                errors.append("driver_analysis.json: unexpected schema_version")
+            finish = driver_raw.get("authoritative_finish_target")
+            if not isinstance(finish, dict):
+                errors.append("driver_analysis.json: authoritative_finish_target must be an object")
+            driver_ids = driver_raw.get("driver_path")
+            if not isinstance(driver_ids, list):
+                errors.append("driver_analysis.json: driver_path must be a list")
+            acts = driver_raw.get("driver_activities")
+            if not isinstance(acts, list):
+                errors.append("driver_analysis.json: driver_activities must be a list")
 
     return ExportValidationResult(ok=(len(errors) == 0), errors=tuple(errors))
 

@@ -14,6 +14,7 @@ from controltower.schedule_intake import (
     Activity,
     FILENAME_BUNDLE,
     build_command_brief,
+    build_driver_analysis,
     build_exploration_contract,
     build_logic_graph_payload,
     build_normalized_intake_payload,
@@ -81,6 +82,12 @@ def _e2e_logic_graph() -> dict:
     return build_logic_graph_payload(build_schedule_logic_graph(_E2E_ACTIVITIES))
 
 
+def _e2e_driver_analysis() -> dict:
+    da = build_driver_analysis(build_schedule_logic_graph(_E2E_ACTIVITIES))
+    assert da is not None
+    return da.model_dump(mode="json")
+
+
 def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) -> None:
     bundle = _build_bundle()
     export_dir = tmp_path / "full_chain"
@@ -89,6 +96,7 @@ def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) ->
         bundle=bundle,
         normalized_intake=_e2e_normalized_intake(),
         logic_graph=_e2e_logic_graph(),
+        driver_analysis=_e2e_driver_analysis(),
     )
 
     validation = validate_export_artifact_set(export_dir)
@@ -126,8 +134,13 @@ def test_end_to_end_deterministic_stable_outputs(tmp_path: Path) -> None:
     run_b = tmp_path / "run_b"
     norm = _e2e_normalized_intake()
     graph = _e2e_logic_graph()
-    export_deterministic_artifact_set(run_a, bundle=bundle, normalized_intake=norm, logic_graph=graph)
-    export_deterministic_artifact_set(run_b, bundle=bundle, normalized_intake=norm, logic_graph=graph)
+    driver = _e2e_driver_analysis()
+    export_deterministic_artifact_set(
+        run_a, bundle=bundle, normalized_intake=norm, logic_graph=graph, driver_analysis=driver
+    )
+    export_deterministic_artifact_set(
+        run_b, bundle=bundle, normalized_intake=norm, logic_graph=graph, driver_analysis=driver
+    )
 
     assert export_directory_file_map(run_a) == export_directory_file_map(run_b)
 

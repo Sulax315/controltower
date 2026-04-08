@@ -10,7 +10,7 @@ from pathlib import Path
 from .asta_csv import parse_asta_export_csv
 from .command_brief import build_command_brief
 from .delta_analysis import ScheduleDeltaResult, compare_schedule_csv_paths
-from .drivers import rank_driver_candidates
+from .drivers import build_driver_analysis, rank_driver_candidates
 from .export_artifacts import compute_sha256_bytes, export_deterministic_artifact_set
 from .normalized_intake import build_normalized_intake_payload
 from .exploration import (
@@ -360,11 +360,16 @@ def run_summary(
                 source_sha256_hex=compute_sha256_bytes(src_bytes),
             )
             logic_graph = build_logic_graph_payload(graph)
+            driver_analysis_obj = build_driver_analysis(graph)
+            if driver_analysis_obj is None:
+                raise ValueError("No structural finish candidate available for deterministic driver detection.")
+            driver_analysis = driver_analysis_obj.model_dump(mode="json")
             artifacts, manifest = export_deterministic_artifact_set(
                 export_dir,
                 bundle=bundle,
                 normalized_intake=normalized_intake,
                 logic_graph=logic_graph,
+                driver_analysis=driver_analysis,
             )
             print(f"export_dir={export_dir}")
             for a in artifacts:
@@ -377,6 +382,7 @@ def run_summary(
                 f" exploration={manifest.exploration_present}"
                 f" normalized_intake={manifest.normalized_intake_present}"
                 f" logic_graph={manifest.logic_graph_present}"
+                f" driver_analysis={manifest.driver_analysis_present}"
             )
 
     return 0

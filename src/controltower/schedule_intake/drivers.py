@@ -51,8 +51,8 @@ from collections import deque
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .graph import ScheduleLogicGraph
-from .graph_summary import reachable_downstream_nodes
+from .graph import ScheduleLogicGraph, list_finish_candidates
+from .graph_summary import reachable_downstream_nodes, reachable_upstream_nodes
 
 
 class DriverCandidate(BaseModel):
@@ -71,6 +71,131 @@ class DriverCandidate(BaseModel):
     outbound_degree: int
     inbound_degree: int
     hops_to_structural_sink: int | None
+
+
+DRIVER_ANALYSIS_SCHEMA_VERSION = "driver_analysis_v1"
+
+
+class AuthoritativeFinishTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    selection_rule: str
+    candidate_count: int
+    tie_break: str
+
+
+class DriverActivityEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    position_on_driver_path: int
+    is_finish_target: bool
+    immediate_predecessors_on_path: tuple[str, ...]
+    immediate_successors_on_path: tuple[str, ...]
+    reachable_to_finish_target: bool
+    total_float_days: float | None
+    critical: bool | None
+
+
+class DriverAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = DRIVER_ANALYSIS_SCHEMA_VERSION
+    authoritative_finish_target: AuthoritativeFinishTarget
+    driver_path: tuple[str, ...]
+    driver_activities: tuple[DriverActivityEvidence, ...]
+
+
+def select_authoritative_finish_target(graph: ScheduleLogicGraph) -> AuthoritativeFinishTarget | None:
+    """
+    Deterministically pick one finish target from structural finish candidates.
+
+    Rule:
+    1) maximize upstream closure size (nodes that can reach candidate, including self)
+    2) tie-break by lexicographic task_id
+    """
+    candidates = list_finish_candidates(graph)
+    if not candidates:
+        return None
+    scored: list[tuple[int, str]] = []
+    for c in candidates:
+        upstream_size = len(reachable_upstream_nodes(graph, c.task_id))
+        scored.append((upstream_size, c.task_id))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return AuthoritativeFinishTarget(
+        task_id=scored[0][1],
+        selection_rule="max_upstream_closure_size_then_lexicographic_task_id",
+        candidate_count=len(candidates),
+        tie_break="lexicographic_task_id",
+    )
+
+
+def _best_upstream_path_to_finish(graph: ScheduleLogicGraph, finish_task_id: str) -> tuple[str, ...]:
+    """
+    Deterministic governing path ending at finish_task_id.
+
+    Chooses the longest simple upstream chain to finish; ties broken lexicographically.
+    """
+    preds: dict[str, tuple[str, ...]] = {
+        tid: tuple(sorted({f for f, _ in graph.inbound_edges_by_id.get(tid, [])})) for tid in graph.nodes_by_id
+    }
+    memo: dict[tuple[str, frozenset[str]], tuple[str, ...]] = {}
+
+    def best_to(node: str, visited: frozenset[str]) -> tuple[str, ...]:
+        key = (node, visited)
+        if key in memo:
+            return memo[key]
+        best: tuple[str, ...] = (node,)
+        for p in preds.get(node, ()):
+            if p in visited:
+                continue
+            cand = best_to(p, visited | {p}) + (node,)
+            if len(cand) > len(best) or (len(cand) == len(best) and cand < best):
+                best = cand
+        memo[key] = best
+        return best
+
+    return best_to(finish_task_id, frozenset({finish_task_id}))
+
+
+def build_driver_analysis(graph: ScheduleLogicGraph) -> DriverAnalysis | None:
+    """
+    Build deterministic, graph-truth driver analysis.
+
+    Driver inclusion depends only on the governing path to authoritative finish target.
+    """
+    finish = select_authoritative_finish_target(graph)
+    if finish is None:
+        return None
+    driver_path = _best_upstream_path_to_finish(graph, finish.task_id)
+    path_set = frozenset(driver_path)
+    evidences: list[DriverActivityEvidence] = []
+    for idx, task_id in enumerate(driver_path):
+        act = graph.nodes_by_id[task_id]
+        preds_on_path = tuple(
+            sorted({f for f, _ in graph.inbound_edges_by_id.get(task_id, []) if f in path_set})
+        )
+        succs_on_path = tuple(
+            sorted({t for _, t in graph.outbound_edges_by_id.get(task_id, []) if t in path_set})
+        )
+        evidences.append(
+            DriverActivityEvidence(
+                task_id=task_id,
+                position_on_driver_path=idx,
+                is_finish_target=task_id == finish.task_id,
+                immediate_predecessors_on_path=preds_on_path,
+                immediate_successors_on_path=succs_on_path,
+                reachable_to_finish_target=finish.task_id in reachable_downstream_nodes(graph, task_id),
+                total_float_days=act.total_float_days,
+                critical=act.critical,
+            )
+        )
+    return DriverAnalysis(
+        authoritative_finish_target=finish,
+        driver_path=driver_path,
+        driver_activities=tuple(evidences),
+    )
 
 
 def _shortest_hops_to_structural_sink(graph: ScheduleLogicGraph, task_id: str) -> int | None:
