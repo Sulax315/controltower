@@ -19,6 +19,7 @@ SOURCE_COMPONENTS = (
     "output_contracts.ExplorationContract",
     "output_contracts.ScheduleIntelligenceBundle",
     "normalized_intake.build_normalized_intake_payload",
+    "graph.build_logic_graph_payload",
 )
 
 FILENAME_BUNDLE = "intelligence_bundle.json"
@@ -26,6 +27,7 @@ FILENAME_COMMAND_BRIEF = "command_brief.json"
 FILENAME_ENGINE_SNAPSHOT = "engine_snapshot.json"
 FILENAME_EXPLORATION = "exploration.json"
 FILENAME_NORMALIZED_INTAKE = "normalized_intake.json"
+FILENAME_LOGIC_GRAPH = "logic_graph.json"
 FILENAME_MANIFEST = "manifest.json"
 
 
@@ -49,6 +51,7 @@ class ExportManifest:
     engine_snapshot_present: bool
     exploration_present: bool
     normalized_intake_present: bool
+    logic_graph_present: bool
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -127,6 +130,7 @@ def build_export_manifest(artifacts: tuple[ExportedArtifact, ...]) -> ExportMani
         engine_snapshot_present=FILENAME_ENGINE_SNAPSHOT in names,
         exploration_present=FILENAME_EXPLORATION in names,
         normalized_intake_present=FILENAME_NORMALIZED_INTAKE in names,
+        logic_graph_present=FILENAME_LOGIC_GRAPH in names,
     )
 
 
@@ -134,11 +138,16 @@ def export_normalized_intake_document(export_dir: Path, payload: dict[str, Any])
     return write_json_artifact(export_dir / FILENAME_NORMALIZED_INTAKE, payload)
 
 
+def export_logic_graph_document(export_dir: Path, payload: dict[str, Any]) -> ExportedArtifact:
+    return write_json_artifact(export_dir / FILENAME_LOGIC_GRAPH, payload)
+
+
 def export_deterministic_artifact_set(
     export_dir: Path,
     *,
     bundle: ScheduleIntelligenceBundle,
     normalized_intake: dict[str, Any],
+    logic_graph: dict[str, Any],
 ) -> tuple[tuple[ExportedArtifact, ...], ExportManifest]:
     export_dir.mkdir(parents=True, exist_ok=True)
     artifacts = (
@@ -147,6 +156,7 @@ def export_deterministic_artifact_set(
         export_engine_snapshot(export_dir, bundle.engine_snapshot),
         export_exploration_contract(export_dir, bundle.exploration),
         export_normalized_intake_document(export_dir, normalized_intake),
+        export_logic_graph_document(export_dir, logic_graph),
     )
     manifest = build_export_manifest(artifacts)
     manifest_artifact = write_json_artifact(export_dir / FILENAME_MANIFEST, manifest.to_jsonable_dict())
@@ -156,6 +166,7 @@ def export_deterministic_artifact_set(
         next(a for a in artifacts if a.filename == FILENAME_ENGINE_SNAPSHOT),
         next(a for a in artifacts if a.filename == FILENAME_EXPLORATION),
         next(a for a in artifacts if a.filename == FILENAME_NORMALIZED_INTAKE),
+        next(a for a in artifacts if a.filename == FILENAME_LOGIC_GRAPH),
         manifest_artifact,
     )
     return ordered, manifest

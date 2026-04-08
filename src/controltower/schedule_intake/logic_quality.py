@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .graph import InvalidReference, ScheduleLogicGraph
+from .graph import InvalidReference, ScheduleLogicGraph, find_orphan_chains, list_finish_candidates
 
 Edge = tuple[str, str]
 
@@ -105,6 +105,8 @@ class LogicQualitySignals:
     invalid_references: tuple[InvalidReference, ...]
     asymmetric_relationships: tuple[AsymmetricRelationship, ...]
     cycle_witness: tuple[str, ...] | None
+    finish_candidates: tuple[str, ...]
+    orphan_chains: tuple[tuple[str, ...], ...]
 
 
 def analyze_logic_quality(graph: ScheduleLogicGraph) -> LogicQualitySignals:
@@ -121,4 +123,6 @@ def analyze_logic_quality(graph: ScheduleLogicGraph) -> LogicQualitySignals:
         invalid_references=tuple(graph.invalid_references),
         asymmetric_relationships=asym,
         cycle_witness=cyc,
+        finish_candidates=tuple(c.task_id for c in list_finish_candidates(graph)),
+        orphan_chains=find_orphan_chains(graph),
     )

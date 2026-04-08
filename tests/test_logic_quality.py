@@ -47,3 +47,17 @@ def test_open_ends_match_graph_degrees() -> None:
     sig = analyze_logic_quality(g)
     assert sig.open_end_sources == ("solo",)
     assert sig.open_end_sinks == ("solo",)
+    assert sig.finish_candidates == ("solo",)
+    assert sig.orphan_chains == ()
+
+
+def test_cycle_witness_is_deterministic_across_ordering() -> None:
+    acts_a = [
+        Activity(task_id="1", successors=["2"]),
+        Activity(task_id="2", predecessors=["1"], successors=["3"]),
+        Activity(task_id="3", predecessors=["2"], successors=["1"]),
+    ]
+    acts_b = list(reversed(acts_a))
+    cyc_a = find_cycle_witness(build_schedule_logic_graph(acts_a))
+    cyc_b = find_cycle_witness(build_schedule_logic_graph(acts_b))
+    assert cyc_a == cyc_b == ("1", "2", "3")

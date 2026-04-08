@@ -10,10 +10,12 @@ from .export_artifacts import (
     FILENAME_COMMAND_BRIEF,
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
+    FILENAME_LOGIC_GRAPH,
     FILENAME_MANIFEST,
     FILENAME_NORMALIZED_INTAKE,
     compute_sha256_bytes,
 )
+from .graph import LOGIC_GRAPH_SCHEMA_VERSION
 from .normalized_intake import NORMALIZED_INTAKE_SCHEMA_VERSION
 from .output_contracts import CommandBriefContract, EngineSnapshot, ExplorationContract, ScheduleIntelligenceBundle
 
@@ -38,6 +40,7 @@ REQUIRED_EXPORT_FILES = (
     FILENAME_ENGINE_SNAPSHOT,
     FILENAME_EXPLORATION,
     FILENAME_NORMALIZED_INTAKE,
+    FILENAME_LOGIC_GRAPH,
     FILENAME_MANIFEST,
 )
 
@@ -112,6 +115,7 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
         FILENAME_ENGINE_SNAPSHOT,
         FILENAME_EXPLORATION,
         FILENAME_NORMALIZED_INTAKE,
+        FILENAME_LOGIC_GRAPH,
     }
     if manifest_names != expected_manifest_names:
         errors.append("manifest artifacts do not match required export files")
@@ -128,6 +132,24 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
             acts = norm_raw.get("activities")
             if not isinstance(acts, list):
                 errors.append("normalized_intake.json: activities must be a list")
+
+    graph_path = existing.get(FILENAME_LOGIC_GRAPH)
+    if graph_path is not None and not errors:
+        try:
+            graph_raw = _load_json_dict(graph_path)
+        except BundleValidationError as exc:
+            errors.append(f"invalid logic_graph.json: {exc}")
+        else:
+            if graph_raw.get("schema_version") != LOGIC_GRAPH_SCHEMA_VERSION:
+                errors.append("logic_graph.json: unexpected schema_version")
+            if not isinstance(graph_raw.get("nodes"), list):
+                errors.append("logic_graph.json: nodes must be a list")
+            if not isinstance(graph_raw.get("edges"), list):
+                errors.append("logic_graph.json: edges must be a list")
+            if not isinstance(graph_raw.get("finish_candidates"), list):
+                errors.append("logic_graph.json: finish_candidates must be a list")
+            if not isinstance(graph_raw.get("orphan_chains"), list):
+                errors.append("logic_graph.json: orphan_chains must be a list")
 
     return ExportValidationResult(ok=(len(errors) == 0), errors=tuple(errors))
 

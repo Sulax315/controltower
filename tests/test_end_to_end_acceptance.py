@@ -15,6 +15,7 @@ from controltower.schedule_intake import (
     FILENAME_BUNDLE,
     build_command_brief,
     build_exploration_contract,
+    build_logic_graph_payload,
     build_normalized_intake_payload,
     build_schedule_graph_summary,
     build_schedule_intelligence_bundle,
@@ -76,10 +77,19 @@ def _build_bundle():
     )
 
 
+def _e2e_logic_graph() -> dict:
+    return build_logic_graph_payload(build_schedule_logic_graph(_E2E_ACTIVITIES))
+
+
 def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) -> None:
     bundle = _build_bundle()
     export_dir = tmp_path / "full_chain"
-    export_deterministic_artifact_set(export_dir, bundle=bundle, normalized_intake=_e2e_normalized_intake())
+    export_deterministic_artifact_set(
+        export_dir,
+        bundle=bundle,
+        normalized_intake=_e2e_normalized_intake(),
+        logic_graph=_e2e_logic_graph(),
+    )
 
     validation = validate_export_artifact_set(export_dir)
     assert validation.ok is True
@@ -115,8 +125,9 @@ def test_end_to_end_deterministic_stable_outputs(tmp_path: Path) -> None:
     run_a = tmp_path / "run_a"
     run_b = tmp_path / "run_b"
     norm = _e2e_normalized_intake()
-    export_deterministic_artifact_set(run_a, bundle=bundle, normalized_intake=norm)
-    export_deterministic_artifact_set(run_b, bundle=bundle, normalized_intake=norm)
+    graph = _e2e_logic_graph()
+    export_deterministic_artifact_set(run_a, bundle=bundle, normalized_intake=norm, logic_graph=graph)
+    export_deterministic_artifact_set(run_b, bundle=bundle, normalized_intake=norm, logic_graph=graph)
 
     assert export_directory_file_map(run_a) == export_directory_file_map(run_b)
 

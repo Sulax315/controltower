@@ -28,7 +28,7 @@ from .exploration import (
 )
 from .output_contracts import build_exploration_contract, build_schedule_intelligence_bundle
 from .risks import collect_schedule_risk_findings
-from .graph import ScheduleLogicGraph, build_schedule_logic_graph
+from .graph import ScheduleLogicGraph, build_logic_graph_payload, build_schedule_logic_graph
 from .graph_summary import (
     build_schedule_graph_summary,
     reachable_downstream_nodes,
@@ -359,10 +359,12 @@ def run_summary(
                 source_display_name=csv_path.name,
                 source_sha256_hex=compute_sha256_bytes(src_bytes),
             )
+            logic_graph = build_logic_graph_payload(graph)
             artifacts, manifest = export_deterministic_artifact_set(
                 export_dir,
                 bundle=bundle,
                 normalized_intake=normalized_intake,
+                logic_graph=logic_graph,
             )
             print(f"export_dir={export_dir}")
             for a in artifacts:
@@ -374,6 +376,7 @@ def run_summary(
                 f" snapshot={manifest.engine_snapshot_present}"
                 f" exploration={manifest.exploration_present}"
                 f" normalized_intake={manifest.normalized_intake_present}"
+                f" logic_graph={manifest.logic_graph_present}"
             )
 
     return 0

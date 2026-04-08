@@ -46,6 +46,7 @@ def test_execute_run_creates_registry_and_run_structure(sample_config_path, tmp_
     assert (run_root / "artifacts" / "command_brief.json").exists()
     assert (run_root / "artifacts" / "engine_snapshot.json").exists()
     assert (run_root / "artifacts" / "exploration.json").exists()
+    assert (run_root / "artifacts" / "logic_graph.json").exists()
     assert (run_root / "artifacts" / "manifest.json").exists()
     assert (run_root / "run.json").exists()
     assert Path(record["input_path"]) == run_root / "input" / "schedule.csv"

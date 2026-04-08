@@ -144,6 +144,8 @@ def build_engine_snapshot(
                 for x in logic_quality.asymmetric_relationships
             ),
             "cycle_witness": tuple(logic_quality.cycle_witness) if logic_quality.cycle_witness else (),
+            "finish_candidates": tuple(logic_quality.finish_candidates),
+            "orphan_chains": tuple(tuple(x) for x in logic_quality.orphan_chains),
         },
         top_driver=top_driver.model_dump() if top_driver is not None else None,
         risks=tuple(r.model_dump() for r in risks),
