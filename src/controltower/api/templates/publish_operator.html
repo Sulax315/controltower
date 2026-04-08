@@ -25,6 +25,7 @@
     {% endif %}
 
     {% set p = publish_packet or {} %}
+    {% set brief = publish_command_brief or {} %}
 
     <div class="ct-print-note">Stakeholder handout mode: deterministic output from existing publish packet artifacts.</div>
 
@@ -32,9 +33,9 @@
       <div class="ct-command-header">
         <div class="ct-command-header-main">
           <div class="ct-block-label">FINISH</div>
-          <div class="ct-command-finish">{{ p.header.finish_line if p.header else "" }}</div>
+          <div class="ct-command-finish">{{ brief.finish or (p.header.finish_line if p.header else "") }}</div>
           {% if p.header and p.header.delta_line %}
-          <div class="ct-command-delta"><strong>DELTA:</strong> {{ p.header.delta_line }}</div>
+          <div class="ct-command-delta"><strong>CONTEXT:</strong> {{ p.header.delta_line }}</div>
           {% endif %}
         </div>
         <div class="ct-command-header-status">
@@ -55,54 +56,28 @@
       </div>
     </section>
 
-    <section class="ct-section" id="publish-operator-verdict">
-      <div class="ct-verdict-band">
-        <div class="ct-verdict-line"><strong>DRIVER:</strong> {{ p.verdict.primary_driver if p.verdict else "" }}</div>
-        <div class="ct-verdict-line"><strong>RISKS:</strong> {{ p.verdict.primary_risk if p.verdict else "" }}</div>
-        <div class="ct-verdict-line"><strong>NEED:</strong> {{ p.verdict.action_token if p.verdict else "" }}</div>
-      </div>
-    </section>
-
-    <section class="ct-section" id="publish-operator-drivers-risks">
-      <div class="ct-core-grid">
-        <article class="ct-core-col">
-          <div class="ct-core-title">DRIVER</div>
-          <div class="ct-core-lead">{{ p.drivers.top_driver_task_id if p.drivers else "" }}</div>
-          <div class="ct-core-support">Driver Score: {{ p.drivers.top_driver_score if p.drivers else "" }}</div>
-          <div class="ct-core-support">{{ p.verdict.primary_driver if p.verdict else "" }}</div>
-        </article>
-        <article class="ct-core-col">
-          <div class="ct-core-title">RISKS</div>
-          <div class="ct-core-lead">{{ p.risks.top_risk_id if p.risks else "" }}</div>
-          <div class="ct-core-support">Severity: {{ p.risks.top_risk_severity if p.risks else "" }}</div>
-          <div class="ct-core-support">At-Risk Items: {{ p.risks.total_risk_count if p.risks else 0 }}</div>
-        </article>
-        <article class="ct-core-col">
-          <div class="ct-core-title">DOING</div>
-          <div class="ct-core-lead">{{ p.verdict.action_token if p.verdict else "" }}</div>
-          <div class="ct-core-support">{{ p.verdict.primary_risk if p.verdict else "" }}</div>
-          <div class="ct-core-support">Execute mitigation against current top risk sequence.</div>
-        </article>
-      </div>
-    </section>
-
-    <section class="ct-section" id="publish-operator-kpis">
-      <div class="ct-kpi-strip">
-        <div class="ct-kpi-item">
-          <span>Finish Date</span>
-          <strong>{{ p.header.finish_line if p.header else "" }}</strong>
+    <section class="ct-section" id="publish-operator-command-brief">
+      <div class="ct-section-header"><h3>COMMAND BRIEF</h3></div>
+      <div class="ct-brief-table">
+        <div class="ct-brief-line">
+          <div class="ct-brief-key">Finish</div>
+          <div class="ct-brief-value">{{ brief.finish or (p.header.finish_line if p.header else "") }}</div>
         </div>
-        <div class="ct-kpi-item">
-          <span>Total Float</span>
-          <strong>{{ p.kpis.total_float if p.kpis and p.kpis.total_float is defined else p.kpis.open_sources if p.kpis else 0 }}</strong>
+        <div class="ct-brief-line">
+          <div class="ct-brief-key">Driver</div>
+          <div class="ct-brief-value">{{ brief.driver or (p.verdict.primary_driver if p.verdict else "") }}</div>
         </div>
-        <div class="ct-kpi-item">
-          <span>Critical Path Length</span>
-          <strong>{{ p.kpis.critical_path_length if p.kpis and p.kpis.critical_path_length is defined else p.kpis.edge_count if p.kpis else 0 }}</strong>
+        <div class="ct-brief-line">
+          <div class="ct-brief-key">Risks</div>
+          <div class="ct-brief-value">{{ brief.risks or (p.verdict.primary_risk if p.verdict else "") }}</div>
         </div>
-        <div class="ct-kpi-item">
-          <span>High-Risk Items</span>
-          <strong>{{ p.risks.total_risk_count if p.risks else p.kpis.risk_count if p.kpis else 0 }}</strong>
+        <div class="ct-brief-line">
+          <div class="ct-brief-key">Need</div>
+          <div class="ct-brief-value">{{ brief.need or (p.verdict.action_token if p.verdict else "") }}</div>
+        </div>
+        <div class="ct-brief-line">
+          <div class="ct-brief-key">Doing</div>
+          <div class="ct-brief-value">{{ brief.doing or (p.header.delta_line if p.header else "") }}</div>
         </div>
       </div>
     </section>

@@ -36,7 +36,6 @@ from controltower.runs.execution import execute_run
 from controltower.runs.publish_authority import (
     assess_run_publishability,
     get_latest_publishable_run,
-    load_publish_projection_from_bundle_path,
 )
 from controltower.runs.registry import get_run, list_runs
 from controltower.services.controltower import ControlTowerService
@@ -1071,10 +1070,19 @@ def create_app_from_config(config) -> FastAPI:
 
     def _render_publish_operator(request: Request, *, bundle: str | None, auto_print: bool = False):
         packet = None
+        command_brief = None
         load_error = None
         if bundle:
             try:
-                packet = load_publish_projection_from_bundle_path(bundle)
+                validated_bundle = load_publish_bundle(bundle)
+                packet = build_publish_packet(validated_bundle)
+                command_brief = {
+                    "finish": validated_bundle.command_brief.finish,
+                    "driver": validated_bundle.command_brief.driver,
+                    "risks": validated_bundle.command_brief.risks,
+                    "need": validated_bundle.command_brief.need,
+                    "doing": validated_bundle.command_brief.doing,
+                }
             except BundleValidationError as exc:
                 load_error = str(exc)
             except Exception:
@@ -1085,6 +1093,7 @@ def create_app_from_config(config) -> FastAPI:
             _template_payload(
                 request,
                 publish_packet=packet.to_jsonable_dict() if packet is not None else None,
+                publish_command_brief=command_brief,
                 publish_bundle_path=bundle,
                 publish_load_error=load_error,
                 auto_print=auto_print,

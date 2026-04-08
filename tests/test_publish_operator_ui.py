@@ -37,12 +37,20 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert res.status_code == 200
     text = res.text
     assert 'id="publish-operator-header-strip"' in text
-    assert 'id="publish-operator-verdict"' in text
-    assert 'id="publish-operator-kpis"' in text
-    assert 'id="publish-operator-drivers-risks"' in text
+    assert 'id="publish-operator-command-brief"' in text
     assert 'id="publish-operator-evidence"' in text
     assert "id=\"publish-operator-error\"" not in text
-    assert inner["command_brief"]["finish"] in text or "FINISH" in text
+    assert inner["command_brief"]["finish"] in text
+    assert inner["command_brief"]["driver"] in text
+    assert inner["command_brief"]["risks"] in text
+    assert inner["command_brief"]["need"] in text
+    assert inner["command_brief"]["doing"] in text
+    assert "Finish" in text
+    assert "Driver" in text
+    assert "Risks" in text
+    assert "Need" in text
+    assert "Doing" in text
+    assert text.index('id="publish-operator-command-brief"') < text.index('id="publish-operator-evidence"')
 
 
 def test_publish_operator_surface_print_mode_renders_stakeholder_handout(sample_config_path, tmp_path: Path) -> None:
@@ -80,6 +88,7 @@ def test_publish_operator_empty_when_no_publishable_run(sample_config_path) -> N
     text = res.text
     assert 'id="publish-operator-surface"' in text
     assert 'id="publish-operator-header-strip"' in text
+    assert 'id="publish-operator-command-brief"' in text
     assert 'id="publish-operator-evidence"' in text
 
 
