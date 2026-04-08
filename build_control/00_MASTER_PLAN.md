@@ -147,7 +147,9 @@ Responsibilities:
 
 Layer 1 is now complete and trustworthy through deterministic engine Phases 14-18.
 
-Layer 3 is now active for projection and delivery execution only. Layer 3 must remain projection-only and may not reinterpret, re-score, or reimplement intelligence already produced by Layer 1.
+Layer 3 has progressed through command-sheet delivery, evidence surfacing, export hardening, decision reinforcement, controlled interaction, and readability tuning.
+
+Layer 3 remains projection and delivery execution only. Layer 3 must remain projection-only and may not reinterpret, re-score, or reimplement intelligence already produced by Layer 1.
 
 ---
 
@@ -189,12 +191,24 @@ Execution rules for all post-engine phases:
 - UI is projection-only
 - No logic may be reimplemented in UI
 - All outputs must trace to engine artifacts
+- No dashboard drift
+- No generic PM/workflow platform drift
 
-Defined post-engine phases:
-- Phase 19 — Operator Command Sheet
-- Phase 20 — Evidence Grid + Inline Structural Views
-- Phase 21 — Export Layer (Print/PDF)
-- Phase 22 — Operator Workflow (Controlled Interaction)
-- Phase 23 — Schedule Visualization Layer
-- Phase 24 — Interactive Analysis Views
-- Phase 25 — Exportable Graphics / Stakeholder Packs
+### Actual Build Status
+Completed to date:
+- Deterministic schedule intelligence engine complete (Phases 14-18)
+- Phase 19 — Operator Command Sheet (COMPLETE)
+- Phase 20 — Evidence Grid + Inline Structural Views (COMPLETE)
+- Phase 21 — Export Layer (Print/PDF projection hardening) (COMPLETE)
+- Phase 22 — Governance Synchronization (COMPLETE)
+- Phase 23 — Decision Reinforcement (COMPLETE)
+- Phase 24 — Operator Workflow Discipline / Controlled Interaction (COMPLETE)
+- Phase 25 — Operator Readability and Density Tuning (COMPLETE)
+
+### Remaining Governed Roadmap
+- Phase 26 — Schedule Visualization Layer  
+  Deterministic schedule graph, driver-path, and risk-overlay visualization on the operator surface; projection-only from existing artifacts.
+- Phase 27 — Interactive Analysis Views  
+  Interactive analysis tied to deterministic artifacts and visualization, including evidence-to-graph interrogation, focus/isolation, and trace behavior.
+- Phase 28 — Exportable Graphics / Stakeholder Packs  
+  Exportable stakeholder graphics and packs derived from the same authoritative artifacts and views.

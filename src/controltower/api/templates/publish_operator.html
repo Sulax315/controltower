@@ -63,21 +63,33 @@
           <div class="ct-brief-key">Finish</div>
           <div class="ct-brief-value">{{ brief.finish or (p.header.finish_line if p.header else "") }}</div>
         </div>
-        <div class="ct-brief-line">
+        <div class="ct-brief-line ct-brief-line-priority-driver">
           <div class="ct-brief-key">Driver</div>
-          <div class="ct-brief-value">{{ brief.driver or (p.verdict.primary_driver if p.verdict else "") }}</div>
+          <div class="ct-brief-value">
+            <span class="ct-priority-chip">Primary Driver</span>
+            {{ brief.driver or (p.verdict.primary_driver if p.verdict else "") }}
+          </div>
         </div>
-        <div class="ct-brief-line">
+        <div class="ct-brief-line ct-brief-line-priority-risk">
           <div class="ct-brief-key">Risks</div>
-          <div class="ct-brief-value">{{ brief.risks or (p.verdict.primary_risk if p.verdict else "") }}</div>
+          <div class="ct-brief-value">
+            <span class="ct-priority-chip">Top Severity</span>
+            {{ brief.risks or (p.verdict.primary_risk if p.verdict else "") }}
+          </div>
         </div>
-        <div class="ct-brief-line">
+        <div class="ct-brief-line ct-brief-line-action">
           <div class="ct-brief-key">Need</div>
-          <div class="ct-brief-value">{{ brief.need or (p.verdict.action_token if p.verdict else "") }}</div>
+          <div class="ct-brief-value">
+            <span class="ct-action-chip">Priority Action</span>
+            {{ brief.need or (p.verdict.action_token if p.verdict else "") }}
+          </div>
         </div>
-        <div class="ct-brief-line">
+        <div class="ct-brief-line ct-brief-line-action">
           <div class="ct-brief-key">Doing</div>
-          <div class="ct-brief-value">{{ brief.doing or (p.header.delta_line if p.header else "") }}</div>
+          <div class="ct-brief-value">
+            <span class="ct-action-chip">Execute Now</span>
+            {{ brief.doing or (p.header.delta_line if p.header else "") }}
+          </div>
         </div>
       </div>
     </section>
@@ -85,19 +97,19 @@
     <section class="ct-section ct-evidence-table" id="publish-operator-evidence">
       <div class="ct-section-header"><h3>EVIDENCE GRID</h3></div>
       <div class="ct-evidence-grid">
-        <details class="ct-evidence-group" id="publish-operator-evidence-driver" open>
+        <details class="ct-evidence-group" id="publish-operator-evidence-driver">
           <summary>
-            <span>Driver Evidence</span>
+            <span>Driver Evidence <small class="ct-expand-hint">Expand to review</small></span>
             <strong>{{ p.evidence.driver_evidence|length if p.evidence and p.evidence.driver_evidence else 0 }} rows</strong>
           </summary>
           <div class="ct-inline-structure">
             <div class="ct-inline-structure-title">Inline Structural View</div>
             <div class="ct-inline-chain">
-              <span>Task {{ p.drivers.top_driver_task_id if p.drivers and p.drivers.top_driver_task_id else "n/a" }}</span>
+              <span class="ct-chain-node-priority">Task {{ p.drivers.top_driver_task_id if p.drivers and p.drivers.top_driver_task_id else "n/a" }}</span>
               <span aria-hidden="true">-></span>
               <span>Driver Brief</span>
               <span aria-hidden="true">-></span>
-              <span>Finish Brief</span>
+              <span class="ct-chain-node-priority">Finish Brief</span>
             </div>
             <div class="ct-inline-metrics">
               <span>Edges: {{ p.kpis.edge_count if p.kpis else 0 }}</span>
@@ -108,7 +120,7 @@
           <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.driver_evidence %}
               {% for pair in p.evidence.driver_evidence %}
-              <div class="ct-evidence-line">
+              <div class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}">
                 <strong>Signal {{ loop.index }}</strong>
                 <span>{{ pair[1] }}</span>
               </div>
@@ -119,17 +131,17 @@
           </div>
         </details>
 
-        <details class="ct-evidence-group" id="publish-operator-evidence-risk" open>
+        <details class="ct-evidence-group" id="publish-operator-evidence-risk">
           <summary>
-            <span>Risk Evidence</span>
+            <span>Risk Evidence <small class="ct-expand-hint">Expand to review</small></span>
             <strong>{{ p.evidence.risk_evidence|length if p.evidence and p.evidence.risk_evidence else 0 }} rows</strong>
           </summary>
           <div class="ct-inline-structure">
             <div class="ct-inline-structure-title">Inline Structural View</div>
             <div class="ct-inline-chain">
-              <span>Risk {{ p.risks.top_risk_id if p.risks and p.risks.top_risk_id else "n/a" }}</span>
+              <span class="ct-chain-node-priority">Risk {{ p.risks.top_risk_id if p.risks and p.risks.top_risk_id else "n/a" }}</span>
               <span aria-hidden="true">-></span>
-              <span>Severity {{ p.risks.top_risk_severity if p.risks and p.risks.top_risk_severity else "Unknown" }}</span>
+              <span class="ct-chain-node-priority">Severity {{ p.risks.top_risk_severity if p.risks and p.risks.top_risk_severity else "Unknown" }}</span>
               <span aria-hidden="true">-></span>
               <span>Risks Brief</span>
             </div>
@@ -141,7 +153,7 @@
           <div class="ct-evidence-list">
             {% if p.evidence and p.evidence.risk_evidence %}
               {% for pair in p.evidence.risk_evidence %}
-              <div class="ct-evidence-line">
+              <div class="ct-evidence-line {% if loop.first %}ct-evidence-line-priority{% else %}ct-evidence-line-supporting{% endif %}">
                 <strong>{{ pair[0] }}</strong>
                 <span>{{ pair[1] }}</span>
               </div>

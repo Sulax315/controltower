@@ -55,6 +55,14 @@ def test_publish_operator_surface_renders_packet_sections(sample_config_path, tm
     assert "Inline Structural View" in text
     assert "Driver Evidence" in text
     assert "Risk Evidence" in text
+    assert "Primary Driver" in text
+    assert "Top Severity" in text
+    assert "Priority Action" in text
+    assert "Execute Now" in text
+    assert "ct-evidence-line-priority" in text
+    assert 'id="publish-operator-evidence-driver" open' not in text
+    assert 'id="publish-operator-evidence-risk" open' not in text
+    assert "Expand to review" in text
     assert text.index('id="publish-operator-command-brief"') < text.index('id="publish-operator-evidence"')
 
 
@@ -70,6 +78,8 @@ def test_publish_operator_surface_print_mode_renders_stakeholder_handout(sample_
     assert "Print / PDF" in text
     assert 'id="publish-operator-evidence-driver"' in text
     assert "Inline Structural View" in text
+    assert "Priority Action" in text
+    assert "Execute Now" in text
 
 
 def test_publish_operator_print_mode_reuses_same_packet_fields(sample_config_path, tmp_path: Path) -> None:
