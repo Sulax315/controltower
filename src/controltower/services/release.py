@@ -499,8 +499,12 @@ def verify_live_routes(config: ControlTowerConfig, export_record: ExportRecord) 
     health_ok = checks["/healthz"] == 200
     _root_loc = root_redirect_response.headers.get("location", "")
     _root_path = urlparse(_root_loc).path if _root_loc.startswith("http") else _root_loc.split("?")[0]
-    root_ok = root_redirect_response.status_code in (301, 302, 303, 307) and (
-        _root_path.rstrip("/").endswith("/publish") or "/publish" in _root_loc
+    root_ok = (
+        root_redirect_response.status_code in (301, 302, 303, 307)
+        and (_root_path.rstrip("/").endswith("/publish") or "/publish" in _root_loc)
+    ) or (
+        root_redirect_response.status_code == 200
+        and 'id="runs-home-upload"' in root_redirect_response.text
     )
     publish_chain_ok = publish_response.status_code in (200, 301, 302, 303, 307)
 

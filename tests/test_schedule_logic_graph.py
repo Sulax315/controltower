@@ -39,6 +39,51 @@ def test_graph_invalid_predecessor() -> None:
     assert g.no_successor_nodes == ("A",)
 
 
+def test_graph_resolves_task_id_tokens() -> None:
+    acts = [
+        Activity(task_id="10", unique_task_id="U-10", successors=["11"]),
+        Activity(task_id="11", unique_task_id="U-11", predecessors=["10"]),
+    ]
+    g = build_schedule_logic_graph(acts)
+    assert g.outbound_edges_by_id["10"] == [("10", "11")]
+    assert g.inbound_edges_by_id["11"] == [("10", "11")]
+    assert not g.invalid_references
+
+
+def test_graph_resolves_unique_task_id_tokens() -> None:
+    acts = [
+        Activity(task_id="10", unique_task_id="U-10", successors=["U-11"]),
+        Activity(task_id="11", unique_task_id="U-11", predecessors=["U-10"]),
+    ]
+    g = build_schedule_logic_graph(acts)
+    assert g.outbound_edges_by_id["10"] == [("10", "11")]
+    assert g.inbound_edges_by_id["11"] == [("10", "11")]
+    assert not g.invalid_references
+
+
+def test_graph_unique_task_id_resolution_reduces_invalid_references() -> None:
+    acts = [
+        Activity(task_id="A", unique_task_id="UA", successors=["UB", "UC"]),
+        Activity(task_id="B", unique_task_id="UB", predecessors=["UA"], successors=["UC"]),
+        Activity(task_id="C", unique_task_id="UC", predecessors=["UA", "UB"]),
+    ]
+    g = build_schedule_logic_graph(acts)
+    assert sum(len(es) for es in g.outbound_edges_by_id.values()) == 3
+    assert len(g.invalid_references) == 0
+
+
+def test_graph_ambiguous_unique_task_id_reference_is_invalid() -> None:
+    acts = [
+        Activity(task_id="A", unique_task_id="U-DUP"),
+        Activity(task_id="B", unique_task_id="U-DUP"),
+        Activity(task_id="C", predecessors=["U-DUP"]),
+    ]
+    g = build_schedule_logic_graph(acts)
+    assert len(g.invalid_references) == 1
+    assert g.invalid_references[0].referencing_task_id == "C"
+    assert g.invalid_references[0].referenced_task_id == "U-DUP"
+
+
 @pytest.mark.skipif(not FIXTURE.is_file(), reason="fixture missing")
 def test_authoritative_fixture_graph_shape() -> None:
     acts = parse_asta_export_csv(FIXTURE).activities

@@ -21,6 +21,7 @@ SOURCE_COMPONENTS = (
     "normalized_intake.build_normalized_intake_payload",
     "graph.build_logic_graph_payload",
     "drivers.build_driver_analysis",
+    "publish_assembly.build_publish_packet_for_schedule_export",
 )
 
 FILENAME_BUNDLE = "intelligence_bundle.json"
@@ -31,6 +32,7 @@ FILENAME_NORMALIZED_INTAKE = "normalized_intake.json"
 FILENAME_LOGIC_GRAPH = "logic_graph.json"
 FILENAME_DRIVER_ANALYSIS = "driver_analysis.json"
 FILENAME_MANIFEST = "manifest.json"
+FILENAME_PUBLISH_PACKET = "publish_packet.json"
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,7 @@ class ExportManifest:
     normalized_intake_present: bool
     logic_graph_present: bool
     driver_analysis_present: bool
+    publish_packet_present: bool
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -135,6 +138,7 @@ def build_export_manifest(artifacts: tuple[ExportedArtifact, ...]) -> ExportMani
         normalized_intake_present=FILENAME_NORMALIZED_INTAKE in names,
         logic_graph_present=FILENAME_LOGIC_GRAPH in names,
         driver_analysis_present=FILENAME_DRIVER_ANALYSIS in names,
+        publish_packet_present=FILENAME_PUBLISH_PACKET in names,
     )
 
 
@@ -158,6 +162,8 @@ def export_deterministic_artifact_set(
     logic_graph: dict[str, Any],
     driver_analysis: dict[str, Any],
 ) -> tuple[tuple[ExportedArtifact, ...], ExportManifest]:
+    from .publish_assembly import build_publish_packet_for_schedule_export
+
     export_dir.mkdir(parents=True, exist_ok=True)
     artifacts = (
         export_schedule_intelligence_bundle(export_dir, bundle),
@@ -168,7 +174,18 @@ def export_deterministic_artifact_set(
         export_logic_graph_document(export_dir, logic_graph),
         export_driver_analysis_document(export_dir, driver_analysis),
     )
-    manifest = build_export_manifest(artifacts)
+    publish_packet = build_publish_packet_for_schedule_export(
+        bundle=bundle,
+        logic_graph=logic_graph,
+        driver_analysis=driver_analysis,
+        normalized_intake=normalized_intake,
+    )
+    publish_artifact = write_json_artifact(
+        export_dir / FILENAME_PUBLISH_PACKET,
+        publish_packet.to_jsonable_dict(),
+    )
+    artifacts_with_publish = (*artifacts, publish_artifact)
+    manifest = build_export_manifest(artifacts_with_publish)
     manifest_artifact = write_json_artifact(export_dir / FILENAME_MANIFEST, manifest.to_jsonable_dict())
     ordered = (
         next(a for a in artifacts if a.filename == FILENAME_BUNDLE),
@@ -178,6 +195,7 @@ def export_deterministic_artifact_set(
         next(a for a in artifacts if a.filename == FILENAME_NORMALIZED_INTAKE),
         next(a for a in artifacts if a.filename == FILENAME_LOGIC_GRAPH),
         next(a for a in artifacts if a.filename == FILENAME_DRIVER_ANALYSIS),
+        publish_artifact,
         manifest_artifact,
     )
     return ordered, manifest

@@ -7,6 +7,7 @@ from pathlib import Path
 from controltower.schedule_intake import (
     FILENAME_BUNDLE,
     FILENAME_MANIFEST,
+    FILENAME_PUBLISH_PACKET,
     build_driver_analysis,
     build_exploration_contract,
     build_logic_graph_payload,
@@ -46,6 +47,7 @@ def execute_run(csv_path: Path, *, state_root: Path) -> str:
         artifact_dir=artifacts_dir,
         bundle_path=artifacts_dir / FILENAME_BUNDLE,
         manifest_path=artifacts_dir / FILENAME_MANIFEST,
+        publish_packet_path=artifacts_dir / FILENAME_PUBLISH_PACKET,
         status="running",
     )
 
@@ -66,6 +68,10 @@ def execute_run(csv_path: Path, *, state_root: Path) -> str:
             logic_graph=logic_graph,
             driver_analysis=driver_analysis,
         )
+        # publish_packet.json (visualization + full pm_translation_v1 via Phase 32 assembly) is emitted
+        # inside export_deterministic_artifact_set; fail the run if it is missing.
+        if not (artifacts_dir / FILENAME_PUBLISH_PACKET).is_file():
+            raise ValueError("publish_packet.json was not persisted.")
         validation = validate_export_artifact_set(artifacts_dir)
         if not validation.ok:
             raise ValueError("; ".join(validation.errors))

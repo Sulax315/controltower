@@ -14,7 +14,35 @@ from controltower.config import load_config
 from controltower.runs.execution import execute_run
 from controltower.runs.registry import create_run, list_runs, update_run_status
 from controltower.schedule_intake.asta_csv import ASTA_EXPORT_HEADERS
-from controltower.schedule_intake.export_artifacts import FILENAME_BUNDLE
+from controltower.schedule_intake.export_artifacts import (
+    FILENAME_BUNDLE,
+    FILENAME_MANIFEST,
+    FILENAME_PUBLISH_PACKET,
+    ExportedArtifact,
+    build_export_manifest,
+    compute_sha256_bytes,
+    write_json_artifact,
+)
+
+
+def _rewrite_manifest_to_match_json_files(artifacts_dir: Path) -> None:
+    """Rebuild manifest.json from every *.json in the directory except the manifest itself."""
+    skip = {FILENAME_MANIFEST}
+    artifacts: list[ExportedArtifact] = []
+    for path in sorted(artifacts_dir.glob("*.json")):
+        if path.name in skip:
+            continue
+        data = path.read_bytes()
+        artifacts.append(
+            ExportedArtifact(
+                filename=path.name,
+                sha256=compute_sha256_bytes(data),
+                byte_count=len(data),
+                artifact_type=path.stem,
+            )
+        )
+    manifest = build_export_manifest(tuple(artifacts))
+    write_json_artifact(artifacts_dir / FILENAME_MANIFEST, manifest.to_jsonable_dict())
 
 
 def _write_schedule_csv(tmp_path: Path) -> Path:
@@ -85,6 +113,31 @@ def test_operator_route_resolves_bundle_from_run_id(sample_config_path, tmp_path
     assert res.status_code == 200
     assert 'id="publish-operator-header-strip"' in res.text
     assert 'id="publish-operator-error"' not in res.text
+
+
+def test_operator_surface_includes_pm_translation_payload(sample_config_path, tmp_path: Path) -> None:
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get(f"/publish/operator/{run_id}")
+    assert res.status_code == 200
+    assert 'id="publish-pm-translation-payload"' in res.text
+
+
+def test_operator_fallback_when_publish_packet_file_missing(sample_config_path, tmp_path: Path) -> None:
+    """Legacy-shaped artifact dir: no publish_packet.json but manifest lists only core exports."""
+    config = load_config(sample_config_path)
+    run_id = execute_run(_write_schedule_csv(tmp_path), state_root=config.runtime.state_root)
+    artifacts_dir = Path(config.runtime.state_root) / "runs" / run_id / "artifacts"
+    pub = artifacts_dir / FILENAME_PUBLISH_PACKET
+    assert pub.is_file()
+    pub.unlink()
+    _rewrite_manifest_to_match_json_files(artifacts_dir)
+    client = TestClient(create_app(str(sample_config_path)))
+    res = client.get(f"/publish/operator/{run_id}")
+    assert res.status_code == 200
+    assert 'id="publish-operator-error"' not in res.text
+    assert 'id="publish-pm-translation-payload"' in res.text
 
 
 def test_operator_route_print_mode_resolves_bundle_from_run_id(sample_config_path, tmp_path: Path) -> None:

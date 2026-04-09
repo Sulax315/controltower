@@ -13,6 +13,7 @@ from controltower.schedule_intake import (
     FILENAME_LOGIC_GRAPH,
     FILENAME_MANIFEST,
     FILENAME_NORMALIZED_INTAKE,
+    FILENAME_PUBLISH_PACKET,
     NORMALIZED_INTAKE_SCHEMA_VERSION,
     build_command_brief,
     build_driver_analysis,
@@ -109,6 +110,8 @@ def test_deterministic_json_bytes_across_repeated_runs(tmp_path: Path) -> None:
         FILENAME_EXPLORATION,
         FILENAME_NORMALIZED_INTAKE,
         FILENAME_LOGIC_GRAPH,
+        FILENAME_DRIVER_ANALYSIS,
+        FILENAME_PUBLISH_PACKET,
         FILENAME_MANIFEST,
     ]
     for name in files:
@@ -132,6 +135,7 @@ def test_stable_manifest_contents_and_filenames(tmp_path: Path) -> None:
         FILENAME_NORMALIZED_INTAKE,
         FILENAME_LOGIC_GRAPH,
         FILENAME_DRIVER_ANALYSIS,
+        FILENAME_PUBLISH_PACKET,
         FILENAME_MANIFEST,
     )
     assert manifest.bundle_present is True
@@ -141,6 +145,7 @@ def test_stable_manifest_contents_and_filenames(tmp_path: Path) -> None:
     assert manifest.normalized_intake_present is True
     assert manifest.logic_graph_present is True
     assert manifest.driver_analysis_present is True
+    assert manifest.publish_packet_present is True
     on_disk = json.loads((tmp_path / FILENAME_MANIFEST).read_text(encoding="utf-8"))
     assert on_disk["schema_version"] == "1.0.0"
     assert on_disk["export_scope"] == "schedule_intelligence"
@@ -268,6 +273,7 @@ def test_build_export_manifest_from_subset_artifacts() -> None:
     assert m.normalized_intake_present is False
     assert m.logic_graph_present is False
     assert m.driver_analysis_present is False
+    assert m.publish_packet_present is False
 
 
 def test_export_validation_passes_for_clean_artifact_set(tmp_path: Path) -> None:
@@ -328,6 +334,21 @@ def test_export_validation_detects_missing_normalized_intake(tmp_path: Path) -> 
     result = validate_export_artifact_set(tmp_path)
     assert result.ok is False
     assert any(FILENAME_NORMALIZED_INTAKE in e for e in result.errors)
+
+
+def test_export_validation_detects_missing_publish_packet_when_manifest_expects_it(tmp_path: Path) -> None:
+    bundle = _build_bundle()
+    export_deterministic_artifact_set(
+        tmp_path,
+        bundle=bundle,
+        normalized_intake=_synthetic_normalized_intake(),
+        logic_graph=_synthetic_logic_graph(),
+        driver_analysis=_synthetic_driver_analysis(),
+    )
+    (tmp_path / FILENAME_PUBLISH_PACKET).unlink()
+    result = validate_export_artifact_set(tmp_path)
+    assert result.ok is False
+    assert any("publish_packet.json" in e and "missing" in e for e in result.errors)
 
 
 def test_export_validation_detects_missing_driver_analysis(tmp_path: Path) -> None:

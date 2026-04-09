@@ -14,6 +14,7 @@ from .export_artifacts import (
     FILENAME_LOGIC_GRAPH,
     FILENAME_MANIFEST,
     FILENAME_NORMALIZED_INTAKE,
+    FILENAME_PUBLISH_PACKET,
     compute_sha256_bytes,
 )
 from .drivers import DRIVER_ANALYSIS_SCHEMA_VERSION
@@ -36,7 +37,7 @@ REQUIRED_EXPLORATION_KEYS = (
     "driver_structure",
     "impact_span",
 )
-REQUIRED_EXPORT_FILES = (
+CORE_EXPORT_ARTIFACT_FILES = (
     FILENAME_BUNDLE,
     FILENAME_COMMAND_BRIEF,
     FILENAME_ENGINE_SNAPSHOT,
@@ -44,8 +45,13 @@ REQUIRED_EXPORT_FILES = (
     FILENAME_NORMALIZED_INTAKE,
     FILENAME_LOGIC_GRAPH,
     FILENAME_DRIVER_ANALYSIS,
-    FILENAME_MANIFEST,
 )
+
+# On-disk files required before manifest inspection (core intelligence export).
+REQUIRED_EXPORT_FILES = (*CORE_EXPORT_ARTIFACT_FILES, FILENAME_MANIFEST)
+
+_MANIFEST_ARTIFACT_NAMES_LEGACY = frozenset(CORE_EXPORT_ARTIFACT_FILES)
+_MANIFEST_ARTIFACT_NAMES_WITH_PUBLISH = frozenset((*CORE_EXPORT_ARTIFACT_FILES, FILENAME_PUBLISH_PACKET))
 
 
 class BundleValidationError(ValueError):
@@ -112,16 +118,7 @@ def validate_export_artifact_set(export_dir: Path) -> ExportValidationResult:
         if byte_count != len(file_bytes):
             errors.append(f"byte_count mismatch for {name}")
 
-    expected_manifest_names = {
-        FILENAME_BUNDLE,
-        FILENAME_COMMAND_BRIEF,
-        FILENAME_ENGINE_SNAPSHOT,
-        FILENAME_EXPLORATION,
-        FILENAME_NORMALIZED_INTAKE,
-        FILENAME_LOGIC_GRAPH,
-        FILENAME_DRIVER_ANALYSIS,
-    }
-    if manifest_names != expected_manifest_names:
+    if manifest_names not in (_MANIFEST_ARTIFACT_NAMES_LEGACY, _MANIFEST_ARTIFACT_NAMES_WITH_PUBLISH):
         errors.append("manifest artifacts do not match required export files")
 
     norm_path = existing.get(FILENAME_NORMALIZED_INTAKE)

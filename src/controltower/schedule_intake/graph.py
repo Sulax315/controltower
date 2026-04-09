@@ -55,14 +55,29 @@ def build_schedule_logic_graph(activities: list[Activity]) -> ScheduleLogicGraph
     """
     nodes_by_id = {a.task_id: a for a in activities}
     known = frozenset(nodes_by_id)
+    unique_to_task_ids: dict[str, set[str]] = {}
+    for act in activities:
+        if act.unique_task_id is None:
+            continue
+        unique_to_task_ids.setdefault(act.unique_task_id, set()).add(act.task_id)
+
+    def _resolve_reference_token(token: str) -> str | None:
+        # Primary resolution is Task ID, with deterministic Unique task ID fallback.
+        if token in known:
+            return token
+        matched_task_ids = unique_to_task_ids.get(token)
+        if not matched_task_ids or len(matched_task_ids) != 1:
+            return None
+        return next(iter(matched_task_ids))
     edge_set: set[Edge] = set()
     invalid: list[InvalidReference] = []
 
     for act in activities:
         tid = act.task_id
         for ref in act.predecessors or []:
-            if ref in known:
-                edge_set.add((ref, tid))
+            resolved = _resolve_reference_token(ref)
+            if resolved is not None:
+                edge_set.add((resolved, tid))
             else:
                 invalid.append(
                     InvalidReference(
@@ -72,8 +87,9 @@ def build_schedule_logic_graph(activities: list[Activity]) -> ScheduleLogicGraph
                     )
                 )
         for ref in act.successors or []:
-            if ref in known:
-                edge_set.add((tid, ref))
+            resolved = _resolve_reference_token(ref)
+            if resolved is not None:
+                edge_set.add((tid, resolved))
             else:
                 invalid.append(
                     InvalidReference(

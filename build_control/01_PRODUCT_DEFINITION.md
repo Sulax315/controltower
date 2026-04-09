@@ -112,3 +112,19 @@ Requirements:
 A result is acceptable only if the user would trust it during a real project schedule review.
 
 That is the governing standard.
+
+---
+
+## Product identity vs optional platform layers (approved target direction)
+
+**Core product identity (unchanged):** Control Tower is the **schedule intelligence and deterministic reasoning product** — Asta CSV through to traceable intelligence, command brief, publish assembly, and operator surfaces that **project** that truth. That identity is **not** shared with generic PM suites, workflow engines, or optimization services.
+
+**Approved future surrounding systems (not implemented until governance authorizes):** The organization may add **optional** platforms that **support** operations and collaboration **around** Control Tower, without becoming the core analytical brain:
+
+- **Workflow / admin (e.g. NocoBase):** tracking and ops surrounding; not schedule determinism.
+- **Broad PM / collaboration (e.g. OpenProject):** optional; **never** replaces Control Tower as the deterministic schedule reasoning core.
+- **Optimization service (e.g. OR-Tools / PyJobShop):** separate service, **scenario solving only**; **never** supersedes imported schedule truth owned by Control Tower’s pipeline.
+
+**Authoritative architecture reference:** `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md`.
+
+Until those systems exist, all build prompts and acceptance remain **Control Tower–only** unless governance explicitly opens a new phase.

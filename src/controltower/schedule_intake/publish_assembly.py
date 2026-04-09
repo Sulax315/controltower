@@ -8,6 +8,15 @@ from typing import Any
 
 from .output_contracts import ScheduleIntelligenceBundle
 
+_PM_PRESSURE_METRICS_SINGLE_EXPORT: dict[str, Any] = {
+    "new_critical_count": 0,
+    "max_slip_days": 0,
+    "baseline_slip_count_gt30": 0,
+    "low_float_density_increase": False,
+    "dominant_phase": "",
+    "task_ids": [],
+}
+
 LONG_RANGE_EXTREME_SHIFT_DAYS = 180
 PRESSURE_NEW_CRITICAL_THRESHOLD = 3
 PRESSURE_MAX_SLIP_DAYS_THRESHOLD = 90
@@ -1133,3 +1142,112 @@ def build_publish_visualization(
             "risk_rows": risk_rows,
         },
     }
+
+
+def _dependency_links_from_logic_graph(logic_graph: dict[str, Any] | None) -> tuple[tuple[str, str], ...]:
+    graph = logic_graph or {}
+    edges = graph.get("edges")
+    if not isinstance(edges, list):
+        return ()
+    out: list[tuple[str, str]] = []
+    for item in edges:
+        if not isinstance(item, dict):
+            continue
+        src = str(item.get("from_task_id") or "").strip()
+        dst = str(item.get("to_task_id") or "").strip()
+        if src and dst:
+            out.append((src, dst))
+    return tuple(sorted(set(out)))
+
+
+def _normalized_activity_tuple(normalized_intake: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    acts = normalized_intake.get("activities")
+    if not isinstance(acts, list):
+        return ()
+    return tuple(a for a in acts if isinstance(a, dict))
+
+
+def _pm_translation_inputs_from_schedule_artifacts(
+    *,
+    logic_graph: dict[str, Any] | None,
+    driver_analysis: dict[str, Any] | None,
+    normalized_intake: dict[str, Any],
+) -> dict[str, Any]:
+    activities = _normalized_activity_tuple(normalized_intake)
+    dependency_links = _dependency_links_from_logic_graph(logic_graph)
+
+    driver = driver_analysis if isinstance(driver_analysis, dict) else {}
+    finish_obj = driver.get("authoritative_finish_target")
+    finish_obj = finish_obj if isinstance(finish_obj, dict) else {}
+    finish_tid = str(finish_obj.get("task_id") or "").strip()
+
+    by_id = {str(a.get("task_id") or "").strip(): a for a in activities if str(a.get("task_id") or "").strip()}
+    finish_act = by_id.get(finish_tid) if finish_tid else None
+
+    final_finish_current = finish_act.get("finish") if finish_act else None
+    substantial_finish_current = (finish_act.get("original_finish") or final_finish_current) if finish_act else None
+    final_finish_baseline = finish_act.get("original_finish") if finish_act else None
+    final_finish_prior = None
+
+    data_date = None
+
+    return {
+        "final_finish_current": final_finish_current,
+        "substantial_finish_current": substantial_finish_current,
+        "final_finish_prior": final_finish_prior,
+        "final_finish_baseline": final_finish_baseline,
+        "data_date": data_date,
+        "activities": activities,
+        "dependency_links": dependency_links,
+        "finish_milestone_ids": (),
+    }
+
+
+def build_pm_translation_v1_full_from_artifacts(
+    *,
+    logic_graph: dict[str, Any] | None,
+    driver_analysis: dict[str, Any] | None,
+    normalized_intake: dict[str, Any],
+) -> dict[str, Any]:
+    inp = _pm_translation_inputs_from_schedule_artifacts(
+        logic_graph=logic_graph,
+        driver_analysis=driver_analysis,
+        normalized_intake=normalized_intake,
+    )
+    base = build_pm_translation_v1_partial(
+        final_finish_current=inp["final_finish_current"],
+        substantial_finish_current=inp["substantial_finish_current"],
+        final_finish_prior=inp["final_finish_prior"],
+        final_finish_baseline=inp["final_finish_baseline"],
+        data_date=inp["data_date"],
+        activities=inp["activities"],
+        dependency_links=inp["dependency_links"],
+        finish_milestone_ids=inp["finish_milestone_ids"],
+    )
+    phase32b = extend_pm_translation_v1_phase32b(
+        pm_translation_v1=base,
+        data_date=inp["data_date"],
+        long_range_activities=(),
+        pressure_metrics=dict(_PM_PRESSURE_METRICS_SINGLE_EXPORT),
+    )
+    return extend_pm_translation_v1_phase32c(pm_translation_v1=phase32b)
+
+
+def build_publish_packet_for_schedule_export(
+    *,
+    bundle: ScheduleIntelligenceBundle,
+    logic_graph: dict[str, Any] | None,
+    driver_analysis: dict[str, Any] | None,
+    normalized_intake: dict[str, Any],
+) -> PublishPacket:
+    visualization = build_publish_visualization(
+        bundle,
+        logic_graph=logic_graph,
+        driver_analysis=driver_analysis,
+    )
+    pm = build_pm_translation_v1_full_from_artifacts(
+        logic_graph=logic_graph,
+        driver_analysis=driver_analysis,
+        normalized_intake=normalized_intake,
+    )
+    return build_publish_packet(bundle, visualization=visualization, pm_translation_v1=pm)

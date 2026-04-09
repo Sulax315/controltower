@@ -208,6 +208,10 @@
     </section>
     {% endif %}
 
+    {% if p and p.pm_translation_v1 %}
+    <script id="publish-pm-translation-payload" type="application/json">{{ p.pm_translation_v1 | tojson }}</script>
+    {% endif %}
+
     {% if publish_run_id %}
     <section class="ct-section" id="publish-operator-validation">
       <div class="ct-section-header"><h3>REAL-PROJECT VALIDATION</h3></div>

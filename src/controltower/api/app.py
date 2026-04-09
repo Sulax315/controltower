@@ -34,8 +34,8 @@ from controltower.services.intelligence_vault_bridge import (
 )
 from controltower.services.build_info import current_build_info
 from controltower.integrations import orchestrator_substrate as orch_substrate
-from controltower.schedule_intake.publish_assembly import build_publish_packet
-from controltower.schedule_intake.publish_assembly import build_publish_visualization
+from controltower.schedule_intake.export_artifacts import FILENAME_NORMALIZED_INTAKE, FILENAME_PUBLISH_PACKET
+from controltower.schedule_intake.publish_assembly import build_publish_packet_for_schedule_export
 from controltower.schedule_intake.verification import BundleValidationError, load_publish_bundle
 from controltower.runs.execution import execute_run
 from controltower.runs.publish_authority import (
@@ -64,6 +64,43 @@ from controltower.services.orchestrator_panel import build_orchestrator_publish_
 from controltower.services.release import collect_operator_diagnostics
 
 logger = logging.getLogger(__name__)
+
+
+def _command_brief_from_publish_dict(p: dict[str, Any]) -> dict[str, str]:
+    h = p.get("header") if isinstance(p.get("header"), dict) else {}
+    v = p.get("verdict") if isinstance(p.get("verdict"), dict) else {}
+    return {
+        "finish": str(h.get("finish_line") or ""),
+        "driver": str(v.get("primary_driver") or ""),
+        "risks": str(v.get("primary_risk") or ""),
+        "need": str(v.get("action_token") or ""),
+        "doing": str(h.get("delta_line") or ""),
+    }
+
+
+def _load_persisted_publish_packet(run_record: dict[str, Any]) -> dict[str, Any] | None:
+    raw = str(run_record.get("publish_packet_path") or "").strip()
+    candidates: list[Path] = []
+    if raw:
+        try:
+            candidates.append(Path(raw).expanduser().resolve())
+        except (OSError, RuntimeError):
+            pass
+    ad = str(run_record.get("artifact_dir") or "").strip()
+    if ad:
+        try:
+            candidates.append(Path(ad).expanduser().resolve() / FILENAME_PUBLISH_PACKET)
+        except (OSError, RuntimeError):
+            pass
+    for path in candidates:
+        if path.is_file():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                continue
+    return None
 
 
 def _brief_section_md(packet, key: str) -> str:
@@ -1756,7 +1793,9 @@ def create_app_from_config(config) -> FastAPI:
 
     @app.get("/publish/operator", response_class=HTMLResponse)
     def publish_operator_view(request: Request, bundle: str | None = None, print: int = 0):
-        return _render_publish_operator(request, bundle=bundle, auto_print=bool(print), run_id=None)
+        return _render_publish_operator(
+            request, bundle=bundle, auto_print=bool(print), run_id=None, run_record=None
+        )
 
     @app.get("/publish/operator/{run_id}", response_class=HTMLResponse)
     def publish_operator_run_view(request: Request, run_id: str, print: int = 0):
@@ -1770,7 +1809,13 @@ def create_app_from_config(config) -> FastAPI:
         # Phase 21 decision: keep PDF export transport-thin by reusing the existing
         # deterministic operator surface and browser print-to-PDF flow. We intentionally
         # avoid server-side HTML->PDF infrastructure or duplicate template stacks here.
-        return _render_publish_operator(request, bundle=bundle_path, auto_print=bool(print), run_id=run_id)
+        return _render_publish_operator(
+            request,
+            bundle=bundle_path,
+            auto_print=bool(print),
+            run_id=run_id,
+            run_record=run,
+        )
 
     @app.post("/publish/operator/{run_id}/validation")
     async def publish_operator_validation_submit(
@@ -1833,30 +1878,40 @@ def create_app_from_config(config) -> FastAPI:
         bundle: str | None,
         auto_print: bool = False,
         run_id: str | None = None,
+        run_record: dict[str, Any] | None = None,
     ):
-        packet = None
+        packet_dict: dict[str, Any] | None = None
         command_brief = None
         load_error = None
         validation_note = load_validation_note(config.runtime.state_root, run_id) if run_id else None
         if bundle:
             try:
-                validated_bundle = load_publish_bundle(bundle)
                 bundle_path = Path(bundle).expanduser().resolve()
-                logic_graph = _load_optional_json_dict(bundle_path.parent / "logic_graph.json")
-                driver_analysis = _load_optional_json_dict(bundle_path.parent / "driver_analysis.json")
-                visualization = build_publish_visualization(
-                    validated_bundle,
-                    logic_graph=logic_graph,
-                    driver_analysis=driver_analysis,
-                )
-                packet = build_publish_packet(validated_bundle, visualization=visualization)
-                command_brief = {
-                    "finish": validated_bundle.command_brief.finish,
-                    "driver": validated_bundle.command_brief.driver,
-                    "risks": validated_bundle.command_brief.risks,
-                    "need": validated_bundle.command_brief.need,
-                    "doing": validated_bundle.command_brief.doing,
-                }
+                persisted: dict[str, Any] | None = None
+                if run_record is not None:
+                    persisted = _load_persisted_publish_packet(run_record)
+                if persisted is not None:
+                    packet_dict = persisted
+                    command_brief = _command_brief_from_publish_dict(persisted)
+                else:
+                    validated_bundle = load_publish_bundle(bundle)
+                    logic_graph = _load_optional_json_dict(bundle_path.parent / "logic_graph.json")
+                    driver_analysis = _load_optional_json_dict(bundle_path.parent / "driver_analysis.json")
+                    normalized_intake = _load_optional_json_dict(bundle_path.parent / FILENAME_NORMALIZED_INTAKE)
+                    packet_obj = build_publish_packet_for_schedule_export(
+                        bundle=validated_bundle,
+                        logic_graph=logic_graph,
+                        driver_analysis=driver_analysis,
+                        normalized_intake=normalized_intake or {},
+                    )
+                    packet_dict = packet_obj.to_jsonable_dict()
+                    command_brief = {
+                        "finish": validated_bundle.command_brief.finish,
+                        "driver": validated_bundle.command_brief.driver,
+                        "risks": validated_bundle.command_brief.risks,
+                        "need": validated_bundle.command_brief.need,
+                        "doing": validated_bundle.command_brief.doing,
+                    }
             except BundleValidationError as exc:
                 load_error = str(exc)
             except Exception:
@@ -1866,7 +1921,7 @@ def create_app_from_config(config) -> FastAPI:
             "publish_operator.html",
             _template_payload(
                 request,
-                publish_packet=packet.to_jsonable_dict() if packet is not None else None,
+                publish_packet=packet_dict,
                 publish_command_brief=command_brief,
                 publish_bundle_path=bundle,
                 publish_load_error=load_error,

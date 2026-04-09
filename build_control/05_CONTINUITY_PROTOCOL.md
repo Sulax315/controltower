@@ -17,6 +17,7 @@ The authoritative build governance lives in:
 - build_control/07_ASTA_CSV_COLUMN_MAPPING.md
 - build_control/08_PHASE2C_VALIDATION_EVIDENCE.md
 - build_control/state.json
+- build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md (approved future platform map; read when scope touches hosting, domains, or non-Control-Tower integrations)
 
 These files must be read before planning or coding.
 

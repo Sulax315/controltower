@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from controltower.domain.models import utc_now_iso
+from controltower.schedule_intake.export_artifacts import FILENAME_PUBLISH_PACKET
 
 RUNS_DIRNAME = "runs"
 REGISTRY_FILENAME = "registry.json"
@@ -21,6 +22,7 @@ def create_run(
     artifact_dir: Path,
     bundle_path: Path,
     manifest_path: Path,
+    publish_packet_path: Path | None = None,
     status: str = "pending",
 ) -> dict[str, Any]:
     _validate_status(status)
@@ -30,6 +32,9 @@ def create_run(
     (run_dir / "input").mkdir(parents=True, exist_ok=True)
     (run_dir / "artifacts").mkdir(parents=True, exist_ok=True)
 
+    resolved_publish_path = (
+        publish_packet_path if publish_packet_path is not None else artifact_dir / FILENAME_PUBLISH_PACKET
+    )
     record = {
         "run_id": run_id,
         "created_at": utc_now_iso(),
@@ -39,6 +44,7 @@ def create_run(
         "artifact_dir": str(artifact_dir),
         "bundle_path": str(bundle_path),
         "manifest_path": str(manifest_path),
+        "publish_packet_path": str(resolved_publish_path),
         "error_message": None,
     }
     _write_run_record(run_dir / RUN_METADATA_FILENAME, record)
@@ -185,6 +191,7 @@ def _merge_records(
     base.setdefault("artifact_dir", "")
     base.setdefault("bundle_path", "")
     base.setdefault("manifest_path", "")
+    base.setdefault("publish_packet_path", "")
     base.setdefault("error_message", None)
     if file_record is None and registry_record is not None:
         base["consistency_state"] = "registry_only"
@@ -205,6 +212,8 @@ def _with_consistency_flags(record: dict[str, Any]) -> dict[str, Any]:
     out["manifest_exists"] = Path(manifest_raw).is_file() if manifest_raw else False
     out["artifact_dir_exists"] = Path(artifact_raw).is_dir() if artifact_raw else False
     out["input_exists"] = Path(input_raw).is_file() if input_raw else False
+    pp_raw = str(out.get("publish_packet_path") or "").strip()
+    out["publish_packet_exists"] = Path(pp_raw).is_file() if pp_raw else False
     return out
 
 

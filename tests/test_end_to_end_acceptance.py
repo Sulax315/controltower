@@ -123,11 +123,10 @@ def test_end_to_end_acceptance_full_chain(sample_config_path, tmp_path: Path) ->
     response = client.get(f"/publish/operator/{run_id}")
     assert response.status_code == 200
     assert 'id="publish-operator-header-strip"' in response.text
-    assert 'id="publish-operator-verdict"' in response.text
-    assert 'id="publish-operator-kpis"' in response.text
-    assert 'id="publish-operator-drivers-risks"' in response.text
+    assert 'id="publish-operator-command-brief"' in response.text
     assert 'id="publish-operator-evidence"' in response.text
     assert 'id="publish-operator-error"' not in response.text
+    assert 'id="publish-pm-translation-payload"' in response.text
     assert finish_line in response.text
 
 

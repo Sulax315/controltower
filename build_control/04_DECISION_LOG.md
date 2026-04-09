@@ -108,3 +108,36 @@ Phase 32C becomes the next governed lane. Next authorized action is the Phase 32
 
 Status:
 Active
+
+---
+
+## 2026-04-09 — Governance sync: 32C implementation + local runtime verified; live verification is the remaining gate
+Decision:
+Phase 32C (Manifest Track 13C) assembly and upload→run→publish→operator wiring are recorded as **complete in-repo**, with **local runtime end-to-end verification PASS** on `127.0.0.1:8787` (entry form, `POST /entry/upload` → 303 → operator, `run.json` completed, `publish_packet.json` present with `pm_translation_v1` / `meeting_summary` / `visualization`, operator includes `publish-pm-translation-payload`). The **current governed blocker** is **live deployment verification** at `https://controltower.bratek.io` only — not further Phase 32 translation rule work.
+
+Reason:
+Implementation and deterministic behavior are verified locally; product definition of done in the current build packet still requires confirmation against the production domain. No new phase is authorized; this is the existing closeout lane.
+
+Impact:
+`state.json` and `06_STATUS_BOARD.md` advance 32C from “queued / pre-gate” to “implementation + local runtime complete, live verify pending.” Automated checks from some egress paths may hit perimeter filtering (e.g. FortiGuard) and must not be mistaken for application failure without origin-level confirmation.
+
+Status:
+Active
+
+---
+
+## 2026-04-10 — Target production architecture adopted (documentation only; implementation deferred)
+
+Decision:
+The **target production architecture** and **post-closeout platform direction** described in `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md` are **approved** as the **future** multi-domain, multi-service map surrounding Control Tower. **No implementation** of NocoBase, OpenProject, OR-Tools/PyJobShop services, additional VMs, or Postgres-backed platform wiring is authorized by this decision.
+
+Reason:
+The organization needs a single, explicit, governance-controlled statement of how Control Tower remains the **core brain** while optional workflow, collaboration, and scenario-optimization layers may be added later without product-identity drift.
+
+Impact:
+- **Control Tower** remains the **authoritative deterministic schedule intelligence** product; surrounding systems are **support-only** and must not replace imported schedule truth or deterministic conclusions.
+- **NocoBase** (`ops.bratek.io` target), **OpenProject** (`pm.bratek.io` / `openproject.bratek.io` target), and **solver** (OR-Tools/PyJobShop-class, `solver.internal.bratek.io` or private route) are **optional** and **deferred** until after current governed closeout (Phase 32 live verification and authorized hardening) per the documented rollout sequence.
+- **Current active phase/track** and **next required actions** are **unchanged** except for this recorded future direction (`state.json` carries a reference field only).
+
+Status:
+Active

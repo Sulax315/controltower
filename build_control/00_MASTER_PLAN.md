@@ -216,6 +216,25 @@ End-state browser experience must read as a serious desktop-class web applicatio
 
 ---
 
+## Target production architecture (approved — not current implementation lane)
+
+**Status:** This subsection records an **approved target production architecture** and **post-closeout platform direction**. It does **not** authorize implementation of NocoBase, OpenProject, OR-Tools/PyJobShop, new VMs, or Postgres integrations **today**. The **current governed lane** remains completion of Phase 32 closeout (including live domain verification) and any explicitly authorized hardening; see `build_control/state.json` and `build_control/06_STATUS_BOARD.md`.
+
+**Authoritative detail:** `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md`.
+
+**Principles:**
+
+- **Control Tower** stays the **authoritative schedule intelligence brain** (deterministic intake, logic, intelligence, translation assembly, operator projection). Nothing in the target platform map replaces that role.
+- **Optional surrounding layers** (workflow/admin, collaboration, scenario optimization) are **explicitly subordinate**: they support operations or optional what-if solving; they **do not** become the deterministic reasoning core or the system of record for imported schedule truth.
+- **Domain separation (target):** `controltower.bratek.io` (brain + product), `ops.bratek.io` (NocoBase-class workflow/admin), `pm.bratek.io` or `openproject.bratek.io` (OpenProject-class optional collaboration), `solver.internal.bratek.io` or private-only route (OR-Tools/PyJobShop-class **scenario-only** solver service).
+- **Hosting:** two VMs preferred; one VM acceptable initially with **isolation** between concerns.
+- **Data direction:** Postgres **per service** where used, **separate databases**, **artifact-first** file/blob evidence for deterministic outputs unless a future governance decision states otherwise.
+- **Rollout order (approved):** finish current Control Tower gate → harden Control Tower → add NocoBase → add solver service → decide OpenProject later.
+
+Work on this map begins only after governance records completion of the current closeout lane and authorizes the next phase.
+
+---
+
 ## Post-Engine Execution Phases
 With completion of the deterministic schedule intelligence engine (Phases 14-18), the build now proceeds to projection and delivery layers.
 

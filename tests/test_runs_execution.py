@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from controltower.api.app import create_app
 from controltower.runs.execution import execute_run
 from controltower.runs.registry import REGISTRY_FILENAME, create_run, get_run, list_runs, update_run_status
-from controltower.schedule_intake import export_directory_file_map
+from controltower.schedule_intake import FILENAME_PUBLISH_PACKET, export_directory_file_map
 from controltower.schedule_intake.asta_csv import ASTA_EXPORT_HEADERS
 from controltower.schedule_intake.verification import ExportValidationResult, validate_export_artifact_set
 
@@ -49,9 +49,15 @@ def test_execute_run_creates_registry_and_run_structure(sample_config_path, tmp_
     assert (run_root / "artifacts" / "logic_graph.json").exists()
     assert (run_root / "artifacts" / "driver_analysis.json").exists()
     assert (run_root / "artifacts" / "manifest.json").exists()
+    assert (run_root / "artifacts" / FILENAME_PUBLISH_PACKET).exists()
     assert (run_root / "run.json").exists()
     assert Path(record["input_path"]) == run_root / "input" / "schedule.csv"
     assert Path(record["artifact_dir"]) == run_root / "artifacts"
+    assert str(record.get("publish_packet_path", "")).endswith(FILENAME_PUBLISH_PACKET)
+    assert record.get("publish_packet_exists") is True
+    publish_payload = json.loads((run_root / "artifacts" / FILENAME_PUBLISH_PACKET).read_text(encoding="utf-8"))
+    assert isinstance(publish_payload.get("pm_translation_v1"), dict)
+    assert "meeting_summary" in publish_payload["pm_translation_v1"]
 
     validation = validate_export_artifact_set(run_root / "artifacts")
     assert validation.ok is True
