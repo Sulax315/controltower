@@ -4,7 +4,7 @@
 Control Tower — Schedule Intelligence Engine
 
 ## One-Sentence Definition
-A deterministic engine that converts Asta Powerproject CSV exports into PM-grade schedule analysis, narrative briefs, and supporting evidence.
+A deterministic schedule intelligence and translation system that converts Asta Powerproject CSV exports into PM-grade schedule analysis and deterministic meeting-language outputs with traceable supporting evidence.
 
 Engine status: Core deterministic schedule intelligence engine is complete through Phases 14-18.
 
@@ -96,6 +96,15 @@ Must identify the basis for conclusions such as:
 Must be machine-readable and stable enough to support future UI layers.
 
 Those future layers are delivery/projection layers and must not reinterpret or regenerate the underlying intelligence.
+
+### Deterministic PM translation payload
+Must provide a meeting-language layer assembled from existing deterministic intelligence artifacts using reproducible rules.
+
+Requirements:
+- no AI-generated narrative
+- no heuristic/freeform interpretation
+- no statement without deterministic source traceability
+- sentence-level linkage to source artifacts, fields, task ids, and rule ids
 
 ---
 

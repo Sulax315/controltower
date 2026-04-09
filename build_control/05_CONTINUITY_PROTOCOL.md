@@ -29,6 +29,7 @@ Any new thread used for this build must be told:
 2. the repo build_control folder is the source of truth
 3. the current phase and track come from state.json and the status board
 4. work must remain within the current build lane unless the plan itself is being revised
+5. current governed lane is Phase 32 / Manifest Phase 13 deterministic PM translation unless state files are formally updated
 
 ---
 
@@ -42,6 +43,7 @@ Any Cursor prompt must instruct Cursor to first read:
 - build_control/state.json
 
 Cursor must not proceed as if prior assumptions outrank those files.
+Cursor must verify the active phase, active track, and next required action are synchronized across status board and state.json before implementation work.
 
 ---
 
@@ -51,6 +53,8 @@ No build prompt is valid unless it aligns with:
 - current track
 - stated deliverables
 - acceptance criteria
+
+When governance is revised, all dependent governance/state artifacts must be synchronized before implementation prompts are considered valid.
 
 ---
 
@@ -77,3 +81,8 @@ Any continuity message must include:
 
 ## Drift Prevention Rule
 If implementation starts to focus on UI, framework complexity, orchestration, or polish before the engine is trustworthy, the build must be redirected back to the manifest.
+
+Phase 32-specific drift prevention:
+- deterministic translation work must remain in output-contract/publish_assembly layers
+- translation statements must be traceable to deterministic artifacts, fields, task ids, and rule ids
+- no AI-generated narrative, heuristic guessing, or UI-side interpretation is permitted

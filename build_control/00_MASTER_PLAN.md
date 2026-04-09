@@ -78,6 +78,9 @@ A structured evidence layer that shows how each conclusion was derived from the 
 ### Required output 3
 A machine-readable JSON intelligence payload that can later support UI, PDF, export, and audit surfaces.
 
+### Required output 4
+A deterministic PM translation payload (meeting-language brief layer) assembled from existing intelligence artifacts using reproducible rules and sentence-level traceability.
+
 ---
 
 ## Product Principles
@@ -146,6 +149,17 @@ Responsibilities:
 - JSON intelligence payload
 - markdown brief
 - exportable report-ready content
+
+#### Layer 2 deterministic PM translation layer (governed)
+Layer 2 includes a deterministic translation layer that converts already-produced schedule intelligence artifacts into PM-grade meeting language.
+
+Governance for this translation layer:
+- translation occurs after intelligence generation
+- translation does not alter engine findings
+- translation cannot invent claims
+- every translated statement must map to deterministic source data
+- every translated sentence must preserve traceability to source artifacts, source fields, task ids, threshold/rule ids, and applied output-contract rules
+- implementation belongs in output assembly and output contracts, not UI projection
 
 ### Layer 3 — Operator Surface
 Responsibilities:
@@ -233,3 +247,27 @@ Completed to date:
   Total replacement of browser-visible entry shell and browser-facing UI patterns that do not meet product intent; deliver a polished operator-grade front door, serious desktop-class visual language, coherent hierarchy for launch/reopen flows, and removal of leftover utility-style browser patterns.
 - Phase 31 — Browser Surface Polish, Cohesion, and Production Hardening  
   Browser-wide cohesion and production hardening between entry shell and operator surface, including final polish of spacing/hierarchy/readability, consistency of interaction flow, and validation that the browser product experience matches intended product quality without weakening deterministic governance.
+- Phase 32 — Deterministic PM Translation Layer  
+  Govern deterministic translation of existing schedule intelligence into meeting-ready PM language through output-contract assembly only, with full reproducibility and traceability.
+  - Phase 32A — Finish/Delta/Driver translation  
+    Deterministically translate finish position, period delta, and driver structures into PM meeting statements using fixed source-field and threshold mappings.
+  - Phase 32B — Fragility/Risk/Pressure translation  
+    Deterministically translate fragility, risk, and pressure signals into PM meeting statements using fixed source fields, thresholds, and task-set references.
+  - Phase 32C — PM Thinking Encoding and Meeting-Language Assembly  
+    Encode how a real construction PM compresses deterministic schedule findings into meeting-ready language using only structural, threshold-based, reproducible rules; implement in output assembly (not UI); preserve sentence-level traceability to source artifacts, source fields, task ids, and rule ids.
+
+### Phase 32 non-negotiable rules
+1. No AI-generated narrative.
+2. No heuristic guessing.
+3. No UI-side interpretation.
+4. No engine logic moved into templates, browser rendering, or client-side code.
+5. No statement without traceable deterministic sources.
+6. No cause diagnosis unless deterministically proven by source data and governed rules.
+
+### Phase 32 implementation boundary
+Phase 32 implementation belongs in `publish_assembly` and output-contract assembly layers.
+
+Phase 32 implementation is not permitted in:
+- UI templates
+- browser rendering logic
+- client-side code

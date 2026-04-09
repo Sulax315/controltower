@@ -175,3 +175,52 @@ A track fails acceptance if:
 - it is UI-heavy but intelligence-light
 - it produces narrative without data grounding
 - it cannot be explained or trusted in a real PM review context
+
+---
+
+# Phase 13 — Deterministic PM Translation Layer
+
+## Track 13A — Finish/Delta/Driver Translation
+Pass criteria:
+- finish/delta/driver statements are generated from deterministic source artifacts only
+- every statement includes rule-based traceability to source fields/task ids/rule ids
+- unsupported statements are suppressed rather than guessed
+- no AI-generated narrative or heuristic narration
+- output contract additions are stable and machine-readable
+- tests cover translation rules and unsupported-statement suppression behavior
+
+Evidence required:
+- file paths for translation rule definitions and output-contract schema/assembly
+- test names that validate rule execution and suppression
+- sample payload excerpt showing statement + source trace + rule id
+- source trace examples linking to deterministic artifacts/fields/task ids
+
+## Track 13B — Fragility/Risk/Pressure Translation
+Pass criteria:
+- fragility/risk/pressure statements are generated from deterministic source artifacts only
+- every statement includes rule-based traceability to source fields/task ids/rule ids
+- unsupported statements are suppressed rather than guessed
+- no cause diagnosis unless deterministically proven by governed rules
+- no AI-generated narrative or heuristic narration
+- tests cover translation rules and suppression behavior for unsupported risk claims
+
+Evidence required:
+- file paths for fragility/risk/pressure translation rules and contract assembly
+- test names for risk/pressure translation and suppression outcomes
+- sample payload excerpt showing risk statement + trace links + rule id
+- source trace examples proving deterministic support path
+
+## Track 13C — PM Thinking Encoding and Meeting-Language Assembly
+Pass criteria:
+- PM meeting-language encoding is structural/threshold-based and reproducible
+- sentence-level traceability is present for each assembled statement
+- unsupported or unproven statements are suppressed
+- no UI-side interpretation and no translation logic in templates/browser/client code
+- output contract remains stable under repeated execution
+- tests cover rule-id determinism, traceability completeness, and suppression behavior
+
+Evidence required:
+- file paths for PM encoding rules, assembly implementation, and output contract definitions
+- test names for deterministic sentence assembly and suppression
+- sample payload excerpt showing sentence-level traceability fields
+- rule id references and source trace examples for at least one emitted and one suppressed statement

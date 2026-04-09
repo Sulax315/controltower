@@ -1,0 +1,7 @@
+{
+  "action": "ACTION: repair_invalid_references",
+  "delta": "DELTA: none",
+  "driver": "DRIVER: task_id=101 score=41.0000",
+  "finish": "FINISH: nodes=6 edges=5 open_sink=2 open_source=1 cycle=False invref=1",
+  "risks": "RISKS: count=10 top_id=invalid_reference:100:predecessor:99 top_sev=high top_type=invalid_reference"
+}

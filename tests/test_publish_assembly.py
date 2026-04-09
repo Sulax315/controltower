@@ -87,7 +87,17 @@ def test_full_integration_publish_packet_jsonable_stable() -> None:
     b = _bundle()
     p = build_publish_packet(b)
     jd = p.to_jsonable_dict()
-    assert tuple(jd.keys()) == ("actions", "drivers", "evidence", "header", "kpis", "risks", "verdict", "visualization")
+    assert tuple(jd.keys()) == (
+        "actions",
+        "drivers",
+        "evidence",
+        "header",
+        "kpis",
+        "pm_translation_v1",
+        "risks",
+        "verdict",
+        "visualization",
+    )
     assert jd["header"]["finish_line"].startswith("FINISH:")
     assert jd["verdict"]["action_token"].startswith("NEED:")
     assert isinstance(jd["kpis"]["node_count"], int)

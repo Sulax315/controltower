@@ -63,3 +63,48 @@ Phase 19 becomes active immediately. Post-engine phases 19-25 are now the govern
 
 Status:
 Active
+
+---
+
+## 2026-04-09 — Governance expansion to Phase 32 deterministic PM translation
+Decision:
+Control Tower governance is expanded to include Phase 32 as the active post-engine lane: deterministic PM translation of existing schedule intelligence into meeting-language output.
+
+Reason:
+Deterministic engine signals are present, but weekly PM review workflows require deterministic, traceable meeting-language translation to convert signals into decision-ready statements without interpretation drift.
+
+Impact:
+Phase 32 work is now governed as output-contract/publish_assembly ownership only. Translation must not alter engine findings, must not use AI narration or heuristic prose, and must enforce statement-level traceability to deterministic source artifacts, fields, task ids, and rule ids.
+
+Status:
+Active
+
+---
+
+## 2026-04-09 — Phase 32A accepted as complete
+Decision:
+Phase 32A (Finish/Delta/Driver Translation) is recorded as complete based on accepted deterministic implementation and test evidence.
+
+Reason:
+Phase 32A rule primitives and contract outputs were implemented in output assembly with deterministic suppression and traceability behavior, and acceptance-aligned tests passed.
+
+Impact:
+Governance state advances from Track 13A to Track 13B/13C sequencing, with 32A outputs now treated as stable prerequisite inputs for later PM translation stages.
+
+Status:
+Active
+
+---
+
+## 2026-04-09 — Phase 32B accepted as complete; advance to 32C pre-execution gate
+Decision:
+Phase 32B (Fragility/Risk/Pressure Translation) is recorded as complete based on accepted deterministic implementation and test evidence.
+
+Reason:
+Phase 32B introduced deterministic L1/P1/O2 translation primitives with explicit thresholds, suppression rules, and source traceability without UI or engine-scope drift.
+
+Impact:
+Phase 32C becomes the next governed lane. Next authorized action is the Phase 32C pre-execution gate for PM thinking encoding and meeting-language assembly.
+
+Status:
+Active

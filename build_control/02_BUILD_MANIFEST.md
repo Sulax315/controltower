@@ -332,6 +332,54 @@ Deliverables:
 
 ---
 
+# Phase 13 — Deterministic PM Translation Layer
+Weight: 8%
+
+## Goal
+Deterministically translate existing schedule intelligence into PM-grade meeting language in output-contract assembly without changing engine findings.
+
+### Track 13A — Finish/Delta/Driver Translation
+Deliverables:
+- deterministic translation rules for finish position, period delta, and driver outputs
+- output contract additions for finish/delta/driver meeting-language statements
+- statement-level traceability to source artifacts, fields, task ids, and rule ids
+- suppression behavior for unsupported statements
+- explicit no-UI-side interpretation and no AI/heuristic narration constraints
+
+Completion logic:
+- translation rules and contract fields are implemented in assembly layer
+- unsupported finish/delta/driver claims are suppressed
+- every emitted statement resolves to deterministic sources and rule ids
+
+### Track 13B — Fragility/Risk/Pressure Translation
+Deliverables:
+- deterministic translation rules for fragility, risk, and pressure signals
+- output contract additions for fragility/risk/pressure meeting-language statements
+- statement-level traceability to source artifacts, fields, task ids, and rule ids
+- suppression behavior for unsupported statements
+- explicit no-UI-side interpretation and no AI/heuristic narration constraints
+
+Completion logic:
+- translation rules and contract fields are implemented in assembly layer
+- unsupported fragility/risk/pressure claims are suppressed
+- every emitted statement resolves to deterministic sources and rule ids
+
+### Track 13C — PM Thinking Encoding and Meeting-Language Assembly
+Deliverables:
+- reproducible structural/threshold-based encoding of PM meeting compression logic
+- governed meeting-language assembly contract over deterministic artifacts
+- sentence-level traceability model and rule-id surface in output payload
+- cause-diagnosis suppression unless deterministically proven by governed rules
+- explicit enforcement that implementation remains assembly-layer only
+
+Completion logic:
+- PM encoding rules are deterministic, reproducible, and versioned
+- meeting-language assembly emits only supported statements with trace links
+- no cause diagnosis appears without deterministic proof path
+- no translation logic exists in UI templates/browser/client code
+
+---
+
 # Build Order Rule
 Work must proceed in phase order unless the manifest is formally revised.
 
@@ -355,8 +403,25 @@ Post-engine delivery completion:
   - Track 8B PDF Export — COMPLETE
   - Track 8C Export Consistency — COMPLETE
 - Phase 22 Governance Synchronization — COMPLETE
+- Phase 9 (Phases 23-25) COMPLETE
+  - Track 9A Run Selection — COMPLETE
+  - Track 9B Review/Approval State — COMPLETE
+  - Track 9C Export Controls — COMPLETE
+- Phase 10 (Phase 26) COMPLETE
+  - Track 10A Gantt Projection — COMPLETE
+  - Track 10B PERT / Network View — COMPLETE
+  - Track 10C Driver Path Visualization — COMPLETE
+  - Track 10D Risk Visualization — COMPLETE
+- Phase 11 (Phase 27) COMPLETE
+  - Track 11A View Switching — COMPLETE
+  - Track 11B Filtering / Highlighting — COMPLETE
+  - Track 11C Evidence-to-Visualization Linking — COMPLETE
+- Phase 12 (Phase 28) COMPLETE
+  - Track 12A PDF with Graphics — COMPLETE
+  - Track 12B Image Export — COMPLETE
+  - Track 12C Stakeholder Pack Formatting — COMPLETE
 
 Current build direction is readiness for the next governed pre-execution gate:
-- Next authorized gate: Phase 23 (Manifest Phase 9) Track 9A — Run Selection
+- Next authorized gate: Phase 32 (Manifest Phase 13) Track 13A — Finish/Delta/Driver Translation
 
 No work outside the governed phase order should proceed.

@@ -1,0 +1,41 @@
+{
+  "artifacts": [
+    {
+      "artifact_type": "command_brief",
+      "byte_count": 327,
+      "filename": "command_brief.json",
+      "sha256": "4769fbf23bdad0a5461dcea4f552311d6dff0cd2a6a3a5d143eff195ffb428e4"
+    },
+    {
+      "artifact_type": "engine_snapshot",
+      "byte_count": 8247,
+      "filename": "engine_snapshot.json",
+      "sha256": "82b4959d82350c88f3c88795593b1b72f0ea211df28ed0f2665bf58b74ca0a8f"
+    },
+    {
+      "artifact_type": "exploration",
+      "byte_count": 273,
+      "filename": "exploration.json",
+      "sha256": "87af117da106751453b8f194d5072399810de68213a525aecd858b3caa075917"
+    },
+    {
+      "artifact_type": "intelligence_bundle",
+      "byte_count": 9704,
+      "filename": "intelligence_bundle.json",
+      "sha256": "5b8936bf5f81e2a768351211d61a1763e3e17a0a09294cf9d6831bd655a1ed21"
+    }
+  ],
+  "bundle_present": true,
+  "command_brief_present": true,
+  "deterministic_mode": "deterministic_contract_export_v1",
+  "engine_snapshot_present": true,
+  "exploration_present": true,
+  "export_scope": "schedule_intelligence",
+  "schema_version": "1.0.0",
+  "source_components": [
+    "output_contracts.CommandBriefContract",
+    "output_contracts.EngineSnapshot",
+    "output_contracts.ExplorationContract",
+    "output_contracts.ScheduleIntelligenceBundle"
+  ]
+}

@@ -1,17 +1,43 @@
 {
-  "phase": 22,
-  "track": "governance-sync",
-  "status": "complete",
+  "phase": 32,
+  "track": "phase_32c_pm_thinking_encoding_meeting_language_assembly",
+  "manifest_phase": 13,
+  "manifest_track": "13C",
+  "status": "queued",
   "engine_completion": 100,
-  "overall_completion": 100,
-  "overall_completion_note": "post-engine delivery phases 19-21 complete; governance synchronized in phase 22",
-  "current_objective": "Deterministic operator surface and export layer are complete and aligned across governance artifacts.",
+  "overall_completion": 97,
+  "overall_completion_note": "historical phases through 31 are complete; phase 32A and 32B are complete; phase 32C is queued for pre-execution gate",
+  "current_objective": "Prepare and execute the Phase 32C pre-execution gate for deterministic PM thinking encoding and meeting-language assembly.",
   "current_blocker": "none",
-  "next_action": "Phase 23 PRE-EXECUTION GATE",
+  "next_action": "Phase 32C PRE-EXECUTION GATE (Manifest Phase 13 Track 13C)",
   "phase_completion": {
     "phase_19_operator_command_sheet": "complete",
     "phase_20_evidence_grid_inline_structural_views": "complete",
     "phase_21_export_layer": "complete",
-    "phase_22_governance_synchronization": "complete"
+    "phase_22_governance_synchronization": "complete",
+    "phase_23_decision_reinforcement": "complete",
+    "phase_24_operator_workflow_discipline_controlled_interaction": "complete",
+    "phase_25_operator_readability_and_density_tuning": "complete",
+    "phase_26_schedule_visualization_layer": "complete",
+    "phase_27_interactive_analysis_views": "complete",
+    "phase_28_exportable_graphics_stakeholder_packs": "complete",
+    "phase_29_browser_entry_upload_run_access": "complete",
+    "phase_30_browser_product_shell_overhaul": "complete",
+    "phase_31_browser_surface_polish_cohesion_production_hardening": "complete",
+    "phase_32a_finish_delta_driver_translation": "complete",
+    "phase_32b_fragility_risk_pressure_translation": "complete"
+  },
+  "phase_32_status": {
+    "phase_32a_finish_delta_driver_translation": "complete",
+    "phase_32b_fragility_risk_pressure_translation": "complete",
+    "phase_32c_pm_thinking_encoding_meeting_language_assembly": "queued",
+    "implementation_boundary": "publish_assembly_and_output_contract_assembly_only",
+    "deterministic_requirements": [
+      "no_ai_generated_narrative",
+      "no_heuristic_guessing",
+      "no_ui_side_interpretation",
+      "no_statement_without_traceable_sources",
+      "no_cause_diagnosis_without_deterministic_proof"
+    ]
   }
 }
