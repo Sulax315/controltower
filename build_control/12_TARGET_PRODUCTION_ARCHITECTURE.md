@@ -4,7 +4,7 @@
 
 This document records the **approved target production architecture** and **post-closeout platform direction** for Bratek Control Tower and its optional surrounding systems.
 
-**This is not the current governed implementation lane.** No component described here as “future” is authorized for implementation until the current governed closeout (Phase 32 live verification and any immediately following hardening gates recorded in `state.json` / `06_STATUS_BOARD.md`) is explicitly complete and a new phase is authorized in governance.
+**This is not the current governed implementation lane.** No component described here as “future” is authorized for implementation until **each** such component is explicitly authorized in the decision log (Phase 32 closeout, including live verification, **is complete** per `build_control/state.json`; **platform-era** tracks remain deferred until separately opened).
 
 **Single source of detailed architecture:** this file. Summary pointers live in `build_control/00_MASTER_PLAN.md` and the executive snapshot in `06_STATUS_BOARD.md`.
 
@@ -93,7 +93,7 @@ This document records the **approved target production architecture** and **post
 
 | Item | Status |
 |------|--------|
-| Control Tower brain + current operator/upload/publish path | **In repo**; live verification **pending** per governance |
+| Control Tower brain + current operator/upload/publish path | **In repo**; **live verification complete** (`PASS_LOCAL_AND_LIVE`); production operational for governed path per `build_control/04_DECISION_LOG.md` |
 | NocoBase, OpenProject, OR-Tools/PyJobShop service | **Not implemented** — **deferred** until closeout + hardening sequence above |
 
 ---

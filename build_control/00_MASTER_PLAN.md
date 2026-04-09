@@ -218,9 +218,11 @@ End-state browser experience must read as a serious desktop-class web applicatio
 
 ## Target production architecture (approved — not current implementation lane)
 
-**Status:** This subsection records an **approved target production architecture** and **post-closeout platform direction**. It does **not** authorize implementation of NocoBase, OpenProject, OR-Tools/PyJobShop, new VMs, or Postgres integrations **today**. The **current governed lane** remains completion of Phase 32 closeout (including live domain verification) and any explicitly authorized hardening; see `build_control/state.json` and `build_control/06_STATUS_BOARD.md`.
+**Status:** This subsection records an **approved target production architecture** and **post-closeout platform direction**. It does **not** authorize implementation of NocoBase, OpenProject, OR-Tools/PyJobShop, new VMs, or Postgres integrations **today**. **Phase 32 closeout (including live domain verification) is complete**; the **current governed product lane** is **Phase 33** (operator usability + polish, projection-only) until `state.json` advances; platform-era execution remains separately gated per `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md` and the decision log.
 
 **Authoritative detail:** `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md`.
+
+**Proposed implementation-era sequencing (planning only, not an authorization):** `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md`.
 
 **Principles:**
 

@@ -1,19 +1,19 @@
 {
-  "phase": 32,
-  "track": "phase_32c_pm_thinking_encoding_meeting_language_assembly",
+  "phase": 33,
+  "track": "phase_33_operator_usability_polish_presentation_only",
   "manifest_phase": 13,
   "manifest_track": "13C",
-  "status": "implementation_complete_local_runtime_verified_live_verification_pending",
+  "status": "phase_32_complete_live_verified_production_operational",
   "engine_completion": 100,
-  "overall_completion": 97,
-  "overall_completion_note": "phases through 31 complete; 32A/32B complete; 32C assembly+wiring complete; local E2E runtime PASS; Phase 32 product closeout still requires live domain verification per current build packet",
-  "current_objective": "Verify https://controltower.bratek.io matches local: browser entry upload surface, upload→run→publish_packet→operator with pm_translation payload.",
-  "current_blocker": "live_deployment_verification_pending",
-  "next_action": "Execute live domain verification from trusted egress (or operator browser on allowed network): GET /, POST /entry/upload if safe, confirm artifacts and operator render; resolve any FortiGuard/proxy allowlisting if automation hits policy block",
+  "overall_completion": 100,
+  "overall_completion_note": "Weighted manifest Phases 1–13 complete; Phase 32 (Manifest Phase 13) closed with PASS_LOCAL_AND_LIVE per build packet. Next governed lane is Phase 33 (build packet): operator usability and polish, projection-only — open pre-execution gate before implementation.",
+  "current_objective": "Phase 33 — operator usability and polish (presentation only): align scope to governance, run pre-execution gate, implement only projection-layer improvements without engine or translation-rule changes unless a new phase is authorized.",
+  "current_blocker": "none",
+  "next_action": "Execute Phase 33 pre-execution gate (scope, acceptance, projection-only boundaries per build packet); then implement only when prompts explicitly authorize Phase 33.",
   "approved_target_architecture": {
     "status": "documented_not_implemented",
     "reference": "build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md",
-    "note": "Future platform map (NocoBase, OpenProject, solver service, domain split, Postgres/artifact direction). Deferred until current governed closeout complete; does not change active phase 32."
+    "note": "Future platform map (NocoBase, OpenProject, solver, domain split, Postgres/artifact direction). Phase 32 closeout complete; execution of platform-era tracks remains deferred until decision log authorizes each era per build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md."
   },
   "phase_completion": {
     "phase_19_operator_command_sheet": "complete",
@@ -29,15 +29,16 @@
     "phase_29_browser_entry_upload_run_access": "complete",
     "phase_30_browser_product_shell_overhaul": "complete",
     "phase_31_browser_surface_polish_cohesion_production_hardening": "complete",
+    "phase_32_deterministic_pm_translation_layer": "complete_including_live_verification",
     "phase_32a_finish_delta_driver_translation": "complete",
     "phase_32b_fragility_risk_pressure_translation": "complete",
-    "phase_32c_pm_thinking_encoding_meeting_language_assembly": "complete_local_runtime_verified"
+    "phase_32c_pm_thinking_encoding_meeting_language_assembly": "complete_including_live_verification"
   },
   "phase_32_status": {
     "phase_32a_finish_delta_driver_translation": "complete",
     "phase_32b_fragility_risk_pressure_translation": "complete",
-    "phase_32c_pm_thinking_encoding_meeting_language_assembly": "complete_in_repo_and_local_runtime",
-    "live_domain_verification": "pending",
+    "phase_32c_pm_thinking_encoding_meeting_language_assembly": "complete_in_repo_local_and_production",
+    "live_domain_verification": "verified_pass_local_and_live",
     "implementation_boundary": "publish_assembly_and_output_contract_assembly_only",
     "deterministic_requirements": [
       "no_ai_generated_narrative",
@@ -46,5 +47,8 @@
       "no_statement_without_traceable_sources",
       "no_cause_diagnosis_without_deterministic_proof"
     ]
+  },
+  "phase_33_status": {
+    "operator_usability_polish_presentation_only": "not_started"
   }
 }

@@ -4,14 +4,15 @@
 - Build status: Active
 - Build health: GREEN
 - Engine completion: 100%
-- Overall completion: 97%
-- Current phase: Phase 32 - Deterministic PM Translation Layer (implementation + local runtime closure)
-- Current track: Phase 32C / Manifest Track 13C — implementation and **local** end-to-end runtime verification **COMPLETE**; **live domain verification PENDING**
-- Current objective: Confirm production deployment at `https://controltower.bratek.io` matches verified local behavior (browser entry → upload → run → `publish_packet.json` → operator render).
-- Current blocker: **Live deployment verification only** — must be executed from a trusted egress path that can reach the live origin (automation/corporate egress may be blocked by perimeter filtering unrelated to app correctness).
-- Last completed milestone: **Local** upload → run → persisted `publish_packet.json` (incl. `pm_translation_v1`, `meeting_summary`, `visualization`) → operator surface with `publish-pm-translation-payload` — **PASS** on `127.0.0.1:8787`
-- Next required action: **Live domain verification** — `GET /` entry surface, optional safe `POST /entry/upload` E2E, confirm runtime artifacts on server, confirm operator payload — from network that can reach live without policy block
-- **Approved future (not active lane):** Target multi-domain production architecture (Control Tower core + optional NocoBase / solver / OpenProject) is **documented** in `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md`. **No implementation** of those platforms is in the current governed lane until Phase 32 closeout and authorized hardening are complete.
+- Overall completion: 100% (weighted manifest Phases 1–13 / Phase 32 closed with live verification)
+- Current phase: **Phase 33** — Operator usability + polish (**presentation / projection only**; not yet started)
+- Current track: **Phase 33** — awaiting **pre-execution gate** and explicit implementation authorization (see `build_control/state.json`, `build_control/09_CURRENT_BUILD_PACKET.md`)
+- Current objective: Define and execute Phase 33 under governance: usability and polish over existing deterministic artifacts only — no engine or deterministic translation-rule changes unless a new phase is authorized.
+- Current blocker: **None**
+- Last completed milestone: **Phase 32** — Deterministic PM Translation Layer **COMPLETE**: in-repo, local E2E, and **production** verification (`PASS_LOCAL_AND_LIVE`): `/healthz`, login, upload → run → `publish_packet.json` with `pm_translation_v1` → operator surface correct at `https://controltower.bratek.io`
+- Next required action: **Phase 33 pre-execution gate** — scope, acceptance, and projection-only boundaries; then implementation only under an explicit Phase 33–authorized prompt.
+- **Approved future (not active lane):** Target multi-domain production architecture (Control Tower core + optional NocoBase / solver / OpenProject) is **documented** in `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md`. **No implementation** of those platforms until **decision log** authorizes each era per `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md` (Phase 32 closeout is complete; platform execution remains separately gated).
+- **Next planning reference (not an implementation authorization):** Proposed phased roadmap for the post–Phase 32 **platform era** is in `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md`.
 ---
 ## Phase Status
 ### Engine Closeout (Phases 14-18)
@@ -75,14 +76,17 @@ Status: COMPLETE
 Status: COMPLETE
 
 ### Phase 32 - Deterministic PM Translation Layer
-Status: ACTIVE (governed closeout: **live verification** remains the final gate per build packet definition of done)
+Status: **COMPLETE** (Manifest Phase 13 — Tracks 13A–13C; **live domain verification PASS**; production operational for governed upload → publish → operator path)
 Tracks:
 - 32A Finish/Delta/Driver Translation - COMPLETE
 - 32B Fragility/Risk/Pressure Translation - COMPLETE
-- 32C PM Thinking Encoding and Meeting-Language Assembly - **COMPLETE (in-repo + local runtime)**; **live domain confirmation PENDING**
+- 32C PM Thinking Encoding and Meeting-Language Assembly - COMPLETE (in-repo, local, **production**)
+
+### Phase 33 - Operator usability + polish (build packet)
+Status: **NEXT** — not started; requires pre-execution gate and explicit authorization
 
 ## System Readiness
 - Operator command sheet is complete and meeting-grade on `/publish/operator/{run_id}`.
 - Evidence grid and inline structural views are complete and projection-only.
 - Export layer is complete with deterministic print and print-to-PDF-ready projection.
-- Upload → execute → persisted `publish_packet.json` → operator projection verified **locally**; production parity **not yet confirmed** from governed verification path.
+- Upload → execute → persisted `publish_packet.json` (incl. `pm_translation_v1`) → operator projection verified **locally and in production** per Phase 32 closeout.

@@ -18,6 +18,7 @@ The authoritative build governance lives in:
 - build_control/08_PHASE2C_VALIDATION_EVIDENCE.md
 - build_control/state.json
 - build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md (approved future platform map; read when scope touches hosting, domains, or non-Control-Tower integrations)
+- build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md (proposed post-closeout platform-era phases/tracks; planning only until decision log authorizes implementation)
 
 These files must be read before planning or coding.
 
@@ -30,7 +31,7 @@ Any new thread used for this build must be told:
 2. the repo build_control folder is the source of truth
 3. the current phase and track come from state.json and the status board
 4. work must remain within the current build lane unless the plan itself is being revised
-5. current governed lane is Phase 32 / Manifest Phase 13 deterministic PM translation unless state files are formally updated
+5. current governed lane follows `state.json` and `06_STATUS_BOARD.md` (Phase 32 / Manifest Phase 13 is **complete**; **Phase 33** is next unless state files are formally updated)
 
 ---
 

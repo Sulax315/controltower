@@ -420,8 +420,22 @@ Post-engine delivery completion:
   - Track 12A PDF with Graphics — COMPLETE
   - Track 12B Image Export — COMPLETE
   - Track 12C Stakeholder Pack Formatting — COMPLETE
+- Phase 13 (Phase 32) COMPLETE — Deterministic PM Translation Layer
+  - Track 13A Finish/Delta/Driver Translation — COMPLETE
+  - Track 13B Fragility/Risk/Pressure Translation — COMPLETE
+  - Track 13C PM Thinking Encoding and Meeting-Language Assembly — COMPLETE
+  - **Live verification:** COMPLETE (`PASS_LOCAL_AND_LIVE` per `build_control/09_CURRENT_BUILD_PACKET.md` and `build_control/04_DECISION_LOG.md`)
 
-Current build direction is readiness for the next governed pre-execution gate:
-- Next authorized gate: Phase 32 (Manifest Phase 13) Track 13A — Finish/Delta/Driver Translation
+Current build direction: **Weighted manifest Phases 1–13 are complete.** **Phase 33** (build packet — operator usability + polish, **presentation / projection only**) is the **next** governed product lane; it is **not** yet a weighted manifest phase. Open **pre-execution gate** and obtain **explicit** prompt authorization before Phase 33 implementation.
 
 No work outside the governed phase order should proceed.
+
+---
+
+## Post–Phase 32 platform era (planning reference — not manifest phases yet)
+
+**Proposed** eras, tracks, sequencing, boundaries, and acceptance structure for production hardening, artifact/Postgres formalization, backup/monitoring, and optional surrounding platforms are recorded in:
+
+- `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md`
+
+**Do not** treat that document as an implementation authorization. When governance authorizes a concrete post-closeout phase (e.g. production hardening or NocoBase introduction), add **Manifest Phase 14+** with weights and tracks at that time per the roadmap’s governance recommendation.

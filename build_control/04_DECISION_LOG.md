@@ -141,3 +141,38 @@ Impact:
 
 Status:
 Active
+
+---
+
+## 2026-04-09 — Post–Phase 32 platform-era roadmap captured (planning only)
+
+Decision:
+Add `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md` as the **proposed** governed roadmap for eras after Phase 32 closeout: Control Tower production hardening, artifact/Postgres formalization, backup/recovery/monitoring, optional NocoBase, optional solver, and optional OpenProject decision gate — aligned to `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md` sequencing.
+
+Reason:
+The approved target architecture needs a bounded planning artifact (eras/tracks, dependencies, boundaries, evidence-style acceptance) without opening implementation or prematurely adding weighted manifest phases.
+
+Impact:
+- **No implementation** of surrounding platforms or Postgres/solver/OpenProject deployment is authorized by this entry.
+- Continuity, status board, build packet, and manifest reference doc **13** as **planning-only** context; **Manifest Phase 14+** is added when a post-closeout implementation phase is explicitly authorized.
+
+Status:
+Active
+
+---
+
+## 2026-04-09 — Phase 32 closeout: local + live verification complete; production operational
+
+Decision:
+**Phase 32** (Deterministic PM Translation Layer / Manifest Phase 13, Tracks 13A–13C) is **closed**. **PASS_LOCAL_AND_LIVE** is recorded: production at `https://controltower.bratek.io` matches the governed end-to-end path — `/healthz` returns `{"status":"ok"}`, login works, CSV upload executes a run, `publish_packet.json` exists with **`pm_translation_v1`**, and the operator surface renders correctly. The system is **production-operational** for this governed workflow.
+
+Reason:
+Live verification satisfies the Phase 32 definition of done in `build_control/09_CURRENT_BUILD_PACKET.md` and the acceptance pattern in `build_control/11_TRUSTED_EGRESS_LIVE_VERIFICATION_RUNBOOK.md`. No further Phase 32 translation or wiring work is required for closeout.
+
+Impact:
+- `build_control/state.json`, `06_STATUS_BOARD.md`, `09_CURRENT_BUILD_PACKET.md`, and `02_BUILD_MANIFEST.md` are synchronized to **Phase 32 COMPLETE**; **current blocker: none**.
+- **Next governed lane:** **Phase 33** — operator usability + polish (**presentation / projection only**), **not started** until **pre-execution gate** and explicit implementation authorization.
+- **Platform-era roadmap** (`build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md`) remains **separately gated**; Phase 32 closeout does **not** authorize NocoBase, solver, OpenProject, or multi-system deployment work.
+
+Status:
+Active

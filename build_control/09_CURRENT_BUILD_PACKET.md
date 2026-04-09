@@ -14,14 +14,17 @@ No UI intelligence
 All outputs must be deterministic and traceable to source artifacts
 2. Current Authorized Phase
 
-Phase 32 — Translation + Assembly + Publish
+**Phase 32 — Translation + Assembly + Publish — COMPLETE** (including **live** verification).
+
+**Next governed lane (not started): Phase 33** — Operator usability + polish (**presentation / projection only**). Open **pre-execution gate** before implementation.
 
 Status:
 
 32A — COMPLETE (Finish / Delta / Driver translation)
 32B — COMPLETE (Fragility / Risk / Pressure)
 32C — COMPLETE (PM meeting-language assembly)
-Upload → Run → Publish wiring — COMPLETE (in-repo)
+Upload → Run → Publish wiring — COMPLETE (in-repo and **production**)
+Live end-to-end — **VERIFIED** (`PASS_LOCAL_AND_LIVE`)
 3. Current State of System
 Repo Truth
 Upload route /entry/upload exists and is functional
@@ -65,26 +68,27 @@ Verified on `127.0.0.1:8787` with governed config:
 - `publish_packet.json` — `pm_translation_v1`, `meeting_summary`, `visualization`
 - Operator page — includes `id="publish-pm-translation-payload"`
 
-Live Truth (CRITICAL)
+Live Truth (VERIFIED)
 
-⚠️ NOT VERIFIED from governed automation path
+**Status:** `PASS_LOCAL_AND_LIVE` — production verified on `https://controltower.bratek.io` (trusted egress / operator path).
 
-As of latest check, HTTP(S) requests to `https://controltower.bratek.io/` from the verification environment may be **intercepted by FortiGuard / corporate web filtering** (“Web Page Blocked”, category Unrated) before the request reaches the application. That blocks **content inspection** of the live Control Tower surface from that path and is **not** by itself proof the deployed app is stale or broken.
+Confirmed:
 
-Remaining risks until live origin is confirmed:
+- `GET /healthz` → `{"status":"ok"}`
+- Login works
+- Upload works; run executes
+- `publish_packet.json` exists for successful runs
+- `pm_translation_v1` present in publish packet
+- Operator surface renders correctly (full meeting summary / PM translation payload)
 
-- Live stack not redeployed to commit that includes wiring
-- Wrong process or stale checkout on server
-- `state_root`/runtime path mismatch on server
-- Auth or CSRF/session differences vs local
-- DNS or TLS trust differences per client
+Ongoing operational discipline (deploy freshness, config drift, backups) remains outside this packet’s definition of Phase 32 done but is normal production responsibility.
 4. Last Completed Work
 
-End-to-end wiring implemented:
+**Phase 32 closeout:** End-to-end wiring and live verification complete.
 
-Upload → execute_run → publish_packet.json persisted → operator render
+Upload → execute_run → publish_packet.json persisted → operator render — **verified in production**.
 
-Key additions:
+Key additions (already delivered):
 
 publish_packet.json written during export
 pm_translation_v1 fully assembled and included
@@ -94,47 +98,22 @@ validation updated for backward compatibility
 Tests:
 
 focused tests passing
-full suite: 340 passed, 5 unrelated failures
+full suite: 340 passed, 5 unrelated failures (historical note; re-run as needed)
 5. Current Blocker
 
-LIVE DOMAIN VERIFICATION PENDING
-
-Local answers are known PASS. Open questions are **only** for production:
-
-- Does live `/` serve the same entry upload surface (not a legacy shell)?
-- Does live `POST /entry/upload` complete and redirect?
-- Does live server runtime contain `publish_packet.json` for new runs?
-- Does live operator render `publish-pm-translation-payload`?
-
-If verification runs from a filtered network, confirm whether **FortiGuard / proxy policy** is blocking the URL before concluding the app is wrong.
-
+**None** (Phase 32 definition of done satisfied).
 6. Next Required Action
 
-**Canonical step-by-step:** `build_control/11_TRUSTED_EGRESS_LIVE_VERIFICATION_RUNBOOK.md` (prerequisite network gate, URLs, markers, upload, artifacts, PASS/FAIL, drift triage).
+1. **Phase 33 pre-execution gate:** Record scope, acceptance, and explicit **projection-only** boundaries (no new engine logic; no deterministic translation-rule changes unless a new phase is authorized).
+2. **Implementation** only under prompts that explicitly authorize **Phase 33**.
 
-Perform LIVE FLOW VERIFICATION from a **trusted egress** (operator workstation on allowlisted network, VPN to prod, or monitoring host):
-
-Browser:
-Load `https://controltower.bratek.io/`
-Confirm correct upload UI (`runs-home-upload`, action `/entry/upload`)
-Execution (only if safe for production):
-Upload valid CSV with CSRF
-Confirm 303 → `/publish/operator/{run_id}`
-Runtime (server filesystem or governed diagnostics):
-Confirm `publish_packet.json` under configured `state_root`
-Operator:
-Confirm `publish-pm-translation-payload` in HTML
-
-If automation is blocked: **allowlist** `controltower.bratek.io` / fix FortiGuard categorization, or run manual browser verification.
+Reference: `build_control/06_STATUS_BOARD.md`, `build_control/state.json`, `build_control/11_TRUSTED_EGRESS_LIVE_VERIFICATION_RUNBOOK.md` (historical evidence pattern for live checks).
 7. Known Risks
-Repo vs live drift
-Deployment not updated
-Environment path/state_root mismatch
-CSRF/auth interfering with upload
-Silent execution failure on server
+
+Normal production risks only: deploy vs repo drift, `state_root`/config mismatch, auth/CSRF regressions, silent execution failures — to be managed via ops runbooks and monitoring; not open Phase 32 defects once verification record is maintained.
 8. Definition of Done (Phase 32)
 
-System is complete ONLY when:
+**ACHIEVED.** All of the following were required and are **satisfied**:
 
 Upload works from browser
 Run executes on server
@@ -142,17 +121,22 @@ publish_packet.json exists
 pm_translation_v1 is present
 Operator surface renders full meeting summary
 Verified on live domain
-9. Next Phase (Not Yet Authorized)
+9. Next Phase
 
-Post-verification:
+**Phase 33 — Operator usability + polish (presentation / projection only)**
 
-Phase 33 — Operator usability + polish (presentation only)
-Phase 34 — Deployment hardening / monitoring
+**Phase 34 — Deployment hardening / monitoring** (build packet pointer; not started)
 
-DO NOT START until live verification passes
+**Start Phase 33** only after **pre-execution gate** and **explicit** governance authorization in prompts. Phase 33 must remain **projection-only** relative to deterministic artifacts.
 
 10. Approved target production architecture (future — not current lane)
 
 **Document:** `build_control/12_TARGET_PRODUCTION_ARCHITECTURE.md` (summary in `build_control/00_MASTER_PLAN.md`).
 
-Control Tower remains the **core brain**; optional future layers (NocoBase at `ops.bratek.io`, solver service internal/private, OpenProject at `pm.bratek.io` / `openproject.bratek.io`) are **support-only** and **not implemented** until after live verification and governed hardening per that document’s rollout sequence. **Decision:** `build_control/04_DECISION_LOG.md` (2026-04-10).
+Control Tower remains the **core brain**; optional future layers (NocoBase at `ops.bratek.io`, solver service internal/private, OpenProject at `pm.bratek.io` / `openproject.bratek.io`) are **support-only** and **not implemented** until **decision log** authorizes each era per `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md` (Phase 32 closeout is complete; platform rollout sequence still applies). **Decision:** `build_control/04_DECISION_LOG.md` (2026-04-10).
+
+11. Post–Phase 32 platform-era roadmap (proposed — planning only)
+
+**Document:** `build_control/13_POST_PHASE32_PLATFORM_ROADMAP.md`.
+
+Use this for **sequencing, boundaries, and acceptance patterns** for hardening, artifact/Postgres formalization, backup/recovery/monitoring, and deferred optional platforms. It does **not** replace `state.json` for the active lane and does **not** authorize implementation without a new decision-log entry.
